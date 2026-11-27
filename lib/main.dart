@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'src/services/catalogue_reader.dart';
 import 'src/services/catalogue_store.dart';
 import 'src/services/database.dart';
-import 'src/services/document_files.dart';
+import 'src/platform/documents.dart';
 import 'src/services/document_session.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
@@ -24,7 +24,7 @@ Future<void> main() async {
     writer: db,
     workingPath: path,
     folder: dir.path,
-    files: const PathDocumentFiles(),
+    files: platformDocumentFiles(),
   );
   final remote = ValueNotifier<RemoteCheck?>(null);
   // Save when the app leaves the screen; on return, take another device's

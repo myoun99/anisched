@@ -51,7 +51,7 @@ class AppShell extends StatefulWidget {
     this.timer,
     this.clock = systemClock,
     this.session,
-    this.picker = const PathPromptPicker(),
+    this.picker = const PlatformPicker(),
     this.remote,
   });
 

@@ -6,6 +6,7 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/document_files.dart';
 import 'package:anisched/src/services/document_session.dart';
+import 'package:anisched/src/ui/document_menu.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +41,7 @@ void main() {
           reader: SyncCatalogueReader(store),
           store: store,
           session: session,
+          picker: const PathPromptPicker(),
         ),
       ),
     );

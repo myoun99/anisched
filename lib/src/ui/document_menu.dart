@@ -3,19 +3,40 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/document.dart';
+import '../platform/documents.dart';
 import '../services/document_session.dart';
 import 'pick_field.dart';
 import 'theme.dart';
 
-/// Where the user picks a document to open or a place to save one. The
-/// native pickers (file dialogs, the document picker, SAF) come from the
-/// data lane; until then [PathPromptPicker] asks for a path.
+/// Where the user picks a document to open, and where Save As puts it.
 abstract interface class DocumentPicker {
   Future<DocumentRef?> pickOpen(BuildContext context);
-  Future<DocumentRef?> pickSave(BuildContext context, String suggestedName);
+
+  /// Saves [session]'s document under a new place; false if backed out.
+  Future<bool> saveAs(
+    BuildContext context,
+    DocumentSession session,
+    String suggestedName,
+  );
 }
 
-/// Stand-in picker for Windows, Linux and tests: a typed file path.
+/// The platform's own pickers (file dialogs on desktop, the document
+/// picker on iOS and macOS, SAF on Android).
+class PlatformPicker implements DocumentPicker {
+  const PlatformPicker();
+
+  @override
+  Future<DocumentRef?> pickOpen(BuildContext context) => pickDocument();
+
+  @override
+  Future<bool> saveAs(
+    BuildContext context,
+    DocumentSession session,
+    String suggestedName,
+  ) => session.saveAsPlaced(placeNewDocument, name: suggestedName);
+}
+
+/// Test stand-in: a typed file path.
 class PathPromptPicker implements DocumentPicker {
   const PathPromptPicker();
 
@@ -32,10 +53,18 @@ class PathPromptPicker implements DocumentPicker {
       _ref(await askName(context, title: '열기'));
 
   @override
-  Future<DocumentRef?> pickSave(
+  Future<bool> saveAs(
     BuildContext context,
+    DocumentSession session,
     String suggestedName,
-  ) async => _ref(await askName(context, title: '저장', initial: suggestedName));
+  ) async {
+    final ref = _ref(
+      await askName(context, title: '저장', initial: suggestedName),
+    );
+    if (ref == null) return false;
+    await session.saveAs(ref);
+    return true;
+  }
 }
 
 /// The document's name in the top bar (「무제」 before it is saved
@@ -70,14 +99,14 @@ class DocumentMenu extends StatelessWidget {
     }
   }
 
-  Future<void> _saveAs(BuildContext context) async {
-    final ref = await picker.pickSave(
+  Future<void> _saveAs(BuildContext context) => _run(
+    context,
+    () => picker.saveAs(
       context,
+      session,
       '${displayName(session.document)}.anisched',
-    );
-    if (ref == null || !context.mounted) return;
-    await _run(context, () => session.saveAs(ref));
-  }
+    ),
+  );
 
   Future<void> _open(BuildContext context, DocumentRef? known) async {
     final ref = known ?? await picker.pickOpen(context);
