@@ -55,7 +55,19 @@ class TimelineView extends StatefulWidget {
 }
 
 class _TimelineViewState extends State<TimelineView> {
-  int _shift = 0;
+  void _onView() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    chartView.addListener(_onView);
+  }
+
+  @override
+  void dispose() {
+    chartView.removeListener(_onView);
+    super.dispose();
+  }
 
   double get _labelWidth => switch (widget.layout.size) {
     SizeClass.wide => 250,
@@ -66,10 +78,10 @@ class _TimelineViewState extends State<TimelineView> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final window = ChartWindow.around(
+    final window = ChartWindow.of(
       widget.now,
       widget.layout.size,
-      shift: _shift,
+      chartView.value,
     );
     final rows = widget.parts;
     return ColoredBox(
@@ -83,56 +95,72 @@ class _TimelineViewState extends State<TimelineView> {
               if (widget.toolbar == null)
                 Text('${rows.length}건', style: TextStyle(color: c.muted)),
               ChartPager(
-                onShift: (d) => setState(() => _shift += d),
-                onToday: () => setState(() => _shift = 0),
+                onShift: (d) => chartView.value = chartView.value.scrolled(d),
+                onToday: () =>
+                    chartView.value = ChartView(days: chartView.value.days),
+                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
+                  window.days,
+                  zoomIn: zoomIn,
+                ),
               ),
             ],
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.line)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: _labelWidth),
-                Expanded(
-                  child: ChartHeader(
-                    window: window,
-                    today: widget.now,
-                    restWeekdays: widget.restWeekdays,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Expanded(
-            child: OwnScroll(
-              builder: (controller) => Scrollbar(
-                controller: controller,
-                child: ReorderableListView.builder(
-                  scrollController: controller,
-                  buildDefaultDragHandles: false,
-                  itemCount: rows.length,
-                  itemExtent: 46,
-                  onReorderItem: (from, to) {
-                    final keys = [for (final r in rows) r.key];
-                    keys.insert(to, keys.removeAt(from));
-                    widget.onReorder?.call(keys);
-                  },
-                  itemBuilder: (context, i) => _TimelineRow(
-                    key: ValueKey(rows[i].key),
-                    index: widget.onReorder == null ? null : i,
-                    group: rows[i],
-                    window: window,
-                    now: widget.now,
-                    labelWidth: _labelWidth,
-                    narrow: widget.layout.size == SizeClass.narrow,
-                    restWeekdays: widget.restWeekdays,
-                    onSchedule: widget.onSchedule,
-                    onDue: widget.onDue,
-                    selection: widget.selection,
+            child: ChartViewport(
+              days: window.days,
+              labelWidth: _labelWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: c.line)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(width: _labelWidth),
+                        Expanded(
+                          child: ChartHeader(
+                            window: window,
+                            today: widget.now,
+                            restWeekdays: widget.restWeekdays,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  Expanded(
+                    child: OwnScroll(
+                      builder: (controller) => Scrollbar(
+                        controller: controller,
+                        child: ReorderableListView.builder(
+                          scrollController: controller,
+                          buildDefaultDragHandles: false,
+                          itemCount: rows.length,
+                          itemExtent: 46,
+                          onReorderItem: (from, to) {
+                            final keys = [for (final r in rows) r.key];
+                            keys.insert(to, keys.removeAt(from));
+                            widget.onReorder?.call(keys);
+                          },
+                          itemBuilder: (context, i) => _TimelineRow(
+                            key: ValueKey(rows[i].key),
+                            index: widget.onReorder == null ? null : i,
+                            group: rows[i],
+                            window: window,
+                            now: widget.now,
+                            labelWidth: _labelWidth,
+                            narrow: widget.layout.size == SizeClass.narrow,
+                            restWeekdays: widget.restWeekdays,
+                            onSchedule: widget.onSchedule,
+                            onDue: widget.onDue,
+                            selection: widget.selection,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -45,7 +45,19 @@ class WorkView extends StatefulWidget {
 }
 
 class _WorkViewState extends State<WorkView> {
-  int _shift = 0;
+  void _onView() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    chartView.addListener(_onView);
+  }
+
+  @override
+  void dispose() {
+    chartView.removeListener(_onView);
+    super.dispose();
+  }
 
   double get _labelWidth => switch (widget.layout.size) {
     SizeClass.wide => 100,
@@ -57,10 +69,10 @@ class _WorkViewState extends State<WorkView> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final lanes = widget.lanes;
-    final window = ChartWindow.around(
+    final window = ChartWindow.of(
       widget.now,
       widget.layout.size,
-      shift: _shift,
+      chartView.value,
     );
     final rowCount = lanes == null
         ? 0
@@ -97,39 +109,55 @@ class _WorkViewState extends State<WorkView> {
                   ),
                 ),
               ChartPager(
-                onShift: (d) => setState(() => _shift += d),
-                onToday: () => setState(() => _shift = 0),
+                onShift: (d) => chartView.value = chartView.value.scrolled(d),
+                onToday: () =>
+                    chartView.value = ChartView(days: chartView.value.days),
+                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
+                  window.days,
+                  zoomIn: zoomIn,
+                ),
               ),
             ],
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.line)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: _labelWidth),
-                Expanded(
-                  child: ChartHeader(
-                    window: window,
-                    today: widget.now,
-                    restWeekdays: widget.restWeekdays,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Expanded(
-            child: OwnScroll(
-              builder: (controller) => Scrollbar(
-                controller: controller,
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: rowCount,
-                  itemExtent: 52,
-                  itemBuilder: (context, r) =>
-                      _laneRow(context, lanes!, r, window),
-                ),
+            child: ChartViewport(
+              days: window.days,
+              labelWidth: _labelWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: c.line)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(width: _labelWidth),
+                        Expanded(
+                          child: ChartHeader(
+                            window: window,
+                            today: widget.now,
+                            restWeekdays: widget.restWeekdays,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: OwnScroll(
+                      builder: (controller) => Scrollbar(
+                        controller: controller,
+                        child: ListView.builder(
+                          controller: controller,
+                          itemCount: rowCount,
+                          itemExtent: 52,
+                          itemBuilder: (context, r) =>
+                              _laneRow(context, lanes!, r, window),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

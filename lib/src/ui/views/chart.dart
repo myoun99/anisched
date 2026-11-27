@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/size_class.dart';
 import '../theme.dart';
@@ -14,16 +16,29 @@ DateTime chartDay(DateTime t) {
 class ChartWindow {
   const ChartWindow(this.start, this.days);
 
-  /// Today placed a little after the left edge, the column count by size.
-  factory ChartWindow.around(DateTime now, SizeClass size, {int shift = 0}) {
-    final (days, before) = switch (size) {
-      SizeClass.wide => (35, 11),
-      SizeClass.medium => (24, 7),
-      SizeClass.narrow => (10, 3),
-    };
+  /// Today placed about a third in from the left, scrolled by [shift]
+  /// days; [days] columns (zoom), or a count by size when null.
+  factory ChartWindow.around(
+    DateTime now,
+    SizeClass size, {
+    int shift = 0,
+    int? days,
+  }) {
+    final n =
+        days ??
+        switch (size) {
+          SizeClass.wide => 35,
+          SizeClass.medium => 24,
+          SizeClass.narrow => 10,
+        };
+    final before = (n * 0.3).round();
     final today = chartDay(now);
-    return ChartWindow(today.add(Duration(days: shift - before)), days);
+    return ChartWindow(today.add(Duration(days: shift - before)), n);
   }
+
+  /// The window for the shared [view] at [size].
+  factory ChartWindow.of(DateTime now, SizeClass size, ChartView view) =>
+      ChartWindow.around(now, size, shift: view.shift, days: view.days);
 
   final DateTime start;
   final int days;
@@ -34,12 +49,162 @@ class ChartWindow {
   DateTime dayAt(int i) => start.add(Duration(days: i));
 }
 
-/// Toolbar paging buttons: 「◀ 오늘 ▶」.
+/// Where the date area is scrolled to and how far it is zoomed, shared by
+/// the timeline and the work view and kept while the app runs.
+@immutable
+class ChartView {
+  const ChartView({this.shift = 0, this.days});
+
+  /// Days scrolled from the default position (negative = the past).
+  final int shift;
+
+  /// Days shown; null = the default for the screen size.
+  final int? days;
+
+  static const zoomSteps = [7, 10, 14, 21, 28, 35, 49, 70, 105];
+  static const minDays = 7;
+  static const maxDays = 105;
+
+  ChartView scrolled(int by) => ChartView(shift: shift + by, days: days);
+
+  ChartView zoomed(int toDays) =>
+      ChartView(shift: shift, days: toDays.clamp(minDays, maxDays));
+
+  /// One step in (fewer days) or out (more), from [current] days.
+  ChartView stepped(int current, {required bool zoomIn}) {
+    const steps = zoomSteps;
+    final next = zoomIn
+        ? steps.lastWhere((d) => d < current, orElse: () => steps.first)
+        : steps.firstWhere((d) => d > current, orElse: () => steps.last);
+    return zoomed(next);
+  }
+}
+
+/// The shared scroll and zoom of the date area.
+final chartView = ValueNotifier<ChartView>(const ChartView());
+
+/// Lets the date area be dragged sideways (empty space only: bars keep
+/// their own drags), scrolled with a wheel or trackpad, and zoomed with a
+/// pinch or Ctrl + wheel. Updates [chartView]; the chart redraws only
+/// the days in view.
+class ChartViewport extends StatefulWidget {
+  const ChartViewport({
+    super.key,
+    required this.days,
+    required this.labelWidth,
+    required this.child,
+  });
+
+  /// Days in view now (for the pixel-to-day scale).
+  final int days;
+
+  /// Width left of the dates (row labels), not part of the scale.
+  final double labelWidth;
+  final Widget child;
+
+  @override
+  State<ChartViewport> createState() => _ChartViewportState();
+}
+
+class _ChartViewportState extends State<ChartViewport> {
+  double _width = 1;
+  double _carry = 0;
+  final _pointers = <int, Offset>{};
+  double? _pinchStart;
+  int _pinchDays = 0;
+
+  double get _dayWidth => _width / widget.days;
+
+  void _pan(double dx) {
+    _carry += dx;
+    final whole = (_carry / _dayWidth).truncate();
+    if (whole == 0) return;
+    _carry -= whole * _dayWidth;
+    chartView.value = chartView.value.scrolled(-whole);
+  }
+
+  void _zoomTo(double factor) {
+    final days = (_pinchDays / factor).round();
+    if (days != widget.days) chartView.value = chartView.value.zoomed(days);
+  }
+
+  double _spread() {
+    final p = _pointers.values.toList();
+    return (p[0] - p[1]).distance;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        _width = (box.maxWidth - widget.labelWidth).clamp(1, double.infinity);
+        return Listener(
+          onPointerDown: (e) {
+            _pointers[e.pointer] = e.position;
+            if (_pointers.length == 2) {
+              _pinchStart = _spread();
+              _pinchDays = widget.days;
+            }
+          },
+          onPointerMove: (e) {
+            if (!_pointers.containsKey(e.pointer)) return;
+            _pointers[e.pointer] = e.position;
+            final start = _pinchStart;
+            if (_pointers.length == 2 && start != null && start > 0) {
+              _zoomTo(_spread() / start);
+            }
+          },
+          onPointerUp: (e) {
+            _pointers.remove(e.pointer);
+            if (_pointers.length < 2) _pinchStart = null;
+          },
+          onPointerCancel: (e) {
+            _pointers.remove(e.pointer);
+            if (_pointers.length < 2) _pinchStart = null;
+          },
+          onPointerSignal: (e) {
+            if (e is! PointerScrollEvent) return;
+            final keys = HardwareKeyboard.instance;
+            if (keys.isControlPressed || keys.isMetaPressed) {
+              chartView.value = chartView.value.stepped(
+                widget.days,
+                zoomIn: e.scrollDelta.dy < 0,
+              );
+            } else if (e.scrollDelta.dx != 0 || keys.isShiftPressed) {
+              final d = e.scrollDelta.dx != 0
+                  ? e.scrollDelta.dx
+                  : e.scrollDelta.dy;
+              _pan(-d);
+            }
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (_) => _carry = 0,
+            onHorizontalDragUpdate: (d) {
+              if (_pointers.length < 2) _pan(d.delta.dx);
+            },
+            child: widget.child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Toolbar paging and zoom buttons: 「◀ 오늘 ▶ − +」.
 class ChartPager extends StatelessWidget {
-  const ChartPager({super.key, required this.onShift, required this.onToday});
+  const ChartPager({
+    super.key,
+    required this.onShift,
+    required this.onToday,
+    this.onZoom,
+  });
 
   final ValueChanged<int> onShift;
   final VoidCallback onToday;
+
+  /// Zoom one step: true = in (fewer days).
+  final ValueChanged<bool>? onZoom;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -62,6 +227,19 @@ class ChartPager extends StatelessWidget {
         icon: Icons.chevron_right,
         onTap: () => onShift(7),
       ),
+      if (onZoom != null) ...[
+        const SizedBox(width: 4),
+        _IconFace(
+          key: const Key('chart-zoom-out'),
+          icon: Icons.remove,
+          onTap: () => onZoom!(false),
+        ),
+        _IconFace(
+          key: const Key('chart-zoom-in'),
+          icon: Icons.add,
+          onTap: () => onZoom!(true),
+        ),
+      ],
     ],
   );
 }
@@ -287,6 +465,7 @@ class ChartBar extends StatefulWidget {
 class _ChartBarState extends State<ChartBar> {
   BarEdge? _edge;
   double _dx = 0;
+  double _from = 0;
 
   (DateTime, DateTime) _dates(double dayWidth) {
     final s = chartDay(widget.start);
@@ -303,11 +482,16 @@ class _ChartBarState extends State<ChartBar> {
       GestureDetector(
         key: Key('bar-${edge.name}'),
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: (_) => setState(() {
+        // Measured from where the finger went down, so nothing is lost
+        // while the date area's own drag competes for the gesture.
+        dragStartBehavior: DragStartBehavior.down,
+        onHorizontalDragStart: (d) => setState(() {
           _edge = edge;
+          _from = d.globalPosition.dx;
           _dx = 0;
         }),
-        onHorizontalDragUpdate: (d) => setState(() => _dx += d.delta.dx),
+        onHorizontalDragUpdate: (d) =>
+            setState(() => _dx = d.globalPosition.dx - _from),
         onHorizontalDragEnd: (_) {
           final (s, e) = _dates(dayWidth);
           setState(() => _edge = null);
