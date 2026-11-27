@@ -17,6 +17,7 @@ import 'selection_bar.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import 'views/register_view.dart';
+import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
@@ -285,7 +286,17 @@ class _AppShellState extends State<AppShell> {
               }
             : null,
       ),
-      AppView.settings => ViewSlot(view: v, layout: layout),
+      AppView.settings => SettingsView(
+        now: now,
+        store: widget.store,
+        reader: widget.reader,
+        paces: _paces,
+        refresh: _refresh,
+        onChanged: () {
+          setState(() => _refresh++);
+          unawaited(_loadGroups());
+        },
+      ),
     };
   }
 
@@ -488,26 +499,6 @@ class _ViewButton extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Space reserved for one view until it is built from the data lane's
-/// models. It shows only the view's name.
-class ViewSlot extends StatelessWidget {
-  const ViewSlot({super.key, required this.view, required this.layout});
-
-  final AppView view;
-  final ScreenLayout layout;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return ColoredBox(
-      color: c.panelAlt,
-      child: Center(
-        child: Text(view.label, style: TextStyle(fontSize: 20, color: c.faint)),
       ),
     );
   }
