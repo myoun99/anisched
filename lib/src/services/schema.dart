@@ -16,7 +16,8 @@ class Migration {
 /// episodes, cuts, storyboards, rates, tasks, retakes). v3: parts with
 /// per-stage deadlines, settings, and timer intervals linked to tasks.
 /// v4: editable stage presets that new works copy. v5: a work's own
-/// seconds rounding.
+/// seconds rounding. v6: the user's own plan (start/end) beside the
+/// production deadline, and a work's default rate unit.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -34,6 +35,7 @@ CREATE TABLE work_intervals (
   const Migration(3, _v3PartsAndSettings),
   const Migration(4, _v4StagePresets),
   const Migration(5, _v5WorkRounding),
+  const Migration(6, _v6PlansAndDefaultUnit),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -301,4 +303,30 @@ void _v5WorkRounding(Database db) {
   db.execute('''
 ALTER TABLE works ADD COLUMN seconds_rounding TEXT
   CHECK (seconds_rounding IN ('exact', 'up', 'down', 'nearest'));''');
+}
+
+void _v6PlansAndDefaultUnit(Database db) {
+  for (final sql in const [
+    // Preselected when entering an episode's rates; rates keep their own.
+    '''
+ALTER TABLE works ADD COLUMN default_rate_unit TEXT NOT NULL DEFAULT 'fixed'
+  CHECK (default_rate_unit IN ('fixed', 'per_second'));''',
+    // The user's own plan for a part × stage, beside the production
+    // deadline in part_stage_dues. Either end may be open.
+    '''
+CREATE TABLE part_stage_plans (
+  part_id INTEGER NOT NULL REFERENCES parts(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  start_at INTEGER,
+  end_at INTEGER,
+  PRIMARY KEY (part_id, stage_id),
+  CHECK (start_at IS NOT NULL OR end_at IS NOT NULL),
+  CHECK (start_at IS NULL OR end_at IS NULL OR end_at >= start_at)
+);''',
+    // A cut's own plan, overriding its part's field by field.
+    'ALTER TABLE tasks ADD COLUMN plan_start_at INTEGER;',
+    'ALTER TABLE tasks ADD COLUMN plan_end_at INTEGER;',
+  ]) {
+    db.execute(sql);
+  }
 }

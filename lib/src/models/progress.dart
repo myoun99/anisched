@@ -28,6 +28,10 @@ class TaskRow {
     this.receivedAt,
     this.ownDueAt,
     this.partDueAt,
+    this.ownPlanStartAt,
+    this.ownPlanEndAt,
+    this.partPlanStartAt,
+    this.partPlanEndAt,
     this.pay,
     this.worked = Duration.zero,
   });
@@ -60,6 +64,14 @@ class TaskRow {
   /// The part's deadline for this stage, if any.
   final DateTime? partDueAt;
 
+  /// The user's own plan for this cut, if set (overrides the part's).
+  final DateTime? ownPlanStartAt;
+  final DateTime? ownPlanEndAt;
+
+  /// The user's plan for the part × stage, if any.
+  final DateTime? partPlanStartAt;
+  final DateTime? partPlanEndAt;
+
   /// Pay including paid retakes, or null when it cannot be computed yet.
   final int? pay;
 
@@ -71,6 +83,19 @@ class TaskRow {
 
   /// True when [dueAt] is the part's deadline (the task set none).
   bool get dueFromPart => ownDueAt == null && partDueAt != null;
+
+  /// When the user plans to start: the cut's own, else the part's.
+  DateTime? get planStartAt => ownPlanStartAt ?? partPlanStartAt;
+
+  /// When the user plans to finish: the cut's own, else the part's.
+  DateTime? get planEndAt => ownPlanEndAt ?? partPlanEndAt;
+
+  /// True when a cut in a part carries its own plan (either end).
+  bool get planOverridden =>
+      partId != null && (ownPlanStartAt != null || ownPlanEndAt != null);
+
+  /// Days between planned finish and deadline; negative = planned late.
+  int? get slackDays => _slack(planEndAt, dueAt);
 
   /// True when a cut in a part carries its own deadline.
   bool get dueOverridden => partId != null && ownDueAt != null;
@@ -197,6 +222,26 @@ class PartGroup {
     GroupKind.noPart => _earliest(tasks.map((t) => t.dueAt)),
   };
 
+  /// The user's planned start: the part's; for a storyboard, its task's;
+  /// for part-less cuts, the earliest.
+  DateTime? get planStartAt => switch (kind) {
+    GroupKind.part => _first.partPlanStartAt,
+    GroupKind.storyboard => _first.planStartAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.planStartAt)),
+  };
+
+  /// The user's planned finish: the part's; for a storyboard, its task's;
+  /// for part-less cuts, the latest.
+  DateTime? get planEndAt => switch (kind) {
+    GroupKind.part => _first.partPlanEndAt,
+    GroupKind.storyboard => _first.planEndAt,
+    GroupKind.noPart => _latest(tasks.map((t) => t.planEndAt)),
+  };
+
+  /// Days of margin between the planned finish and the deadline;
+  /// negative = the plan runs past the deadline. Null if either is unset.
+  int? get slackDays => _slack(planEndAt, dueAt);
+
   /// When the earliest task arrived.
   DateTime? get startAt => _earliest(tasks.map((t) => t.receivedAt));
 
@@ -207,6 +252,17 @@ class PartGroup {
   int get unpriced => tasks.where((t) => t.pay == null).length;
 
   Duration get worked => tasks.fold(Duration.zero, (a, t) => a + t.worked);
+}
+
+int? _slack(DateTime? planEnd, DateTime? due) =>
+    planEnd == null || due == null ? null : daysBetween(planEnd, due);
+
+DateTime? _latest(Iterable<DateTime?> times) {
+  DateTime? l;
+  for (final t in times) {
+    if (t != null && (l == null || t.isAfter(l))) l = t;
+  }
+  return l;
 }
 
 DateTime? _earliest(Iterable<DateTime?> times) {

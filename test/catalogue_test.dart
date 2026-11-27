@@ -233,6 +233,13 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       expect(CatalogueStore(db).settings.secondsRounding, SecondsRounding.down);
     });
 
+    test('a work remembers its default rate unit, per cut by default', () {
+      final w = store.createWork('작품A');
+      expect(store.workDefaultRateUnit(w), RateUnit.fixed);
+      store.setWorkDefaultRateUnit(w, RateUnit.perSecond);
+      expect(store.workDefaultRateUnit(w), RateUnit.perSecond);
+    });
+
     test('a work can override the app rounding', () {
       final w = store.createWork('작품A');
       final other = store.createWork('작품B');
