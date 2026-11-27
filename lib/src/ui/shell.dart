@@ -54,6 +54,8 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
+  Map<String, GroupSignals> _signals = const {};
+  Map<String, StagePace> _paces = const {};
   bool _showDone = false;
 
   @override
@@ -66,8 +68,18 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadGroups() async {
     final reader = widget.reader;
     if (reader == null) return;
-    final groups = await reader.partGroups(includeDone: _showDone);
-    if (mounted) setState(() => _groups = groups);
+    final done = _showDone;
+    final (groups, signals, paces) = await (
+      reader.partGroups(includeDone: done),
+      reader.signals(includeDone: done),
+      reader.stagePaces(),
+    ).wait;
+    if (!mounted) return;
+    setState(() {
+      _groups = groups;
+      _signals = signals;
+      _paces = {for (final p in paces) p.stageName: p};
+    });
   }
 
   void _select(AppView v) {
@@ -107,6 +119,8 @@ class _AppShellState extends State<AppShell> {
                             now: widget.clock(),
                             layout: layout,
                             showDone: _showDone,
+                            signals: _signals,
+                            paces: _paces,
                             onShowDoneChanged: (on) {
                               setState(() => _showDone = on);
                               unawaited(_loadGroups());

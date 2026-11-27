@@ -242,3 +242,38 @@ class SegmentGroup extends StatelessWidget {
     );
   }
 }
+
+/// The D slot: the deadline label, with the plan dot before it when the
+/// plan asks for action.
+class SignalLabel extends StatelessWidget {
+  const SignalLabel({super.key, required this.due, required this.plan});
+
+  final DueSignal due;
+  final PlanSignal plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final l = dueSignalLabel(due);
+    final dot = switch (planTone(plan)) {
+      PlanTone.red => c.retake,
+      PlanTone.amber => c.submitted,
+      PlanTone.none => null,
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 6,
+      children: [
+        if (dot != null) Dot(dot, key: const Key('plan-dot')),
+        Text(
+          l.text,
+          style: TextStyle(
+            color: l.late ? c.retake : (l.quiet ? c.faint : c.muted),
+            fontWeight: l.late ? FontWeight.w700 : FontWeight.w400,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+  }
+}

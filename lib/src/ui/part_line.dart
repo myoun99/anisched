@@ -11,7 +11,7 @@ import 'widgets.dart';
 
 const caretW = 32.0;
 const _progressW = 96.0;
-const _signalW = 84.0;
+const _signalW = 100.0;
 const _tabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
 class PartHeader extends StatelessWidget {
@@ -60,6 +60,7 @@ class PartLine extends StatelessWidget {
     required this.onTap,
     this.dimmed = false,
     this.signal,
+    this.signals,
   });
 
   final PartGroup group;
@@ -74,6 +75,10 @@ class PartLine extends StatelessWidget {
 
   /// Replaces the deadline label, e.g. one built from precomputed days.
   final Widget? signal;
+
+  /// The group's deadline and plan signals; when given they fill the D
+  /// slot and a plan that has not started dims the line.
+  final GroupSignals? signals;
 
   @override
   Widget build(BuildContext context) {
@@ -153,14 +158,23 @@ class PartLine extends StatelessWidget {
                     width: _signalW,
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child:
-                          signal ??
-                          DueText(
-                            g.dueAt,
-                            g.status,
-                            now,
-                            dayStartMinutes: dayStartMinutes,
-                          ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child:
+                            signal ??
+                            (signals == null
+                                ? null
+                                : SignalLabel(
+                                    due: signals!.due,
+                                    plan: signals!.plan,
+                                  )) ??
+                            DueText(
+                              g.dueAt,
+                              g.status,
+                              now,
+                              dayStartMinutes: dayStartMinutes,
+                            ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -171,7 +185,11 @@ class PartLine extends StatelessWidget {
         ),
       ),
     );
-    return dimmed ? Opacity(opacity: 0.5, child: line) : line;
+    final fade =
+        dimmed ||
+        (signals?.plan is PlanNotStarted &&
+            planTone(signals!.plan) == PlanTone.none);
+    return fade ? Opacity(opacity: 0.5, child: line) : line;
   }
 }
 
@@ -184,6 +202,8 @@ class PartDetails extends StatelessWidget {
     this.extra = const [],
     this.highlighted,
     this.onTask,
+    this.plan,
+    this.usual,
   });
 
   final PartGroup group;
@@ -198,6 +218,12 @@ class PartDetails extends StatelessWidget {
   /// Tapping a cut, when the view wants it (e.g. to start the timer).
   final ValueChanged<TaskRow>? onTask;
 
+  /// The plan signal; its reason shows as one line.
+  final PlanSignal? plan;
+
+  /// The stage's usual speeds (overall · recent).
+  final StagePace? usual;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -205,19 +231,30 @@ class PartDetails extends StatelessWidget {
     final accent = Theme.of(context).colorScheme.primary;
     final slack = g.slackDays;
     final perDay = pace?.perDay;
-    final plan = g.planStartAt == null
+    final planText = g.planStartAt == null
         ? '—'
         : '${formatDate(g.planStartAt)} – '
               '${g.planEndAt == null ? '마감' : formatDate(g.planEndAt)}';
     final facts = <(String, String)>[
       ('마감', formatDate(g.dueAt)),
-      ('내 계획', plan),
+      ('내 계획', planText),
       ('여유', slack == null ? '—' : '$slack일'),
       ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)}컷'),
       ('단가', formatMoney(g.currency, g.pay)),
       ('시간', formatWorked(g.worked)),
+      if (usual != null)
+        ('평소', '${_perDay(usual!.overall)} · 최근 ${_perDay(usual!.recent)}'),
+      if (plan case PlanNotStarted(:final startAt)) ('시작', formatDate(startAt)),
       ...extra,
     ];
+    final reason = plan == null ? null : planReason(plan!);
+    final reasonColor = plan == null
+        ? null
+        : switch (planTone(plan!)) {
+            PlanTone.red => c.retake,
+            PlanTone.amber => c.submitted,
+            PlanTone.none => c.muted,
+          };
     return DecoratedBox(
       key: Key('details-${g.key}'),
       decoration: BoxDecoration(
@@ -247,6 +284,21 @@ class PartDetails extends StatelessWidget {
                     ),
                 ],
               ),
+              if (reason != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    Dot(reasonColor!),
+                    Text(
+                      reason,
+                      style: TextStyle(
+                        color: reasonColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               if (g.kind != GroupKind.storyboard)
                 Wrap(
                   spacing: 4,
@@ -330,4 +382,9 @@ class _CutChip extends StatelessWidget {
       child: child,
     );
   }
+}
+
+String _perDay(UsualPace p) {
+  final d = p.perDay;
+  return d == null ? '—' : '${d.toStringAsFixed(1)}컷';
 }

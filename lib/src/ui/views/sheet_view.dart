@@ -19,6 +19,8 @@ class SheetView extends StatefulWidget {
     this.paceOf,
     this.showDone,
     this.onShowDoneChanged,
+    this.signals = const {},
+    this.paces = const {},
   });
 
   final List<PartGroup> parts;
@@ -37,6 +39,12 @@ class SheetView extends StatefulWidget {
   /// then reloads [parts] with or without done work). Null keeps it here.
   final bool? showDone;
   final ValueChanged<bool>? onShowDoneChanged;
+
+  /// Deadline and plan signals by group key (reader.signals).
+  final Map<String, GroupSignals> signals;
+
+  /// Usual speeds by stage name (reader.stagePaces).
+  final Map<String, StagePace> paces;
 
   @override
   State<SheetView> createState() => _SheetViewState();
@@ -122,10 +130,18 @@ class _SheetViewState extends State<SheetView> {
                       dayStartMinutes: widget.dayStartMinutes,
                       expanded: open,
                       selected: _selected == p.key,
+                      signals: widget.signals[p.key],
                       onTap: () => _toggle(p),
                     ),
                     if (open)
-                      PartDetails(group: p, pace: widget.paceOf?.call(p)),
+                      PartDetails(
+                        group: p,
+                        pace:
+                            widget.signals[p.key]?.pace ??
+                            widget.paceOf?.call(p),
+                        plan: widget.signals[p.key]?.plan,
+                        usual: widget.paces[p.stageName],
+                      ),
                   ],
                 );
               },

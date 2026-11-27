@@ -11,7 +11,6 @@ import '../format.dart';
 import '../part_line.dart';
 import '../theme.dart';
 import '../timer_card.dart';
-import '../widgets.dart';
 
 /// Today: the timer, how many cuts today asks for, the work whose plan has
 /// started, then work not started yet (dimmed). Usual pace and this
@@ -38,7 +37,8 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   TodayView _today = TodayView.empty;
-  List<UsualPace>? _paces;
+  Map<String, StagePace> _paces = const {};
+  bool _pacesLoaded = false;
   MonthlyTotals? _month;
   final _expanded = <String>{};
   String? _selected;
@@ -52,6 +52,7 @@ class _TodayScreenState extends State<TodayScreen> {
     super.initState();
     _lastTask = widget.timer?.running()?.taskId;
     unawaited(_load());
+    unawaited(_loadPaces());
   }
 
   @override
@@ -66,8 +67,13 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _loadPaces() async {
-    final p = await widget.reader.usualPaces();
-    if (mounted) setState(() => _paces = p);
+    final p = await widget.reader.stagePaces();
+    if (mounted) {
+      setState(() {
+        _paces = {for (final x in p) x.stageName: x};
+        _pacesLoaded = true;
+      });
+    }
   }
 
   Future<void> _loadMonth() async {
@@ -132,9 +138,9 @@ class _TodayScreenState extends State<TodayScreen> {
           open: _openPace,
           onTap: () {
             setState(() => _openPace = !_openPace);
-            if (_openPace && _paces == null) unawaited(_loadPaces());
+            if (_openPace && !_pacesLoaded) unawaited(_loadPaces());
           },
-          child: _PaceTable(paces: _paces),
+          child: _PaceTable(paces: _paces.values.toList()),
         ),
         _Fold(
           key: const Key('fold-month'),
@@ -161,6 +167,7 @@ class _TodayScreenState extends State<TodayScreen> {
         if (!_expanded.remove(g.key)) _expanded.add(g.key);
       }),
       onTask: widget.timer == null ? null : _startOn,
+      paces: _paces,
     );
     return ColoredBox(
       color: c.panelAlt,
@@ -201,9 +208,11 @@ class _TodayList extends StatelessWidget {
     required this.controller,
     required this.onToggle,
     required this.onTask,
+    required this.paces,
   });
 
   final TodayView today;
+  final Map<String, StagePace> paces;
   final Set<String> expanded;
   final String? selected;
   final int? runningTask;
@@ -286,18 +295,15 @@ class _TodayList extends StatelessWidget {
         dayStartMinutes: 0,
         expanded: open,
         selected: selected == g.key,
-        dimmed: e.beforePlan,
-        signal: DueText.days(e.dueInDays, g.status),
+        signals: GroupSignals(due: e.due, plan: e.plan, pace: e.pace),
         onTap: () => onToggle(g),
       ),
       if (open)
         PartDetails(
           group: g,
           pace: e.pace,
-          extra: [
-            if (e.beforePlan && g.planStartAt != null)
-              ('시작', formatDate(g.planStartAt)),
-          ],
+          plan: e.plan,
+          usual: paces[g.stageName],
           highlighted: runningTask,
           onTask: onTask,
         ),
@@ -417,24 +423,25 @@ class _Fold extends StatelessWidget {
 class _PaceTable extends StatelessWidget {
   const _PaceTable({required this.paces});
 
-  final List<UsualPace>? paces;
+  final List<StagePace> paces;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final list = paces ?? const [];
+    String perDay(UsualPace p) =>
+        p.perDay == null ? '—' : p.perDay!.toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         spacing: 4,
         children: [
-          for (final p in list)
+          for (final p in paces)
             Row(
               children: [
                 Text(p.stageName),
                 const Spacer(),
                 Text(
-                  p.perDay == null ? '—' : '${p.perDay!.toStringAsFixed(1)}컷/일',
+                  '${perDay(p.overall)} · 최근 ${perDay(p.recent)}컷/일',
                   style: TextStyle(
                     color: c.muted,
                     fontFeatures: const [FontFeature.tabularFigures()],

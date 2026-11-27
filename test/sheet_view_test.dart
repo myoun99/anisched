@@ -22,6 +22,7 @@ Future<List<PartGroup>> pumpSheet(WidgetTester tester, Size size) async {
       home: Scaffold(
         body: SheetView(
           parts: groups,
+          signals: store.signals(includeDone: true),
           now: now,
           layout: ScreenLayout.of(size.width, size.height),
           paceOf: store.paceOf,
@@ -90,5 +91,22 @@ void main() {
     final star = part(gs, '별빛 정류장', 'A', '원화');
     expect(find.byKey(Key('line-${riko.key}')), findsOneWidget);
     expect(find.byKey(Key('line-${star.key}')), findsNothing);
+  });
+
+  testWidgets('a plan past its deadline puts a dot by the D label', (t) async {
+    final gs = await pumpSheet(t, const Size(1280, 800));
+    final c = part(gs, '별빛 정류장', 'C', 'LO');
+    final line = find.byKey(Key('line-${c.key}'));
+    expect(
+      find.descendant(of: line, matching: find.byKey(const Key('plan-dot'))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: line, matching: find.text('D-4')),
+      findsOneWidget,
+    );
+    await t.tap(line);
+    await t.pump();
+    expect(find.text('계획 끝이 마감보다 늦음'), findsOneWidget);
   });
 }
