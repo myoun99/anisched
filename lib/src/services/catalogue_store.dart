@@ -120,15 +120,223 @@ class CatalogueStore {
     };
     final added = <int>[];
     final skipped = <String>[];
-    for (final n in numbers) {
-      if (!existing.add(n)) {
-        skipped.add(n);
-        continue;
+    final insert = db.prepare(
+      'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
+      'VALUES (?, ?, ?, ?, ?);',
+    );
+    try {
+      for (final n in numbers) {
+        if (!existing.add(n)) {
+          skipped.add(n);
+          continue;
+        }
+        insert.execute([episodeId, n, naturalSortKey(n), lengthMs, partId]);
+        added.add(db.lastInsertRowId);
       }
-      added.add(addCut(episodeId, n, lengthMs: lengthMs, partId: partId));
+    } finally {
+      insert.close();
     }
     return (added: added, skipped: skipped);
   });
+
+  /// Adds an episode and its cuts from what the user typed (see
+  /// [parseCutNumbers]), optionally in a new part, in one transaction.
+  /// Unreadable input changes nothing and throws [CutNumbersException].
+  ({int episodeId, int? partId, List<int> cutIds}) addEpisodeWithCuts(
+    int workId,
+    String episodeNumber,
+    String cuts, {
+    String? partLabel,
+    int? lengthMs,
+  }) {
+    final parsed = parseCutNumbers(cuts);
+    if (!parsed.ok) throw CutNumbersException(parsed.errors);
+    return _transaction(() {
+      final ep = addEpisode(workId, episodeNumber);
+      final part = partLabel == null
+          ? null
+          : addPart(ep, partLabel, plannedCutCount: parsed.numbers.length);
+      final added = addCuts(
+        ep,
+        parsed.numbers,
+        partId: part,
+        lengthMs: lengthMs,
+      ).added;
+      return (episodeId: ep, partId: part, cutIds: added);
+    });
+  }
+
+  /// A work, its first episode and its cuts in one go — see [createWork]
+  /// and [addEpisodeWithCuts].
+  ({int workId, int episodeId, int? partId, List<int> cutIds})
+  createWorkWithCuts(
+    String title,
+    String episodeNumber,
+    String cuts, {
+    String currency = 'JPY',
+    int? clientId,
+    int? presetId,
+    String? partLabel,
+  }) {
+    final parsed = parseCutNumbers(cuts);
+    if (!parsed.ok) throw CutNumbersException(parsed.errors);
+    return _transaction(() {
+      final w = createWork(
+        title,
+        currency: currency,
+        clientId: clientId,
+        presetId: presetId,
+      );
+      final r = addEpisodeWithCuts(
+        w,
+        episodeNumber,
+        cuts,
+        partLabel: partLabel,
+      );
+      return (
+        workId: w,
+        episodeId: r.episodeId,
+        partId: r.partId,
+        cutIds: r.cutIds,
+      );
+    });
+  }
+
+  /// Takes missing numbers out of an episode (archives those cuts, so
+  /// they can be restored). Returns the numbers that were not there.
+  List<String> removeCuts(int episodeId, Iterable<String> numbers) =>
+      _transaction(() {
+        final missing = <String>[];
+        for (final n in numbers) {
+          db.execute(
+            'UPDATE cuts SET archived_at = ? WHERE episode_id = ? '
+            'AND number = ? AND archived_at IS NULL;',
+            [_now(), episodeId, n],
+          );
+          if (db.updatedRows == 0) missing.add(n);
+        }
+        return missing;
+      });
+
+  /// Splits a cut into lettered cuts: `C012` with `['A', 'B', 'C']`
+  /// becomes `C012A` (the same cut, keeping its tasks) plus new `C012B`
+  /// and `C012C` in the same part with the same length and a task for
+  /// each stage the original has. Returns every resulting cut id.
+  List<int> splitCut(int cutId, List<String> suffixes) => _transaction(() {
+    if (suffixes.isEmpty) throw ArgumentError('No suffixes to split into.');
+    final c = db.select(
+      'SELECT episode_id, number, length_ms, part_id FROM cuts WHERE id = ?;',
+      [cutId],
+    ).first;
+    final number = c['number'] as String;
+    final episode = c['episode_id'] as int;
+    _rename(cutId, '$number${suffixes.first}');
+    final added = addCuts(
+      episode,
+      [for (final s in suffixes.skip(1)) '$number$s'],
+      partId: c['part_id'] as int?,
+      lengthMs: c['length_ms'] as int?,
+    );
+    if (added.skipped.isNotEmpty) {
+      throw StateError('Cut numbers already in use: ${added.skipped}.');
+    }
+    final stages = [
+      for (final r in db.select(
+        'SELECT stage_id FROM tasks WHERE cut_id = ? AND archived_at IS NULL;',
+        [cutId],
+      ))
+        r['stage_id'] as int,
+    ];
+    for (final id in added.added) {
+      for (final s in stages) {
+        addTask(s, cutId: id);
+      }
+    }
+    return [cutId, ...added.added];
+  });
+
+  /// Joins cuts of one episode into one shared cut: the first in number
+  /// order stays (with its tasks and length) and is renamed `C012-014`;
+  /// the others are archived. Returns the kept cut's id.
+  int mergeCuts(List<int> cutIds) => _transaction(() {
+    if (cutIds.length < 2) throw ArgumentError('Merge needs two cuts.');
+    final rows = db.select(
+      'SELECT id, episode_id, number FROM cuts WHERE id IN '
+      '(${List.filled(cutIds.length, '?').join(', ')}) '
+      'AND archived_at IS NULL ORDER BY sort_key, id;',
+      cutIds,
+    );
+    if (rows.length != cutIds.toSet().length ||
+        rows.map((r) => r['episode_id']).toSet().length != 1) {
+      throw ArgumentError('Merge live cuts of one episode only.');
+    }
+    final keep = rows.first['id'] as int;
+    for (final r in rows.skip(1)) {
+      db.execute('UPDATE cuts SET archived_at = ? WHERE id = ?;', [
+        _now(),
+        r['id'],
+      ]);
+    }
+    _rename(
+      keep,
+      sharedCutNumber(
+        rows.first['number'] as String,
+        rows.last['number'] as String,
+      ),
+    );
+    return keep;
+  });
+
+  /// Renames cuts in one go — swaps included (`C1`↔`C2`). Fails, changing
+  /// nothing, if a new number is already used by another live cut.
+  void renumberCuts(Map<int, String> newNumbers) => _transaction(() {
+    for (final id in newNumbers.keys) {
+      db.execute('UPDATE cuts SET number = ? WHERE id = ?;', [
+        '\$renumber\$$id',
+        id,
+      ]);
+    }
+    try {
+      newNumbers.forEach(_rename);
+    } on SqliteException {
+      throw StateError('A new cut number is already in use.');
+    }
+  });
+
+  void _rename(int cutId, String number) => db.execute(
+    'UPDATE cuts SET number = ?, sort_key = ? WHERE id = ?;',
+    [number, naturalSortKey(number), cutId],
+  );
+
+  void renameClient(int clientId, String name) =>
+      db.execute('UPDATE clients SET name = ? WHERE id = ?;', [name, clientId]);
+
+  /// Sets a client's closing day; null closes at month end.
+  void setClientClosingDay(int clientId, int? day) => db.execute(
+    'UPDATE clients SET closing_day = ? WHERE id = ?;',
+    [day, clientId],
+  );
+
+  void renameWork(int workId, String title) =>
+      db.execute('UPDATE works SET title = ? WHERE id = ?;', [title, workId]);
+
+  void setWorkClient(int workId, int? clientId) => db.execute(
+    'UPDATE works SET client_id = ? WHERE id = ?;',
+    [clientId, workId],
+  );
+
+  void setWorkCurrency(int workId, String currency) => db.execute(
+    'UPDATE works SET currency = ? WHERE id = ?;',
+    [currency, workId],
+  );
+
+  /// Renames an episode (its number keeps sorting naturally) and sets or
+  /// clears its title.
+  void renameEpisode(int episodeId, String number, {String? title}) =>
+      db.execute(
+        'UPDATE episodes SET number = ?, sort_key = ?, title = ? WHERE id = ?;',
+        [number, naturalSortKey(number), title, episodeId],
+      );
 
   /// Puts cuts in a part (or takes them out with null). The part must be
   /// in the cuts' episode.
@@ -506,7 +714,23 @@ ORDER BY 4 DESC, 1, 2;''');
       'AND t.stage_id = ? AND t.archived_at IS NULL) ORDER BY c.sort_key;',
       [partId, stageId],
     );
-    return [for (final c in cuts) addTask(stageId, cutId: c['id'] as int)];
+    if (cuts.isEmpty) return const <int>[];
+    // One statement for all cuts; then the part's default kickoff once.
+    final now = _now();
+    final insert = db.prepare(
+      'INSERT INTO tasks (stage_id, cut_id, received_at) VALUES (?, ?, ?);',
+    );
+    final ids = <int>[];
+    try {
+      for (final c in cuts) {
+        insert.execute([stageId, c['id'], now]);
+        ids.add(db.lastInsertRowId);
+      }
+    } finally {
+      insert.close();
+    }
+    _defaultKickoff(ids.first);
+    return ids;
   });
 
   /// The task's deadline: its own, else its part's for the stage.

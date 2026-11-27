@@ -13,7 +13,7 @@ class CutNumbersParse {
 }
 
 /// Ranges longer than this are refused as a likely typo.
-const maxCutRange = 1000;
+const maxCutRange = 3000;
 
 final _separators = RegExp(r'[,、，\s]+');
 final _rangeMark = RegExp(r'\s*(?:~|〜|～|–|—|\.\.)\s*');
@@ -102,4 +102,25 @@ String formatCutNumbers(List<String> numbers) {
     }
   }
   return out.join(', ');
+}
+
+/// Thrown when typed cut numbers cannot all be read; [items] are the
+/// pieces that failed.
+class CutNumbersException implements Exception {
+  CutNumbersException(this.items);
+
+  final List<String> items;
+
+  @override
+  String toString() => 'CutNumbersException: ${items.join(', ')}';
+}
+
+/// The number of a shared cut made from [first] to [last]: `C012`+`C014`
+/// → `C012-014` (the last's digits when the prefixes match), otherwise
+/// `first-last`.
+String sharedCutNumber(String first, String last) {
+  final a = _numbered.firstMatch(first);
+  final b = _numbered.firstMatch(last);
+  if (a != null && b != null && a[1] == b[1]) return '$first-${b[2]}';
+  return '$first-$last';
 }
