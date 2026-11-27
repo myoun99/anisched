@@ -354,7 +354,7 @@ class Pace {
   /// The end the pace counts to.
   final DateTime end;
 
-  /// True when today is a rest weekday.
+  /// True when today is a rest weekday or a day off.
   final bool restToday;
 
   /// Cuts per working day, or null when no working day is left.
@@ -369,15 +369,42 @@ class Pace {
       startsLater || restToday ? 0 : (perDay ?? remaining.toDouble());
 }
 
+/// A run of calendar days off, both ends included. Dates are compared by
+/// their year, month and day only.
+class DaysOff {
+  DaysOff(DateTime start, [DateTime? end])
+    : start = _date(start),
+      end = _date(end ?? start) {
+    if (this.end.isBefore(this.start)) {
+      throw ArgumentError('Days off cannot end before they start.');
+    }
+  }
+
+  final DateTime start;
+  final DateTime end;
+
+  bool contains(DateTime date) {
+    final d = _date(date);
+    return !d.isBefore(start) && !d.isAfter(end);
+  }
+
+  static DateTime _date(DateTime t) => DateTime.utc(t.year, t.month, t.day);
+}
+
 /// The pace for [group] as of [now], or null when it has no end date.
-/// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday).
+/// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday);
+/// [daysOff] adds specific days. Both are skipped when counting days.
 Pace? paceFor(
   PartGroup group,
   DateTime now, {
   int dayStartMinutes = 0,
   Set<int> restWeekdays = const {},
+  Iterable<DaysOff> daysOff = const [],
   PaceEnd endAt = PaceEnd.plan,
 }) {
+  bool off(DateTime d) =>
+      restWeekdays.contains(d.weekday) || daysOff.any((r) => r.contains(d));
+
   final endTime = switch (endAt) {
     PaceEnd.plan => group.planEndAt ?? group.dueAt,
     PaceEnd.due => group.dueAt,
@@ -395,13 +422,13 @@ Pace? paceFor(
   final to = dateOf(endTime);
   var workDays = 0;
   for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
-    if (!restWeekdays.contains(d.weekday)) workDays++;
+    if (!off(d)) workDays++;
   }
   return Pace(
     remaining: group.tasks.where((t) => t.isOpen).length,
     workDays: workDays,
     startsLater: startsLater,
     end: endTime,
-    restToday: restWeekdays.contains(today.weekday),
+    restToday: off(today),
   );
 }
