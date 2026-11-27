@@ -12,6 +12,7 @@ import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
 import '../format.dart';
+import '../instant.dart';
 import '../pick_field.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -274,7 +275,7 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   Future<void> _pickDate(bool due) async {
-    final d = await showDatePicker(
+    final d = await showInstantDatePicker(
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
@@ -285,6 +286,12 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   // ---- build ----
+
+  /// The cut grids keep wide side margins on phones: room to drag the page
+  /// without starting a pick on a cell.
+  EdgeInsets get _gridPadding => widget.layout.size == SizeClass.narrow
+      ? const EdgeInsets.fromLTRB(36, 10, 36, 24)
+      : const EdgeInsets.fromLTRB(14, 10, 14, 24);
 
   @override
   Widget build(BuildContext context) {
@@ -319,14 +326,14 @@ class _RegisterViewState extends State<RegisterView> {
                   sliver: SliverToBoxAdapter(child: _summary(context)),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.all(14),
+                  padding: _gridPadding,
                   sliver: SliverGrid.builder(
                     gridDelegate:
                         const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 76,
-                          mainAxisExtent: 30,
-                          mainAxisSpacing: 3,
-                          crossAxisSpacing: 3,
+                          maxCrossAxisExtent: 60,
+                          mainAxisExtent: 24,
+                          mainAxisSpacing: 2,
+                          crossAxisSpacing: 2,
                         ),
                     itemCount: cells.length + 1,
                     itemBuilder: (context, i) => i == cells.length
@@ -340,14 +347,14 @@ class _RegisterViewState extends State<RegisterView> {
                     sliver: SliverToBoxAdapter(child: _savedBar(context)),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.all(14),
+                    padding: _gridPadding,
                     sliver: SliverGrid.builder(
                       gridDelegate:
                           const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 76,
-                            mainAxisExtent: 30,
-                            mainAxisSpacing: 3,
-                            crossAxisSpacing: 3,
+                            maxCrossAxisExtent: 60,
+                            mainAxisExtent: 24,
+                            mainAxisSpacing: 2,
+                            crossAxisSpacing: 2,
                           ),
                       itemCount: _saved.length,
                       itemBuilder: (context, i) =>
@@ -656,7 +663,7 @@ class _RegisterViewState extends State<RegisterView> {
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10.5,
                   fontFeatures: const [FontFeature.tabularFigures()],
                   color: clash
                       ? scheme.error
@@ -818,7 +825,7 @@ class _RegisterViewState extends State<RegisterView> {
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10.5,
                   color: clash
                       ? scheme.error
                       : cut.archived
@@ -894,6 +901,7 @@ class _RegisterViewState extends State<RegisterView> {
               SizedBox(
                 width: 64,
                 child: TextField(
+                  onTapOutside: unfocusOutside,
                   key: Key(key),
                   controller: ctl,
                   textAlign: TextAlign.center,

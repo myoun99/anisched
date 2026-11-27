@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'instant.dart';
+
 import '../models/document.dart';
 import '../platform/documents.dart';
 import '../services/document_session.dart';
@@ -125,6 +127,7 @@ class DocumentMenu extends StatelessWidget {
     return PopupMenuButton<void Function()>(
       key: const Key('file-menu'),
       tooltip: '',
+      popUpAnimationStyle: instant,
       onSelected: (f) => f(),
       itemBuilder: (_) => [
         PopupMenuItem(
