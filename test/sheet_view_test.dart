@@ -14,7 +14,7 @@ Future<List<PartGroup>> pumpSheet(WidgetTester tester, Size size) async {
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final store = sampleCatalogue(now);
-  final groups = store.partGroups();
+  final groups = store.partGroups(includeDone: true);
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light(),

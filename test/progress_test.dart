@@ -528,5 +528,92 @@ void main() {
       expect(byLabel['behind']!.planStarted, isTrue);
       expect(byLabel['planned']!.beforePlan, isFalse);
     });
+
+    group('usual pace and tightness', () {
+      test('cuts handed over in 4 weeks ÷ working days, per stage name', () {
+        store.settings.restWeekdays = {6, 7};
+        final other = store.createWork('마법소녀 리코');
+        final otherEp = store.addEpisode(other, '#11');
+        final otherLo = store
+            .stages(other)
+            .firstWhere((s) => s.name == 'LO')
+            .id;
+        DateTime daysAgo(int n) => now.subtract(Duration(days: n));
+        void handed(
+          int stage,
+          int episode,
+          String cut,
+          int ago, {
+          bool done = false,
+        }) {
+          final t = store.addTask(stage, cutId: store.addCut(episode, cut));
+          CatalogueStore(
+            db,
+            clock: () => daysAgo(ago),
+          ).setStatus(t, done ? TaskStatus.done : TaskStatus.submitted);
+        }
+
+        handed(lo, ep, 'C1', 1);
+        handed(lo, ep, 'C2', 10, done: true); // done without a submission
+        handed(otherLo, otherEp, 'C3', 27); // same stage name, other work
+        handed(lo, ep, 'C4', 28); // just outside the 4 weeks
+        handed(genga, ep, 'C5', 3);
+        store.addTask(genga, cutId: store.addCut(ep, 'C6')); // not handed
+        store.addDaysOff(DateTime(2026, 11, 16), end: DateTime(2026, 11, 20));
+
+        final paces = {for (final u in store.usualPaces()) u.stageName: u};
+        // 10/31..11/27 = 28 days, 8 weekend days, 5 days off → 15.
+        expect(paces['LO']!.workDays, 15);
+        expect(paces['LO']!.cuts, 3);
+        expect(paces['LO']!.perDay, closeTo(3 / 15, 1e-9));
+        expect(paces['원화']!.cuts, 1);
+        expect(paces.keys.toSet(), {'LO', '원화'});
+      });
+
+      test('needed vs usual: above is tight, above 1.5× is over', () {
+        Pace p(int remaining, int days) => Pace(
+          remaining: remaining,
+          workDays: days,
+          startsLater: false,
+          end: now,
+        );
+        expect(paceLevel(p(4, 2), 2), PaceLevel.ok); // 2 = 2
+        expect(paceLevel(p(5, 2), 2), PaceLevel.tight); // 2.5
+        expect(paceLevel(p(6, 2), 2), PaceLevel.tight); // 3 = 1.5×
+        expect(paceLevel(p(7, 2), 2), PaceLevel.over); // 3.5
+        expect(paceLevel(p(3, 0), 2), PaceLevel.over); // behind
+        expect(paceLevel(p(3, 2), null), PaceLevel.unknown);
+        expect(paceLevel(p(3, 2), 0), PaceLevel.unknown);
+        expect(paceLevel(p(0, 2), null), PaceLevel.ok); // nothing left
+      });
+    });
+
+    test('done hides only finished units; done cuts still count inside', () {
+      final part = partWithCuts('B', ['C1', 'C2'], lo, 3);
+      final ids = tasksOf(part, lo);
+      store.setStatus(ids[0], TaskStatus.done);
+      // Part-less: one done, one open → the bundle stays with both.
+      final a = store.addTask(lo, cutId: store.addCut(ep, 'C8'));
+      store
+        ..addTask(lo, cutId: store.addCut(ep, 'C9'))
+        ..setStatus(a, TaskStatus.done);
+      // A finished storyboard disappears.
+      final conte = store.stages(work).first.id;
+      final sb = store.addTask(
+        conte,
+        storyboardId: store.addStoryboard(ep, '콘티'),
+      );
+      store.setStatus(sb, TaskStatus.done);
+
+      var groups = store.partGroups();
+      expect(groups.map((g) => '${g.kind.name} ${g.handed}/${g.total}'), [
+        'part 1/2',
+        'noPart 1/2',
+      ]);
+      store.setStatus(ids[1], TaskStatus.done);
+      groups = store.partGroups();
+      expect(groups.map((g) => g.kind), [GroupKind.noPart]);
+      expect(store.partGroups(includeDone: true), hasLength(3));
+    });
   });
 }

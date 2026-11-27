@@ -108,6 +108,26 @@
 - `today()` 의 `cutsToday` = 아직 손에 있는 모든 묶음의 오늘 몫 합(목록에 안 보이는 묶음 포함) — 겹치는 파트가 더해짐.
 - `PartStageRow` 의 고정 필드가 아니라 `paceOf(group)` 로 계산 — 「지금」과 설정에 따라 바뀌는 값이라서.
 
+## 읽기 경로 — `CatalogueReader` (앱은 `BackgroundCatalogueReader`)
+
+- 보기는 `CatalogueReader`(Future)로만 읽는다: `partGroups` · `today`(→ `TodayView`) · `monthlyTotals` · `usualPaces`.
+- `BackgroundCatalogueReader.open(경로, writer: 메인 연결)` — 오래 사는 isolate 하나가 같은 파일을
+  **읽기 전용**으로 따로 열고(WAL이라 메인이 쓰는 중에도 읽힘) 요청을 순서대로 처리. 쓰기는 메인 isolate 의
+  `CatalogueStore` 그대로.
+- **낡은 응답 버림:** 메인 연결의 모든 쓰기(`updatesSync`)가 세대 번호를 올린다. 읽기가 오가는 사이에
+  세대가 바뀌었으면 자동으로 다시 묻는다(최대 3번, 그 뒤엔 마지막 답) — UI 가 따로 챙길 것 없음.
+- 실패: 쿼리 오류 → 그 읽기만 `CatalogueReadException`, 리더는 계속 동작. isolate 가 죽으면 기다리던 읽기는
+  모두 `StateError`. `close()` 뒤 읽기도 `StateError`. 끝나지 않는 Future 없음(테스트로 확인).
+- 「지금」은 메인 쪽 시계를 요청마다 실어 보냄(마감·하루 몇 컷 계산이 메인 시계 기준).
+- `SyncCatalogueReader` 는 테스트 전용.
+
+## 평소 속도 · 빠듯함
+
+- `usualPaces({days = 28})` — **공정 이름마다**(작품이 달라도 「LO」는 하나): 최근 4주(오늘 포함) 동안 넘긴 컷
+  (제출일, 제출 없이 완료면 완료일) ÷ 그 기간의 작업일(쉬는 요일·쉬는 날 뺌).
+- `paceLevel(필요 pace, 평소)` → `ok` · `tight`(평소 초과, 노랑) · `over`(1.5배 초과 또는 남은 작업일 없음, 빨강) ·
+  `unknown`(평소 기록 없음). 판정은 models 에 하나 — UI 는 사본을 만들지 않는다.
+
 ## 보기용 쿼리 (`CatalogueStore`)
 
 - `taskRows({workId})` — 살아 있는 작업 한 줄씩(작품·화·파트·공정·컷 순). 단가·길이·테이크·유료
@@ -115,6 +135,8 @@
 - `partGroups({workId})` (= `PartStageRow`) — 스케줄 단위 = **파트 × 공정**. 파트 없는 컷은 화 × 공정마다
   「파트 없음」 묶음 하나(`GroupKind.noPart`, 마감 = 그 컷들 중 가장 이른 것), 콘티 작업은 혼자서 한 단위.
   **마감 순**(마감 없음은 끝). 상태·작품 거르기는 UI.
+  **완료된 묶음은 기본으로 빠진다**(`includeDone: true` 로 포함). 아직 열린 파트 안의 완료 컷은 남아서 「3/6」에 셈.
+  완료 이력이 쌓여도 목록 비용이 늘지 않는 이유가 이것.
   - 상태별 컷 수 `counts`, `handed/total`(제출·완료 / 전체), 계산된 상태 `status`,
     마감(파트 마감 / 혼자면 그 작업 마감), 착수(가장 이른 받은 날), 금액 `pay` + 미정 `unpriced`
     (작품 하나 = 통화 하나), 작업시간 `worked`.

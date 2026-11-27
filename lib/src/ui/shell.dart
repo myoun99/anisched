@@ -44,7 +44,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
-  late final List<PartGroup> _groups = widget.store?.partGroups() ?? const [];
+  late final List<PartGroup> _groups =
+      widget.store?.partGroups(includeDone: true) ?? const [];
   late final int _dayStart = widget.store?.settings.dayStartMinutes ?? 0;
 
   void _select(AppView v) {
