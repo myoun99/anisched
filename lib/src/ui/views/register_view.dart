@@ -17,6 +17,7 @@ import '../instant.dart';
 import '../pick_field.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../text/strings.dart';
 
 /// Registering cuts, one step after another: 회사 → 작품 → 화수 → 파트 →
 /// 컷. Each of the first four picks from what is registered, with
@@ -218,7 +219,7 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   Future<void> _addCut() async {
-    final name = await askName(context, title: '컷 추가');
+    final name = await askName(context, title: S.addCut.t);
     if (name == null || !mounted) return;
     setState(() => _cuts.add(name));
   }
@@ -226,7 +227,7 @@ class _RegisterViewState extends State<RegisterView> {
   Future<void> _rename(String id) async {
     final name = await askName(
       context,
-      title: '컷 이름',
+      title: S.cutName.t,
       initial: _cuts.nameOf(id),
     );
     if (name == null || !mounted) return;
@@ -268,7 +269,7 @@ class _RegisterViewState extends State<RegisterView> {
       ),
     );
     setState(() {
-      _done = '$n건 등록';
+      _done = S.registered.f({'n': n});
       _picked.clear();
       _cuts = CutDraft(
         start: _cuts.start + _cuts.count,
@@ -412,7 +413,7 @@ class _RegisterViewState extends State<RegisterView> {
           children: [
             PickField<int>(
               key: const Key('pick-client'),
-              label: '회사',
+              label: S.client.t,
               width: fw,
               value: _client?.title,
               search: (q) async => r == null
@@ -437,7 +438,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-work'),
-              label: '작품',
+              label: S.title.t,
               width: fw,
               value: _work?.title,
               search: (q) async => r == null
@@ -460,7 +461,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-episode'),
-              label: '화수',
+              label: S.episode.t,
               width: sw,
               enabled: _work != null,
               value: _episode?.title,
@@ -482,7 +483,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<String>(
               key: const Key('pick-part'),
-              label: '파트',
+              label: S.part.t,
               width: sw,
               enabled: _episode != null,
               value: _part,
@@ -505,7 +506,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
           ],
         ),
-        Text('담당', style: TextStyle(fontSize: 12, color: c.muted)),
+        Text(S.roles.t, style: TextStyle(fontSize: 12, color: c.muted)),
         Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -557,15 +558,20 @@ class _RegisterViewState extends State<RegisterView> {
           runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
-            _stepper('첫 컷', _cuts.number(_cuts.start), _start, 'reg-start'),
             _stepper(
-              '컷 수',
+              S.firstCut.t,
+              _cuts.number(_cuts.start),
+              _start,
+              'reg-start',
+            ),
+            _stepper(
+              S.cutCount.t,
               '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
               _count,
               'reg-count',
             ),
-            _dateButton('착수', _kickoff, () => _pickDate(false)),
-            _dateButton('마감', _due, () => _pickDate(true)),
+            _dateButton(S.kickoff.t, _kickoff, () => _pickDate(false)),
+            _dateButton(S.due.t, _due, () => _pickDate(true)),
           ],
         ),
       ],
@@ -596,7 +602,7 @@ class _RegisterViewState extends State<RegisterView> {
         Text('× ${_stages.length}', style: TextStyle(color: c.muted)),
         ToolbarButton(
           key: const Key('cut-remove'),
-          label: '빼기',
+          label: S.takeOut.t,
           selected: false,
           onTap: any ? act(() => _cuts.toggleRemoved(picked)) : null,
         ),
@@ -608,7 +614,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('cut-share'),
-          label: '겸용',
+          label: S.shared.t,
           selected: false,
           onTap: _cuts.canShare(picked)
               ? act(() => _cuts.toggleShared(picked))
@@ -616,20 +622,20 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('cut-rename'),
-          label: '이름',
+          label: S.name.t,
           selected: false,
           onTap: picked.length == 1 ? () => _rename(picked.single) : null,
         ),
         ToolbarButton(
           key: const Key('cut-clear'),
-          label: '해제',
+          label: S.clear.t,
           selected: false,
           onTap: any ? () => setState(_picked.clear) : null,
         ),
         FilledButton(
           key: const Key('register'),
           onPressed: _ready ? _register : null,
-          child: const Text('등록'),
+          child: Text(S.register.t),
         ),
         SizedBox(
           width: 80,
@@ -716,7 +722,11 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   Future<void> _renameSaved(CutRow cut) async {
-    final name = await askName(context, title: '컷 이름', initial: cut.number);
+    final name = await askName(
+      context,
+      title: S.cutName.t,
+      initial: cut.number,
+    );
     if (name == null || name.trim().isEmpty || !mounted) return;
     if (_taken.contains(name.trim()) && name.trim() != cut.number) {
       setState(() => _clashSaved = cut.id);
@@ -741,13 +751,14 @@ class _RegisterViewState extends State<RegisterView> {
         FoldToggle(
           key: const Key('fold-saved-cuts'),
           state: Folds.savedCuts,
-          label:
-              '${_episode?.title ?? ''} 등록된 컷 '
-              '${_saved.where((x) => !x.archived).length}',
+          label: S.savedCuts.f({
+            'title': _episode?.title ?? '',
+            'n': _saved.where((x) => !x.archived).length,
+          }).trim(),
         ),
         ToolbarButton(
           key: const Key('saved-remove'),
-          label: '빼기',
+          label: S.takeOut.t,
           selected: false,
           onTap: can
               ? () => _edit((s) {
@@ -778,7 +789,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('saved-share'),
-          label: '겸용',
+          label: S.shared.t,
           selected: false,
           onTap: can && picked.every((x) => x.sharedLabel != null)
               ? () => _edit((s) {
@@ -794,14 +805,14 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('saved-rename'),
-          label: '이름',
+          label: S.name.t,
           selected: false,
           onTap: can && picked.length == 1 && !picked.single.archived
               ? () => _renameSaved(picked.single)
               : null,
         ),
         ToolbarButton(
-          label: '해제',
+          label: S.clear.t,
           selected: false,
           onTap: picked.isEmpty ? null : () => setState(_pickedSaved.clear),
         ),

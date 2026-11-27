@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../core/size_class.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../text/strings.dart';
 
 /// Local calendar day as a UTC midnight, so day differences are exact.
 DateTime chartDay(DateTime t) {
@@ -218,7 +219,7 @@ class ChartPager extends StatelessWidget {
       ),
       ToolbarButton(
         key: const Key('chart-today'),
-        label: '오늘',
+        label: S.today.t,
         selected: false,
         onTap: onToday,
       ),
@@ -383,7 +384,7 @@ class ChartHeader extends StatelessWidget {
                     left: i * dw + 4,
                     top: 4,
                     child: Text(
-                      '${window.dayAt(i).month}월',
+                      monthName(window.dayAt(i).month),
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,

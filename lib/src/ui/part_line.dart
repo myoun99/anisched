@@ -11,6 +11,7 @@ import 'format.dart';
 import 'selection.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'text/strings.dart';
 
 const caretW = 32.0;
 const _progressW = 96.0;
@@ -34,14 +35,14 @@ class PartHeader extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: caretW),
-            Expanded(child: Text('파트', style: style)),
+            Expanded(child: Text(S.part.t, style: style)),
             SizedBox(
               width: _progressW,
-              child: Text('진행', style: style),
+              child: Text(S.progress.t, style: style),
             ),
             SizedBox(
               width: _signalW,
-              child: Text('마감', style: style, textAlign: TextAlign.right),
+              child: Text(S.due.t, style: style, textAlign: TextAlign.right),
             ),
             const SizedBox(width: 14),
           ],
@@ -275,15 +276,18 @@ class PartDetails extends StatelessWidget {
         ? '—'
         : '${formatDate(a)} – ${b == null ? open : formatDate(b)}';
     final facts = <(String, String)>[
-      ('마감', formatDate(g.dueAt)),
-      ('제작', range(g.kickoffAt, g.dueAt, '—')),
-      ('실 작업', range(g.planStartAt, g.planEndAt, '마감')),
-      ('여유', slack == null ? '—' : '$slack일'),
-      ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)} cut'),
-      ('단가', formatMoney(g.currency, g.pay)),
-      ('시간', formatWorked(g.worked)),
+      (S.due.t, formatDate(g.dueAt)),
+      (S.production.t, range(g.kickoffAt, g.dueAt, '—')),
+      (S.ownWork.t, range(g.planStartAt, g.planEndAt, S.due.t)),
+      (S.slack.t, slack == null ? '—' : S.days.f({'n': slack})),
+      (S.perDay.t, perDay == null ? '—' : '${perDay.toStringAsFixed(1)} cut'),
+      (S.rate.t, formatMoney(g.currency, g.pay)),
+      (S.time.t, formatWorked(g.worked)),
       if (usual != null)
-        ('평소', '${_perDay(usual!.overall)} · 최근 ${_perDay(usual!.recent)}'),
+        (
+          S.usual.t,
+          '${_perDay(usual!.overall)} · ${S.recent.t} ${_perDay(usual!.recent)}',
+        ),
       if (plan case PlanNotStarted(:final startAt)) ('IN', formatDate(startAt)),
       ...extra,
     ];
@@ -315,9 +319,9 @@ class PartDetails extends StatelessWidget {
                 children: [
                   for (final (k, v) in facts)
                     DueButton(
-                      key: k == '마감' ? Key('details-due-${g.key}') : null,
+                      key: k == S.due.t ? Key('details-due-${g.key}') : null,
                       due: g.dueAt,
-                      onPicked: k == '마감' ? onDue : null,
+                      onPicked: k == S.due.t ? onDue : null,
                       child: Text.rich(
                         TextSpan(
                           children: [
@@ -327,7 +331,7 @@ class PartDetails extends StatelessWidget {
                             ),
                             TextSpan(
                               text: v,
-                              style: k == '마감' && onDue != null
+                              style: k == S.due.t && onDue != null
                                   ? TextStyle(
                                       decoration: TextDecoration.underline,
                                       decorationColor: c.faint,

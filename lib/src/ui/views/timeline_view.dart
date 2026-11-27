@@ -9,6 +9,7 @@ import '../selection.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'chart.dart';
+import '../text/strings.dart';
 
 /// The production schedule only: one bar per unit from kickoff to
 /// deadline, the deadline's D-day on the right of the name. Dragging a
@@ -93,7 +94,10 @@ class _TimelineViewState extends State<TimelineView> {
             children: [
               ...?widget.toolbar,
               if (widget.toolbar == null)
-                Text('${rows.length}건', style: TextStyle(color: c.muted)),
+                Text(
+                  S.items.f({'n': rows.length}),
+                  style: TextStyle(color: c.muted),
+                ),
               ChartPager(
                 onShift: (d) => chartView.value = chartView.value.scrolled(d),
                 onToday: () =>

@@ -26,19 +26,22 @@ import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
+import 'text/strings.dart';
 
 /// The app's views: the list, the production timeline, the user's own
 /// work on parallel lanes, registration and settings.
 enum AppView {
-  list('목록'),
-  timeline('타임라인'),
-  work('작업'),
-  register('등록'),
-  settings('설정');
+  list(S.viewList),
+  timeline(S.viewTimeline),
+  work(S.viewWork),
+  register(S.viewRegister),
+  settings(S.viewSettings);
 
-  const AppView(this.label);
+  const AppView(this.word);
 
-  final String label;
+  final S word;
+
+  String get label => word.t;
 }
 
 /// App frame: a top bar, the current view, and the view switcher — in the
@@ -245,7 +248,7 @@ class _AppShellState extends State<AppShell> {
   List<Widget> _toolbar(int count) => [
     ToolbarButton(
       key: const Key('sort-by-due'),
-      label: '마감 순 정렬',
+      label: S.sortByDue.t,
       selected: false,
       onTap: widget.store == null
           ? null
@@ -265,7 +268,7 @@ class _AppShellState extends State<AppShell> {
       child: Center(
         widthFactor: 1,
         child: Text(
-          '$count건',
+          S.items.f({'n': count}),
           style: TextStyle(color: AppColors.of(context).muted),
         ),
       ),
@@ -412,6 +415,7 @@ class _AppShellState extends State<AppShell> {
       AppView.settings => SettingsView(
         now: now,
         session: widget.session,
+        remote: widget.remote,
         store: widget.store,
         reader: widget.reader,
         paces: _paces,

@@ -12,6 +12,7 @@ import 'src/platform/documents.dart';
 import 'src/services/document_session.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
+import 'src/ui/text/strings.dart';
 import 'src/ui/theme.dart';
 
 Future<void> main() async {
@@ -20,8 +21,14 @@ Future<void> main() async {
   await dir.create(recursive: true);
   final path = '${dir.path}${Platform.pathSeparator}anisched.db';
   final db = openAppDatabase(path);
-  // This device's own look (not in the document): theme, later language.
+  // This device's own look (not in the document): theme and language.
   final device = DeviceSettings.load(dir.path);
+  languageSetting.value = device.language;
+  appLang.value = resolveLang(
+    device.language,
+    WidgetsBinding.instance.platformDispatcher.locales,
+  );
+  languageSetting.addListener(() => device.language = languageSetting.value);
   themeModeSetting.value = switch (device.themeMode) {
     ThemeChoice.system => ThemeMode.system,
     ThemeChoice.light => ThemeMode.light,

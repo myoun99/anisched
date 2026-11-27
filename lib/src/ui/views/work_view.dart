@@ -6,6 +6,7 @@ import '../../models/progress.dart';
 import '../format.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../text/strings.dart';
 import 'chart.dart';
 
 /// The user's own work periods laid out on parallel lanes (「라인 1 · 2」).
@@ -93,7 +94,7 @@ class _WorkViewState extends State<WorkView> {
               if (lanes != null && lanes.pinned.isNotEmpty)
                 ToolbarButton(
                   key: const Key('lanes-auto'),
-                  label: '자동 배치',
+                  label: S.autoPlace.t,
                   selected: false,
                   onTap: widget.onClearPins,
                 ),
@@ -103,7 +104,7 @@ class _WorkViewState extends State<WorkView> {
                   child: Center(
                     widthFactor: 1,
                     child: Text(
-                      '오늘 $busy / ${lanes.lanes}',
+                      S.todayBusy.f({'a': busy, 'b': lanes.lanes}),
                       style: TextStyle(color: c.muted),
                     ),
                   ),
@@ -200,7 +201,7 @@ class _WorkViewState extends State<WorkView> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 10),
                 child: Text(
-                  over ? '넘침' : '라인 ${r + 1}',
+                  over ? S.overflow.t : S.laneN.f({'n': r + 1}),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
