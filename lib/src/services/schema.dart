@@ -44,7 +44,20 @@ CREATE TABLE work_intervals (
   const Migration(8, _v8LiveTasks),
   const Migration(9, _v9KickoffAndOrder),
   const Migration(10, _v10RolesPinsSharedCuts),
+  const Migration(11, _v11SubmittedDue),
 ];
+
+/// The deadline in force when a task was first handed in, so deadline
+/// adherence does not move when a deadline is edited later. Existing
+/// hand-ins take today's deadline — the best record there is.
+void _v11SubmittedDue(Database db) {
+  db
+    ..execute('ALTER TABLE tasks ADD COLUMN submitted_due_at INTEGER;')
+    ..execute('''
+UPDATE tasks SET submitted_due_at =
+  (SELECT due_at FROM task_dues WHERE task_id = tasks.id)
+WHERE submitted_at IS NOT NULL;''');
+}
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
 /// in the currency's smallest unit; rows are soft-deleted via

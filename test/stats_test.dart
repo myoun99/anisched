@@ -162,6 +162,38 @@ void main() {
     expect(s.clients.single.label, 'Studio');
   });
 
+  test('adherence uses the deadline at hand-in; previous range; progress', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C001~C003');
+    final genga = stage(w, '원화');
+    final due = DateTime(2026, 11, 4, 18);
+    final a = store.addTask(genga, cutId: r.cutIds[0], dueAt: due);
+    final b = store.addTask(genga, cutId: r.cutIds[1], dueAt: due);
+    store.addTask(genga, cutId: r.cutIds[2], dueAt: due);
+
+    now = DateTime(2026, 11, 4, 20); // same day, two hours late
+    store.setStatus(a, TaskStatus.submitted);
+    store.setTaskDue(a, DateTime(2026, 11, 10)); // moved afterwards
+    now = DateTime(2026, 10, 28, 9); // the week before
+    store.setStatus(b, TaskStatus.submitted);
+    now = DateTime(2026, 11, 9, 9);
+
+    final s = store.stats(
+      from: DateTime(2026, 11, 2),
+      to: DateTime(2026, 11, 9),
+      bucket: StatsBucket.day,
+    );
+    expect(s.lateness, {1: 1});
+    expect(s.total.handed, 1);
+    expect(s.previous!.total.handed, 1);
+    expect(s.previous!.from, DateTime(2026, 10, 26));
+    expect(s.previous!.previous, isNull);
+    expect(s.works.single.cuts, 3);
+    expect(s.works.single.finished, 2);
+    expect(s.works.single.progress, closeTo(2 / 3, 0.001));
+    expect(s.stagePaces, isNotEmpty);
+  });
+
   test('weeks start on the week-start setting; the reader agrees', () async {
     store.settings.weekStart = DateTime.sunday;
     final s = store.stats(

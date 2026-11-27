@@ -5,6 +5,7 @@
 library;
 
 import 'catalogue.dart' show dayRange;
+import 'progress.dart' show StagePace;
 import 'work_interval.dart';
 
 /// How the period chart is bucketed.
@@ -26,6 +27,7 @@ class StatsFact {
     this.submittedAt,
     this.doneAt,
     this.dueAt,
+    this.submittedDueAt,
     this.planStartAt,
     this.planEndAt,
     this.pay,
@@ -50,8 +52,12 @@ class StatsFact {
   final DateTime? submittedAt;
   final DateTime? doneAt;
 
-  /// The production deadline in force.
+  /// The production deadline in force now.
   final DateTime? dueAt;
+
+  /// The deadline in force when the task was first handed in — what
+  /// adherence is measured against (falls back to [dueAt]).
+  final DateTime? submittedDueAt;
   final DateTime? planStartAt;
   final DateTime? planEndAt;
 
@@ -100,6 +106,14 @@ class StatsSlice {
 
   /// Of [handed]: retaken at least once.
   int retaken = 0;
+
+  /// Progress now, whatever the range: live cuts in the slice, and those
+  /// handed in or done.
+  int cuts = 0;
+  int finished = 0;
+
+  /// [finished] of [cuts], 0–1; null with no cuts.
+  double? get progress => cuts == 0 ? null : finished / cuts;
   final Money earned = {};
 
   /// Average timer time per handed cut that has time on it.
@@ -130,8 +144,16 @@ class Stats {
   final List<StatsSlice> works = [];
   final List<StatsSlice> clients = [];
 
-  /// Hand-ins against their deadline: days late (negative = early, 0 = the
-  /// due day) → cuts. Cuts with no deadline are counted in [noDue].
+  /// The same figures for the range of the same length just before, for
+  /// comparison (null on the previous range itself).
+  Stats? previous;
+
+  /// Speed per stage name, so far and recent ([CatalogueStore.stagePaces]).
+  List<StagePace> stagePaces = const [];
+
+  /// Hand-ins against the deadline in force when handed in: work days late
+  /// (≥1 when past the due instant; 0 = on the due day in time; negative =
+  /// early) → cuts. Cuts with no deadline are counted in [noDue].
   final Map<int, int> lateness = {};
   int noDue = 0;
 
@@ -224,6 +246,10 @@ Stats computeStats({
         () => StatsSlice(f.clientId, f.clientName),
       ),
     ];
+    for (final x in slices) {
+      x.cuts++;
+      if (f.submittedAt != null || f.doneAt != null) x.finished++;
+    }
     if (inRange(f.submittedAt)) {
       final timed = f.worked > Duration.zero;
       for (final x in slices) {
@@ -236,12 +262,15 @@ Stats computeStats({
       }
       periodOf(f.submittedAt!)?.handed++;
       s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
-      final due = f.dueAt;
+      final due = f.submittedDueAt ?? f.dueAt;
       if (due == null) {
         s.noDue++;
       } else {
-        final late = day(f.submittedAt!).difference(day(due)).inHours;
-        s.lateness.update((late / 24).round(), (n) => n + 1, ifAbsent: () => 1);
+        final handedAt = f.submittedAt!;
+        var days = (day(handedAt).difference(day(due)).inHours / 24).round();
+        if (handedAt.isAfter(due) && days < 1) days = 1;
+        if (!handedAt.isAfter(due) && days > 0) days = 0;
+        s.lateness.update(days, (n) => n + 1, ifAbsent: () => 1);
       }
     }
     if (inRange(f.doneAt)) {
