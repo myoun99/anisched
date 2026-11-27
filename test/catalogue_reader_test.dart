@@ -80,6 +80,17 @@ void main() {
     expect(await reader.clients(), store.clients());
     expect(await reader.weekHours(), store.weekHours());
     expect(await reader.dayIntervals(), store.dayIntervals());
+    final taskIds = [for (final t in store.taskRows(includeDone: true)) t.id];
+    expect(await reader.workedOn(taskIds), store.workedOn(taskIds));
+    expect((await reader.runningTimer())?.id, store.runningTimer()?.id);
+    final from = DateTime(2026, 10, 1);
+    final to = DateTime(2026, 12, 1);
+    final viaReader = await reader.stats(from: from, to: to);
+    final direct = store.stats(from: from, to: to);
+    expect(viaReader.total.handed, direct.total.handed);
+    expect(viaReader.total.worked, direct.total.worked);
+    expect(viaReader.periods.length, direct.periods.length);
+    expect(viaReader.lateness, direct.lateness);
     expect(await reader.archived(), store.archived());
     expect(await reader.hasGroupOrder(), store.hasGroupOrder);
     expect(await reader.workCutFormat(1), store.workCutFormat(1));

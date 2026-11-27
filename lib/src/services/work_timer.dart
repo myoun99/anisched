@@ -64,6 +64,29 @@ class WorkTimerStore {
     );
   }
 
+  /// The play/pause button for [taskId]: pauses when its timer runs,
+  /// otherwise (re)starts on it — a timer running on another task moves
+  /// here. There is no stop or reset: time is only ever recorded. Answers
+  /// the running interval, or null when paused.
+  WorkInterval? toggle({int? taskId}) {
+    final open = running();
+    if (open != null) {
+      stop();
+      if (open.taskId == taskId) return null;
+    }
+    return start(taskId: taskId);
+  }
+
+  /// The user moved to [taskId] (another cut). With the timer running it
+  /// follows the move when [follow] (setting `timerFollowsCut`), else
+  /// pauses. Nothing happens while paused or on the same task.
+  WorkInterval? selectionChanged(int? taskId, {required bool follow}) {
+    final open = running();
+    if (open == null || open.taskId == taskId) return open;
+    stop();
+    return follow ? start(taskId: taskId) : null;
+  }
+
   /// Intervals that overlap `[from, to)`, oldest first, including a
   /// running one.
   List<WorkInterval> overlapping(DateTime from, DateTime to) {

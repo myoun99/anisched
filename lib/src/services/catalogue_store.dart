@@ -5,6 +5,7 @@ import '../models/catalogue.dart';
 import '../models/cut_numbers.dart';
 import '../models/lanes.dart';
 import '../models/progress.dart';
+import '../models/stats.dart';
 import '../models/work_interval.dart';
 import 'settings_store.dart';
 
@@ -794,6 +795,120 @@ ORDER BY sort_key, id;''',
     );
   }
 
+  /// All timer time on each of [taskIds] as of now, a running timer
+  /// included. Tasks with no time are absent.
+  Map<int, Duration> workedOn(Iterable<int> taskIds) {
+    final ids = taskIds.toSet();
+    if (ids.isEmpty) return const {};
+    final rows = db.select(
+      'SELECT task_id, SUM(MAX(COALESCE(stopped_at, ?) - started_at, 0)) AS ms '
+      'FROM work_intervals WHERE task_id IN (${List.filled(ids.length, '?').join(',')}) '
+      'GROUP BY task_id;',
+      [_now(), ...ids],
+    );
+    return {
+      for (final r in rows)
+        r['task_id'] as int: Duration(milliseconds: r['ms'] as int),
+    };
+  }
+
+  /// The running timer, if any.
+  WorkInterval? runningTimer() {
+    final rows = db.select(
+      'SELECT id, started_at, task_id FROM work_intervals '
+      'WHERE stopped_at IS NULL ORDER BY started_at DESC LIMIT 1;',
+    );
+    if (rows.isEmpty) return null;
+    final r = rows.first;
+    return WorkInterval(
+      id: r['id'] as int,
+      start: DateTime.fromMillisecondsSinceEpoch(
+        r['started_at'] as int,
+        isUtc: true,
+      ),
+      taskId: r['task_id'] as int?,
+    );
+  }
+
+  /// The statistics tab for the work days `[from, to)` (local dates),
+  /// bucketed by [bucket]. Day start, week start and lane count come from
+  /// the settings.
+  Stats stats({
+    required DateTime from,
+    required DateTime to,
+    StatsBucket bucket = StatsBucket.week,
+  }) {
+    DateTime? at(Object? ms) => ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
+    final extra = {
+      for (final r in db.select('''
+SELECT t.id, t.submitted_at, t.done_at, w.client_id, c.name AS client
+FROM live_tasks t
+JOIN work_stages s ON s.id = t.stage_id
+JOIN works w ON w.id = s.work_id
+LEFT JOIN clients c ON c.id = w.client_id;'''))
+        r['id'] as int: r,
+    };
+    final facts = [
+      for (final t in taskRows(includeDone: true))
+        if (extra[t.id] case final x?)
+          StatsFact(
+            taskId: t.id,
+            stageName: t.stageName,
+            workId: t.workId,
+            workTitle: t.workTitle,
+            currency: t.currency,
+            groupKey: t.groupKey,
+            clientId: x['client_id'] as int?,
+            clientName: x['client'] as String?,
+            take: t.take,
+            submittedAt: at(x['submitted_at']),
+            doneAt: at(x['done_at']),
+            dueAt: t.dueAt,
+            planStartAt: t.planStartAt,
+            planEndAt: t.planEndAt,
+            pay: t.pay,
+            worked: t.worked,
+          ),
+    ];
+    final dayStart = settings.dayStartMinutes;
+    final start = DateTime(
+      from.year,
+      from.month,
+      from.day,
+    ).add(Duration(minutes: dayStart));
+    final end = DateTime(
+      to.year,
+      to.month,
+      to.day,
+    ).add(Duration(minutes: dayStart));
+    final intervals = [
+      for (final r in db.select(
+        'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+        'WHERE started_at < ? AND (stopped_at IS NULL OR stopped_at > ?);',
+        [end.millisecondsSinceEpoch, start.millisecondsSinceEpoch],
+      ))
+        WorkInterval(
+          id: r['id'] as int,
+          start: at(r['started_at'])!,
+          stop: at(r['stopped_at']),
+          taskId: r['task_id'] as int?,
+        ),
+    ];
+    return computeStats(
+      facts: facts,
+      intervals: intervals,
+      from: from,
+      to: to,
+      now: clock().toUtc(),
+      bucket: bucket,
+      dayStartMinutes: dayStart,
+      weekStart: settings.weekStart,
+      lanes: settings.parallelLanes,
+    );
+  }
+
   /// Timer time per working day for the week holding [weekOf] (today when
   /// null), starting on the week-start setting, days cut at the day-start
   /// setting. A running timer counts up to now.
@@ -1142,16 +1257,31 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
       );
   }
 
+  /// Sets [status]. The task's `submitted_at` is its FIRST hand-in (pace
+  /// and statistics count a cut once); handing in a retake stamps that
+  /// take's row instead.
   void setStatus(int taskId, TaskStatus status) {
     final now = _now();
     final submitted = status == TaskStatus.submitted ? 1 : 0;
     final done = status == TaskStatus.done ? 1 : 0;
-    db.execute(
-      'UPDATE tasks SET status = ?, '
-      'submitted_at = CASE WHEN ? THEN ? ELSE submitted_at END, '
-      'done_at = CASE WHEN ? THEN ? ELSE done_at END WHERE id = ?;',
-      [status.dbName, submitted, now, done, now, taskId],
-    );
+    _transaction(() {
+      if (submitted == 1) {
+        db.execute(
+          '''
+UPDATE retakes SET submitted_at = ?
+WHERE task_id = ? AND submitted_at IS NULL
+  AND take = (SELECT MAX(take) FROM retakes WHERE task_id = ?);''',
+          [now, taskId, taskId],
+        );
+      }
+      db.execute(
+        'UPDATE tasks SET status = ?, '
+        'submitted_at = CASE WHEN ? THEN COALESCE(submitted_at, ?) '
+        'ELSE submitted_at END, '
+        'done_at = CASE WHEN ? THEN ? ELSE done_at END WHERE id = ?;',
+        [status.dbName, submitted, now, done, now, taskId],
+      );
+    });
   }
 
   /// Records the next take (2, 3, …) and moves the task to retake.
