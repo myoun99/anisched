@@ -75,11 +75,13 @@ class LaneLayout {
   }
 }
 
-/// Lays [spans] out on lanes: earliest start first (longer first on
-/// ties), each into the lowest lane free since the day before it starts.
-/// This uses as few lanes as the busiest day needs. Bars that need a lane
-/// at or past [lanes] are still placed and show up in
-/// [LaneLayout.overflow].
+/// Lays [spans] out on lanes — the calendar's one placement rule (the
+/// views keep no copy): earliest start first (longer first, then key, on
+/// ties); each bar goes into the first lane whose last bar ends before the
+/// bar starts; if none of the [lanes] lanes has room, the bar overflows.
+/// Overflowing bars are still placed, on lanes past the limit, and show
+/// up in [LaneLayout.overflow]. This uses as few lanes as the busiest day
+/// needs.
 LaneLayout layoutLanes(List<Span> spans, int lanes) {
   if (lanes < 1) throw ArgumentError.value(lanes, 'lanes');
   final sorted = [...spans]

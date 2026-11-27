@@ -97,4 +97,32 @@ void main() {
     expect(store.calendarLayout().unplaced, hasLength(1));
     expect(() => store.settings.parallelLanes = 0, throwsRangeError);
   });
+
+  test('lane names follow the lane count; unnamed lanes are null', () {
+    final db = openAppDatabase(':memory:');
+    addTearDown(db.close);
+    final settings = CatalogueStore(db).settings;
+    expect(settings.laneNames, [null, null, null]);
+    settings.laneNames = ['메인', '', '서브', '여분'];
+    expect(settings.laneNames, ['메인', null, '서브']);
+    settings.parallelLanes = 4;
+    expect(settings.laneNames, ['메인', null, '서브', '여분']);
+    settings.parallelLanes = 5;
+    expect(settings.laneNames.last, isNull);
+  });
+
+  test('the mock-up rule: earliest start first, first lane that is free', () {
+    // Lane 0 ends 12/5; lane 1 ends 12/3. A bar from 12/4 fits lane 1
+    // only; a bar from 12/4 when both are busy overflows.
+    final l = layoutLanes([
+      s('a', 1, 5),
+      s('b', 1, 3),
+      s('c', 4, 6),
+      s('d', 4, 4),
+    ], 2);
+    expect(l.laneOf['a'], 0);
+    expect(l.laneOf['b'], 1);
+    expect(l.laneOf['c'], 1);
+    expect(l.overflow, {'d'});
+  });
 }
