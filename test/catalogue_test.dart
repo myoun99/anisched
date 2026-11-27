@@ -374,6 +374,37 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       expect(store.presetStages(store.defaultPresetId()), defaultStageNames);
     });
 
+    test('search: part of a name, recently used first, literal % and _', () {
+      var t = DateTime(2026, 11, 1);
+      final s2 = CatalogueStore(db, clock: () => t);
+      final a = s2.addClient('Studio Alpha');
+      final b = s2.addClient('스튜디오 베타');
+      final old = s2.createWork('별빛 정류장', clientId: a);
+      t = DateTime(2026, 11, 2);
+      final fresh = s2.createWork('별의 노래', clientId: b);
+      s2.createWork('100%_test', clientId: b);
+      expect(s2.searchWorks('별').map((w) => w.id), [fresh, old]);
+      // Activity on the older work brings it to the top.
+      t = DateTime(2026, 11, 5);
+      final ep = s2.addEpisode(old, '#1');
+      s2.addTask(stageId(old, 'LO'), cutId: s2.addCut(ep, 'C1'));
+      expect(s2.searchWorks('별').map((w) => w.id), [old, fresh]);
+      expect(s2.searchWorks('별', clientId: b).map((w) => w.id), [fresh]);
+      expect(s2.searchWorks('%_').map((w) => w.title), ['100%_test']);
+      expect(s2.searchWorks('0_t'), isEmpty);
+      expect(s2.searchClients('alpha').single.id, a);
+      expect(s2.searchClients('').map((c) => c.id), [a, b]);
+      s2
+        ..addEpisode(fresh, '#02')
+        ..addEpisode(fresh, '#12')
+        ..renameEpisode(s2.addEpisode(fresh, '#03'), '#03', title: '바다');
+      expect(s2.searchEpisodes(fresh, '2').map((e) => e.number), [
+        '#02',
+        '#12',
+      ]);
+      expect(s2.searchEpisodes(fresh, '바다').single.number, '#03');
+    });
+
     test('a failed createWork leaves no half-made work', () {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));

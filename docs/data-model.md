@@ -200,9 +200,9 @@
 
 | 할 일 | 쓰기 | 목록(리더) |
 |---|---|---|
-| 거래처 | `addClient(이름, closingDay:)` | `clients()` |
-| 작품 등록 | `createWork(제목, currency:, clientId:, presetId:)` · `setWorkDefaultRateUnit` · `setWorkRounding` | `works()` · 프리셋 `presets()` |
-| 화 | `addEpisode(작품, 번호, title:)` · 화 단가 `setEpisodeRate` | `episodes(작품)` |
+| 거래처 | `addClient(이름, closingDay:)` | `clients()` · 검색 `searchClients(글자)` |
+| 작품 등록 | `createWork(제목, currency:, clientId:, presetId:)` · `setWorkDefaultRateUnit` · `setWorkRounding` | `works()` · 검색 `searchWorks(글자, clientId:)` · 프리셋 `presets()` |
+| 화 | `addEpisode(작품, 번호, title:)` · 화 단가 `setEpisodeRate` | `episodes(작품)` · 검색 `searchEpisodes(작품, 글자)`(번호·제목) |
 | 파트 | `addPart(화, 라벨, plannedCutCount:)` · `renamePart` · `setPlannedCutCount` | `parts(화)`(살아 있는 컷 수 포함) |
 | 컷 여러 개 | `parseCutNumbers(입력)` → `addCuts(화, 번호들, partId:, lengthMs:)`(이미 있는 번호는 건너뛰고 알려 줌) | `cuts(화)` |
 | 컷 손보기 | `setCutsPart(컷들, 파트 또는 null)`(같은 화의 파트만) · `setCutLength` | |
@@ -220,6 +220,9 @@
 보관 규칙: 위가 보관되면 아래가 모두 보기에서 빠진다(뷰 `live_tasks`) — 아래 행은 손대지 않으므로 되살리면 그대로 돌아온다.
 월 합계·평소 속도도 보관된 것은 세지 않는다. 공정 숨김만 예외: 선택지에서 빠질 뿐 그 공정의 작업은 계속 보인다.
 되살릴 자리를 이미 다른 것이 쓰고 있으면(같은 컷 번호를 새로 만든 경우 등) `StateError`.
+
+검색(등록 화면): 이름 일부가 들어 있으면 찾음(대소문자 무시, `%` `_` 도 글자 그대로). 거래처·작품은 **최근 쓴 순**
+(그 작품 작업의 가장 최근 받음·제출·완료, 없으면 만든 날), 화는 번호 순. 빈 글자 = 전체.
 
 컷 번호 입력(`parseCutNumbers`): 쉼표·`、`·공백으로 나눔. 범위는 `~` `〜` `–` `—` `..`(`C100~C110`, `C100~110`, 앞자리 0 유지).
 **하이픈 `-` 은 범위가 아니라 겸용 컷 번호 하나**(`C012-014`). 분할 `C012A` 는 그대로. 거꾸로 된 범위·3000개 넘는 범위·접두어가
