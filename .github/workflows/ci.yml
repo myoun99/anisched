@@ -1,9 +1,24 @@
 name: CI
 
+# Kept deliberately small (Anicel's account was suspended after ~130 runs a day
+# plus a nightly macOS runner, 2026-09). Push = analyze/test + the Galaxy Tab
+# APK. Desktop and Apple builds run only when dispatched by hand. No cron.
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: 'Also build Windows, Linux, macOS and iOS'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   FLUTTER_VERSION: '3.47.4'
@@ -24,6 +39,7 @@ jobs:
 
   android:
     needs: analyze-test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +61,7 @@ jobs:
 
   linux:
     needs: analyze-test
+    if: github.event_name == 'workflow_dispatch' && inputs.desktop
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +75,7 @@ jobs:
 
   windows:
     needs: analyze-test
+    if: github.event_name == 'workflow_dispatch' && inputs.desktop
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +88,7 @@ jobs:
 
   apple:
     needs: analyze-test
+    if: github.event_name == 'workflow_dispatch' && inputs.desktop
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
