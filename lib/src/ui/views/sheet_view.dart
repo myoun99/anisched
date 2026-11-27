@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../controllers/overview.dart';
 import '../../core/size_class.dart';
 import '../../models/catalogue.dart';
+import '../../models/progress.dart';
+import '../format.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -16,13 +17,19 @@ class SheetView extends StatefulWidget {
   const SheetView({
     super.key,
     required this.parts,
-    required this.today,
+    required this.now,
     required this.layout,
+    this.dayStartMinutes = 0,
   });
 
-  final List<PartStage> parts;
-  final DateTime today;
+  final List<PartGroup> parts;
+
+  /// The instant deadlines count from.
+  final DateTime now;
   final ScreenLayout layout;
+
+  /// When a working day starts (the user's setting).
+  final int dayStartMinutes;
 
   @override
   State<SheetView> createState() => _SheetViewState();
@@ -32,13 +39,13 @@ sealed class _Row {}
 
 class _PartRow extends _Row {
   _PartRow(this.part);
-  final PartStage part;
+  final PartGroup part;
 }
 
 class _TaskRow extends _Row {
   _TaskRow(this.part, this.task);
-  final PartStage part;
-  final TaskItem task;
+  final PartGroup part;
+  final TaskRow task;
 }
 
 class _SheetViewState extends State<SheetView> {
@@ -57,7 +64,7 @@ class _SheetViewState extends State<SheetView> {
     super.dispose();
   }
 
-  List<PartStage> get _visible {
+  List<PartGroup> get _visible {
     final list = [
       for (final p in widget.parts)
         if ((_status == null || p.status == _status) &&
@@ -67,35 +74,23 @@ class _SheetViewState extends State<SheetView> {
     return _ascending ? list : list.reversed.toList();
   }
 
-  int _compare(PartStage a, PartStage b) {
+  int _compare(PartGroup a, PartGroup b) {
     int byDue() =>
         (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999));
     final r = switch (_sort) {
-      SheetSort.name => '${a.workTitle}${a.episode}${a.partLabel}'.compareTo(
-        '${b.workTitle}${b.episode}${b.partLabel}',
+      SheetSort.name => '${a.workTitle}${a.episodeNumber}${a.label}'.compareTo(
+        '${b.workTitle}${b.episodeNumber}${b.label}',
       ),
-      SheetSort.stage => a.stage.compareTo(b.stage),
-      SheetSort.count => a.tasks.length.compareTo(b.tasks.length),
-      SheetSort.progress => (a.handedIn / a.tasks.length).compareTo(
-        b.handedIn / b.tasks.length,
-      ),
-      SheetSort.status => _statusRank(
-        a.status,
-      ).compareTo(_statusRank(b.status)),
+      SheetSort.stage => a.stageName.compareTo(b.stageName),
+      SheetSort.count => a.total.compareTo(b.total),
+      SheetSort.progress => (a.handed / a.total).compareTo(b.handed / b.total),
+      SheetSort.status => a.status.urgency.compareTo(b.status.urgency),
       SheetSort.due => byDue(),
-      SheetSort.pay => a.payTotal.compareTo(b.payTotal),
+      SheetSort.pay => a.pay.compareTo(b.pay),
       SheetSort.worked => a.worked.compareTo(b.worked),
     };
     return r != 0 ? r : byDue();
   }
-
-  static int _statusRank(TaskStatus s) => switch (s) {
-    TaskStatus.retake => 0,
-    TaskStatus.inProgress => 1,
-    TaskStatus.received => 2,
-    TaskStatus.submitted => 3,
-    TaskStatus.done => 4,
-  };
 
   void _sortBy(SheetSort s) => setState(() {
     if (_sort == s) {
@@ -106,16 +101,16 @@ class _SheetViewState extends State<SheetView> {
     }
   });
 
-  void _toggle(PartStage p) => setState(() {
+  void _toggle(PartGroup p) => setState(() {
     if (!_expanded.remove(p.key)) _expanded.add(p.key);
   });
 
-  void _selectPart(PartStage p) => setState(() {
+  void _selectPart(PartGroup p) => setState(() {
     _selectedPart = p.key;
     _selectedTask = null;
   });
 
-  void _selectTask(PartStage p, TaskItem t) => setState(() {
+  void _selectTask(PartGroup p, TaskRow t) => setState(() {
     _selectedPart = p.key;
     _selectedTask = t.id;
   });
@@ -127,7 +122,7 @@ class _SheetViewState extends State<SheetView> {
     final rows = <_Row>[
       for (final p in parts) ...[
         _PartRow(p),
-        if (_expanded.contains(p.key) && !p.isStoryboard)
+        if (_expanded.contains(p.key) && !p.solo)
           for (final t in p.tasks) _TaskRow(p, t),
       ],
     ];
@@ -158,7 +153,8 @@ class _SheetViewState extends State<SheetView> {
                   narrow
                       ? _NarrowPartTile(
                           part: part,
-                          today: widget.today,
+                          now: widget.now,
+                          dayStartMinutes: widget.dayStartMinutes,
                           expanded: _expanded.contains(part.key),
                           selected: _selectedPart == part.key,
                           onTap: () => _selectPart(part),
@@ -167,7 +163,8 @@ class _SheetViewState extends State<SheetView> {
                       : _PartLine(
                           part: part,
                           columns: cols,
-                          today: widget.today,
+                          now: widget.now,
+                          dayStartMinutes: widget.dayStartMinutes,
                           expanded: _expanded.contains(part.key),
                           selected:
                               _selectedPart == part.key &&
@@ -179,7 +176,8 @@ class _SheetViewState extends State<SheetView> {
                   part: part,
                   task: task,
                   columns: narrow ? null : cols,
-                  today: widget.today,
+                  now: widget.now,
+                  dayStartMinutes: widget.dayStartMinutes,
                   selected: _selectedTask == task.id,
                   onTap: () => _selectTask(part, task),
                 ),
@@ -384,13 +382,13 @@ class _HeaderRow extends StatelessWidget {
 class _Caret extends StatelessWidget {
   const _Caret({required this.part, required this.open, required this.onTap});
 
-  final PartStage part;
+  final PartGroup part;
   final bool open;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    if (part.isStoryboard) return const SizedBox(width: 28);
+    if (part.solo) return const SizedBox(width: 28);
     return SizedBox(
       width: 28,
       child: InkWell(
@@ -408,26 +406,22 @@ class _Caret extends StatelessWidget {
   }
 }
 
-String partTitle(PartStage p) => p.isStoryboard
-    ? p.stage
-    : (p.partLabel == null ? '파트 없음' : '${p.partLabel}파트');
-
-String countText(PartStage p) => p.isStoryboard ? '1건' : '${p.tasks.length}컷';
-
 class _PartLine extends StatelessWidget {
   const _PartLine({
     required this.part,
     required this.columns,
-    required this.today,
+    required this.now,
+    required this.dayStartMinutes,
     required this.expanded,
     required this.selected,
     required this.onTap,
     required this.onToggle,
   });
 
-  final PartStage part;
+  final PartGroup part;
   final _Columns columns;
-  final DateTime today;
+  final DateTime now;
+  final int dayStartMinutes;
   final bool expanded;
   final bool selected;
   final VoidCallback onTap;
@@ -468,12 +462,12 @@ class _PartLine extends StatelessWidget {
                       TextSpan(
                         children: [
                           TextSpan(
-                            text: '${partTitle(p)}  ',
+                            text: '${groupTitle(p)}  ',
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           TextSpan(text: '${p.workTitle} '),
                           TextSpan(
-                            text: p.episode,
+                            text: p.episodeNumber,
                             style: TextStyle(color: c.muted),
                           ),
                         ],
@@ -482,8 +476,8 @@ class _PartLine extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  box(_Columns.stage, Text(p.stage, maxLines: 1)),
-                  box(_Columns.count, Text(countText(p))),
+                  box(_Columns.stage, Text(p.stageName, maxLines: 1)),
+                  box(_Columns.count, Text(groupCount(p))),
                   if (columns.progress != null)
                     box(
                       columns.progress!,
@@ -491,16 +485,24 @@ class _PartLine extends StatelessWidget {
                         spacing: 6,
                         children: [
                           Expanded(child: PartProgress(p)),
-                          Text('${p.handedIn}/${p.tasks.length}'),
+                          Text('${p.handed}/${p.total}'),
                         ],
                       ),
                     ),
                   box(_Columns.status, StatusPill(p.status)),
                   box(_Columns.due, Text(formatDate(p.dueAt))),
-                  box(_Columns.dday, DueText(p.dueAt, p.status, today)),
+                  box(
+                    _Columns.dday,
+                    DueText(
+                      p.dueAt,
+                      p.status,
+                      now,
+                      dayStartMinutes: dayStartMinutes,
+                    ),
+                  ),
                   box(
                     _Columns.pay,
-                    Text(formatMoney(p.currency, p.payTotal)),
+                    Text(formatMoney(p.currency, p.pay)),
                     end: true,
                   ),
                   box(_Columns.worked, Text(formatWorked(p.worked)), end: true),
@@ -522,15 +524,17 @@ class _TaskLine extends StatelessWidget {
     required this.part,
     required this.task,
     required this.columns,
-    required this.today,
+    required this.now,
+    required this.dayStartMinutes,
     required this.selected,
     required this.onTap,
   });
 
-  final PartStage part;
-  final TaskItem task;
+  final PartGroup part;
+  final TaskRow task;
   final _Columns? columns;
-  final DateTime today;
+  final DateTime now;
+  final int dayStartMinutes;
   final bool selected;
   final VoidCallback onTap;
 
@@ -538,7 +542,7 @@ class _TaskLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final t = task;
-    final dueStyle = t.dueFromPart
+    final dueStyle = !t.dueOverridden
         ? TextStyle(color: c.faint)
         : TextStyle(
             color: Theme.of(context).colorScheme.primary,
@@ -558,7 +562,7 @@ class _TaskLine extends StatelessWidget {
       spacing: 6,
       children: [
         Dot(c.of(t.status)),
-        Text(t.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(taskLabel(t), style: const TextStyle(fontWeight: FontWeight.w700)),
         TakeBadge(t.take),
       ],
     );
@@ -589,7 +593,7 @@ class _TaskLine extends StatelessWidget {
               Expanded(child: name),
               box(
                 _Columns.stage,
-                Text(part.stage, style: TextStyle(color: c.faint)),
+                Text(part.stageName, style: TextStyle(color: c.faint)),
               ),
               box(_Columns.count, Text(formatLength(t.lengthMs))),
               if (cols.progress != null) SizedBox(width: cols.progress),
@@ -597,9 +601,14 @@ class _TaskLine extends StatelessWidget {
               box(_Columns.due, Text(formatDate(t.dueAt), style: dueStyle)),
               box(
                 _Columns.dday,
-                t.dueFromPart
+                !t.dueOverridden
                     ? const SizedBox.shrink()
-                    : DueText(t.dueAt, t.status, today),
+                    : DueText(
+                        t.dueAt,
+                        t.status,
+                        now,
+                        dayStartMinutes: dayStartMinutes,
+                      ),
               ),
               box(
                 _Columns.pay,
@@ -632,15 +641,17 @@ class _TaskLine extends StatelessWidget {
 class _NarrowPartTile extends StatelessWidget {
   const _NarrowPartTile({
     required this.part,
-    required this.today,
+    required this.now,
+    required this.dayStartMinutes,
     required this.expanded,
     required this.selected,
     required this.onTap,
     required this.onToggle,
   });
 
-  final PartStage part;
-  final DateTime today;
+  final PartGroup part;
+  final DateTime now;
+  final int dayStartMinutes;
   final bool expanded;
   final bool selected;
   final VoidCallback onTap;
@@ -676,16 +687,16 @@ class _NarrowPartTile extends StatelessWidget {
                           spacing: 8,
                           children: [
                             Text(
-                              partTitle(p),
+                              groupTitle(p),
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            Text(p.stage),
+                            Text(p.stageName),
                             Expanded(
                               child: Text(
-                                '${p.workTitle} ${p.episode}',
+                                '${p.workTitle} ${p.episodeNumber}',
                                 style: TextStyle(color: c.muted),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -699,15 +710,20 @@ class _NarrowPartTile extends StatelessWidget {
                             PartProgress(p, width: 56),
                             Flexible(
                               child: Text(
-                                '${countText(p)} '
-                                '${p.handedIn}/${p.tasks.length}'
+                                '${groupCount(p)} '
+                                '${p.handed}/${p.total}'
                                 ' · ${formatDate(p.dueAt)}',
                                 style: TextStyle(fontSize: 12, color: c.muted),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            DueText(p.dueAt, p.status, today),
+                            DueText(
+                              p.dueAt,
+                              p.status,
+                              now,
+                              dayStartMinutes: dayStartMinutes,
+                            ),
                           ],
                         ),
                       ],
@@ -722,7 +738,7 @@ class _NarrowPartTile extends StatelessWidget {
                       children: [
                         StatusPill(p.status),
                         Text(
-                          formatMoney(p.currency, p.payTotal),
+                          formatMoney(p.currency, p.pay),
                           style: const TextStyle(fontSize: 12),
                         ),
                       ],
@@ -741,12 +757,12 @@ class _NarrowPartTile extends StatelessWidget {
 class _Footer extends StatelessWidget {
   const _Footer({required this.parts});
 
-  final List<PartStage> parts;
+  final List<PartGroup> parts;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final tasks = parts.fold(0, (a, p) => a + p.tasks.length);
+    final tasks = parts.fold(0, (a, p) => a + p.total);
     final worked = parts.fold(Duration.zero, (a, p) => a + p.worked);
     final totals = totalsByCurrency(parts).entries
         .map((e) => formatMoney(e.key, e.value))

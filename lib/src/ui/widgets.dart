@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../controllers/overview.dart';
 import '../models/catalogue.dart';
+import '../models/progress.dart';
+import 'format.dart';
 import 'theme.dart';
 
 extension StatusColor on AppColors {
@@ -83,9 +84,9 @@ class TakeBadge extends StatelessWidget {
 
 /// Bar split by task status: done, submitted, in progress, retake, received.
 class PartProgress extends StatelessWidget {
-  const PartProgress(this.part, {super.key, this.width, this.height = 6});
+  const PartProgress(this.group, {super.key, this.width, this.height = 6});
 
-  final PartStage part;
+  final PartGroup group;
   final double? width;
   final double height;
 
@@ -100,6 +101,7 @@ class PartProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final counts = group.counts;
     return SizedBox(
       width: width,
       height: height,
@@ -112,9 +114,9 @@ class PartProgress extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (final s in _order)
-                if (part.count(s) > 0)
+                if ((counts[s] ?? 0) > 0)
                   Expanded(
-                    flex: part.count(s),
+                    flex: counts[s]!,
                     child: ColoredBox(color: c.of(s)),
                   ),
             ],
@@ -127,16 +129,23 @@ class PartProgress extends StatelessWidget {
 
 /// D-day text coloured by urgency.
 class DueText extends StatelessWidget {
-  const DueText(this.dueAt, this.status, this.today, {super.key});
+  const DueText(
+    this.dueAt,
+    this.status,
+    this.now, {
+    super.key,
+    this.dayStartMinutes = 0,
+  });
 
   final DateTime? dueAt;
   final TaskStatus status;
-  final DateTime today;
+  final DateTime now;
+  final int dayStartMinutes;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final l = dueLabel(dueAt, today, status);
+    final l = dueLabel(dueAt, now, status, dayStartMinutes: dayStartMinutes);
     final (color, bold) = switch (l.tone) {
       DueTone.late => (c.retake, true),
       DueTone.soon => (c.submitted, true),
@@ -151,15 +160,6 @@ class DueText extends StatelessWidget {
       ),
     );
   }
-}
-
-const _wd = ['월', '화', '수', '목', '금', '토', '일'];
-
-/// 「11/28(토)」.
-String formatDate(DateTime? d) {
-  if (d == null) return '—';
-  final l = d.toLocal();
-  return '${l.month}/${l.day}(${_wd[l.weekday - 1]})';
 }
 
 /// A tappable segment in a segmented filter. Selection shows as fill only.

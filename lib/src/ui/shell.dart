@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../controllers/overview.dart';
-import '../controllers/sample_overview.dart';
+import '../core/clock.dart';
 import '../core/size_class.dart';
+import '../models/progress.dart';
+import '../services/catalogue_store.dart';
 import 'theme.dart';
 import 'views/sheet_view.dart';
 
@@ -25,18 +26,17 @@ class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
     this.initialView = AppView.board,
-    this.today,
-    this.parts,
+    this.store,
+    this.clock = systemClock,
   });
 
   final AppView initialView;
 
-  /// The local date the views count deadlines from; defaults to now.
-  final DateTime? today;
+  /// The user's catalogue; null shows empty views.
+  final CatalogueStore? store;
 
-  /// The user's work by part × stage; defaults to example data until the
-  /// catalogue's read API lands.
-  final List<PartStage>? parts;
+  /// Source of "now" for deadlines; injectable for tests.
+  final Clock clock;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -44,8 +44,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
-  late final DateTime _today = widget.today ?? DateTime.now();
-  late final List<PartStage> _parts = widget.parts ?? sampleOverview(_today);
+  late final List<PartGroup> _groups = widget.store?.partGroups() ?? const [];
+  late final int _dayStart = widget.store?.settings.dayStartMinutes ?? 0;
 
   void _select(AppView v) {
     if (v != _view) setState(() => _view = v);
@@ -80,8 +80,9 @@ class _AppShellState extends State<AppShell> {
                       for (final v in AppView.values)
                         if (v == AppView.sheet)
                           SheetView(
-                            parts: _parts,
-                            today: _today,
+                            parts: _groups,
+                            now: widget.clock(),
+                            dayStartMinutes: _dayStart,
                             layout: layout,
                           )
                         else
