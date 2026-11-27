@@ -6,6 +6,7 @@ import '../../models/progress.dart';
 import '../theme.dart';
 import '../part_line.dart';
 import '../selection.dart';
+import '../widgets.dart';
 
 /// One line per part × stage: name, progress and one date signal. Everything
 /// else (dates, plan, pace, pay, time, cuts) opens under the line on demand.
@@ -106,10 +107,10 @@ class _SheetViewState extends State<SheetView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Toolbar(
+          ViewToolbar(
             children: [
               _workMenu(),
-              _MenuButton(
+              ToolbarButton(
                 key: const Key('toggle-done'),
                 label: _showDone ? '완료 보임' : '완료 숨김',
                 selected: _showDone,
@@ -182,79 +183,10 @@ class _SheetViewState extends State<SheetView> {
         for (final e in works.entries)
           PopupMenuItem(value: e.key, child: Text(e.value)),
       ],
-      child: _MenuButton(
+      child: ToolbarButton(
         label: _work == null ? '모든 작품' : works[_work]!,
         selected: _work != null,
         dropdown: true,
-      ),
-    );
-  }
-}
-
-class _MenuButton extends StatelessWidget {
-  const _MenuButton({
-    super.key,
-    required this.label,
-    required this.selected,
-    this.onTap,
-    this.dropdown = false,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  /// Shows a drop-down arrow after the label.
-  final bool dropdown;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final body = DecoratedBox(
-      decoration: BoxDecoration(
-        color: selected ? c.selected : c.panel,
-        border: Border.all(color: selected ? c.selected : c.line),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SizedBox(
-        height: 34,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label),
-              if (dropdown)
-                Icon(Icons.arrow_drop_down, size: 20, color: c.muted),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (onTap == null) return body;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: body,
-    );
-  }
-}
-
-class _Toolbar extends StatelessWidget {
-  const _Toolbar({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.line)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Wrap(spacing: 8, runSpacing: 8, children: children),
       ),
     );
   }

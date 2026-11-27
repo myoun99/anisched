@@ -277,3 +277,98 @@ class SignalLabel extends StatelessWidget {
     );
   }
 }
+
+/// A toolbar button or drop-down face; picked state shows as fill.
+class ToolbarButton extends StatelessWidget {
+  const ToolbarButton({
+    super.key,
+    required this.label,
+    required this.selected,
+    this.onTap,
+    this.dropdown = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  /// Shows a drop-down arrow after the label.
+  final bool dropdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final body = DecoratedBox(
+      decoration: BoxDecoration(
+        color: selected ? c.selected : c.panel,
+        border: Border.all(color: selected ? c.selected : c.line),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SizedBox(
+        height: 34,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label),
+              if (dropdown)
+                Icon(Icons.arrow_drop_down, size: 20, color: c.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (onTap == null) return body;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: body,
+    );
+  }
+}
+
+/// The row of controls above a view's list.
+class ViewToolbar extends StatelessWidget {
+  const ViewToolbar({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Wrap(spacing: 8, runSpacing: 8, children: children),
+      ),
+    );
+  }
+}
+
+/// Gives a scroll view its own controller, so its always-visible
+/// scrollbar never falls back to a shared one.
+class OwnScroll extends StatefulWidget {
+  const OwnScroll({super.key, required this.builder});
+
+  final Widget Function(ScrollController controller) builder;
+
+  @override
+  State<OwnScroll> createState() => _OwnScrollState();
+}
+
+class _OwnScrollState extends State<OwnScroll> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_controller);
+}

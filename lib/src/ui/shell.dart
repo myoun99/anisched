@@ -12,6 +12,7 @@ import '../services/work_timer.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
+import 'views/board_view.dart';
 import 'views/sheet_view.dart';
 import 'views/today_view.dart';
 
@@ -152,7 +153,20 @@ class _AppShellState extends State<AppShell> {
                     sizing: StackFit.expand,
                     children: [
                       for (final v in AppView.values)
-                        if (v == AppView.sheet)
+                        if (v == AppView.board)
+                          BoardView(
+                            parts: _groups,
+                            layout: layout,
+                            signals: _signals,
+                            paces: _paces,
+                            selection: _selection,
+                            showDone: _showDone,
+                            onShowDoneChanged: (on) {
+                              setState(() => _showDone = on);
+                              unawaited(_loadGroups());
+                            },
+                          )
+                        else if (v == AppView.sheet)
                           SheetView(
                             parts: _groups,
                             now: widget.clock(),

@@ -293,13 +293,16 @@ class PartDetails extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   for (final (k, v) in facts)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 8,
-                      children: [
-                        Text(k, style: TextStyle(fontSize: 12, color: c.muted)),
-                        Text(v),
-                      ],
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$k  ',
+                            style: TextStyle(fontSize: 12, color: c.muted),
+                          ),
+                          TextSpan(text: v),
+                        ],
+                      ),
                     ),
                 ],
               ),
@@ -308,12 +311,14 @@ class PartDetails extends StatelessWidget {
                   spacing: 8,
                   children: [
                     Dot(reasonColor!),
-                    Text(
-                      reason,
-                      style: TextStyle(
-                        color: reasonColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                    Flexible(
+                      child: Text(
+                        reason,
+                        style: TextStyle(
+                          color: reasonColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -348,25 +353,41 @@ class PartDetails extends StatelessWidget {
                               spacing: 6,
                               children: [
                                 Dot(c.of(t.status)),
-                                Text(
-                                  taskLabel(t),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                TakeBadge(t.take),
-                                Text(
-                                  formatLength(t.lengthMs),
-                                  style: TextStyle(color: c.muted),
-                                ),
-                                if (t.dueOverridden)
-                                  Text(
-                                    formatDate(t.dueAt),
-                                    style: TextStyle(
-                                      color: accent,
-                                      fontWeight: FontWeight.w700,
+                                Flexible(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: taskLabel(t),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        if (t.take > 1)
+                                          TextSpan(
+                                            text: ' T${t.take}',
+                                            style: TextStyle(
+                                              color: c.retake,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        TextSpan(
+                                          text: '  ${formatLength(t.lengthMs)}',
+                                          style: TextStyle(color: c.muted),
+                                        ),
+                                        if (t.dueOverridden)
+                                          TextSpan(
+                                            text: '  ${formatDate(t.dueAt)}',
+                                            style: TextStyle(
+                                              color: accent,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
