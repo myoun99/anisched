@@ -16,6 +16,7 @@ class SettingsStore {
   static const _paceEnd = 'pace_end';
   static const _recentPaceDays = 'recent_pace_days';
   static const _weekStart = 'week_start';
+  static const _parallelLanes = 'parallel_lanes';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -76,6 +77,15 @@ class SettingsStore {
   set weekStart(int weekday) {
     RangeError.checkValueInInterval(weekday, 1, 7, 'weekday');
     _set(_weekStart, '$weekday');
+  }
+
+  /// How many units the user works on in parallel — the calendar's lane
+  /// count. Default: 3 (provisional, pending the user's choice).
+  int get parallelLanes => int.tryParse(_get(_parallelLanes) ?? '') ?? 3;
+
+  set parallelLanes(int lanes) {
+    RangeError.checkValueInInterval(lanes, 1, 20, 'lanes');
+    _set(_parallelLanes, '$lanes');
   }
 
   String? _get(String key) {

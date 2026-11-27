@@ -18,6 +18,7 @@
 | `seconds_rounding` | 초당 단가에서 컷 길이를 초로 맞추는 방식 — **작품마다 덮어쓸 수 있음**(`works.seconds_rounding`, NULL=앱 설정) | `nearest`(반올림) |
 | `day_start_minutes` | 하루가 시작하는 시각(자정 뒤 분) | `0`(자정) |
 | `rest_weekdays` | 쉬는 요일(1=월 … 7=일), 하루 몇 컷 계산에서 뺌. 빈 값 = 매일 일함 | **토·일** |
+| `parallel_lanes` | 달력의 병행 레인 수 | `3` ❓ |
 | `week_start` | 주가 시작하는 요일(이번 주 막대) | `1`(월) |
 | `recent_pace_days` | 「최근 평균」 속도가 보는 날 수 | `28` |
 | `pace_end` | 하루 몇 컷의 끝: `plan`(내 계획 끝 → 없으면 마감) / `due`(제작 마감) | `plan` |
@@ -149,6 +150,15 @@
     속도 비교는 하루 몇 컷(`Pace`, 끝 = 내 계획 끝 → 없으면 마감) vs 그 공정의 최근 평균.
   - UI 는 종류 → 글자·색만. `today()` 항목에 `due` · `plan` 이 들어 있고, 다른 보기는 `signals()`(묶음 키 → 신호 둘 + pace).
 
+## 달력 — 병행 레인
+
+- 설정 `parallel_lanes`(동시에 하는 일 수, 기본 3 — 임시 ❓).
+- `layoutLanes(막대들, 레인 수)`(models/lanes.dart, 순수 함수): 시작 빠른 순(같으면 긴 것 먼저)으로 비어 있는 가장 낮은 줄에 배치 —
+  가장 바쁜 날만큼의 줄만 씀. 줄이 모자라도 배치는 하되 `overflow`(넘친 막대) · `overflowRanges`(넘친 날 구간)로 알려 줌.
+  `busyDays` = 날짜별 동시 작업 수.
+- `calendarLayout(basis:)` — 아직 손에 있는 묶음을 막대로: `production`(착수 ~ 마감) 또는 `work`(실 작업: 계획 시작·끝,
+  비면 착수·마감 — 하루 몇 컷과 같은 규칙, 기본). 양 끝이 없는 묶음은 `unplaced`.
+
 ## 보기용 쿼리 (`CatalogueStore`)
 
 - `taskRows({workId})` — 살아 있는 작업 한 줄씩(작품·화·파트·공정·컷 순). 단가·길이·테이크·유료
@@ -195,6 +205,9 @@
 | 파트 × 공정 | `setPartDue` · `clearPartDue` · `setPartPlan(start:, end:)` · `addTasksForPart` | |
 | 컷 × 공정 | `addTask` · `setTaskDue` · `setTaskPlan` · `setTaskRate` · `setStatus` / `setStatusMany` · `requestRetake` | |
 | 쉬는 날 | `addDaysOff` · `removeDaysOff` | `daysOff`(스토어) |
+| 거래처·작품·화 고치기 | `renameClient` · `setClientClosingDay` · `renameWork` · `setWorkClient` · `setWorkCurrency` · `renameEpisode(번호, title:)` | |
+| 한 번에 등록 | `createWorkWithCuts(제목, 화, 컷 입력, partLabel:)` · `addEpisodeWithCuts(작품, 화, 컷 입력, partLabel:)` — 입력 오류면 아무것도 안 만듦 | |
+| 컷 대량 손보기 | 결번 `removeCuts(화, 번호들)`(보관) · 분할 `splitCut(컷, ['A','B','C'])`(같은 공정 작업 생성) · 겸용 `mergeCuts(컷들)`(→ `C012-014`, 나머지 보관) · `renumberCuts({컷: 새 번호})`(맞바꾸기 가능) | |
 | 작품의 공정 목록 | `addStage(작품, 이름, beforeStageId:)` · `renameStage` · `reorderStages(작품, 전체 id 순서)` · 숨김 = `archive(stage)` | `stages(작품)` |
 | 보관(지우기) · 되살리기 | `archive(종류, id)` · `restore(종류, id)` — 작품·화·파트·컷·콘티·작업·공정 | `archived()`(휴지통, 최근 순) |
 
@@ -205,6 +218,8 @@
 컷 번호 입력(`parseCutNumbers`): 쉼표·`、`·공백으로 나눔. 범위는 `~` `〜` `–` `—` `..`(`C100~C110`, `C100~110`, 앞자리 0 유지).
 **하이픈 `-` 은 범위가 아니라 겸용 컷 번호 하나**(`C012-014`). 분할 `C012A` 는 그대로. 거꾸로 된 범위·3000개 넘는 범위·접두어가
 다른 범위는 오류 목록으로.
+
+컷 1500개(극장판) 측정: 만들기 ≈ 30ms · 한 공정 작업 1500개 ≈ 20ms · 목록 읽기 ≈ 30ms(컨테이너 테스트 모드).
 
 작업시간: `weekHours(weekOf:)` — 주 시작 요일 설정(`week_start`, 기본 월요일) · 하루 시작 설정 적용, 도는 타이머 포함.
 `dayIntervals(day:)` — 그날의 타이머 구간(작품 id 포함, 하루 막대용).
@@ -232,3 +247,28 @@
 
 
 정해진 것(v9): 착수일 기본 = 등록한 날 · 실 작업 기간이 비면 제작 기간으로 하루 몇 컷 계산 · 드래그 순서가 있을 때 새 묶음은 맨 뒤.
+
+## 공정 프리셋 초안 (유저 확인용 — 확정 아님, 아직 앱에 넣지 않음)
+
+역할·작품 형태별 후보. 이름·구성은 추측이므로 유저가 고치거나 지운 것만 넣는다.
+
+| 프리셋 | 공정 |
+|---|---|
+| 원화맨 | LO · 원화 |
+| 원화맨(LO만) | LO |
+| 원화맨(원화만, 타인 LO) | 원화 |
+| 2원 | 2원 |
+| 작감 | LO 작감 수정 · 원화 작감 수정 |
+| 총작감 | LO 총작감 수정 · 원화 총작감 수정 |
+| 연출 | 콘티 체크 · LO 연출 수정 · 원화 연출 수정 |
+| 콘티 | 콘티 |
+| 동화 | 동화 · 동화 체크 |
+| 전체(지금 「기본」) | 콘티 · 콘티 체크 · LO · LO 연출/작감/총작감 수정 · 원화 · 원화 연출/작감/총작감 수정 |
+
+## 남은 질문 (v7 피드백)
+
+1. **병행 레인 기본 수** — ① 2 ② 3 ③ 4 — 추천 ③? 아니면 ②… 유저의 평소 동시 작업 수로(지금 3 임시).
+2. **달력 막대 기준** — ① 실 작업(계획, 비면 제작 일정 — 하루 몇 컷과 같음) ② 제작 일정(착수 ~ 마감) ③ 둘 다 겹쳐 그림 —
+   추천 ①(지금 기본), 데이터는 둘 다 됨.
+3. **겸용 컷의 길이** — 합칠 때 ① 남는 컷 길이 그대로 ② 합친 컷들 길이의 합 — 추천: 유저 확인 필요(초당 단가에 영향).
+4. **프리셋 초안**(위 표) — 이름·구성 확인, 빠진 역할.

@@ -3,6 +3,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/cut_numbers.dart';
+import '../models/lanes.dart';
 import '../models/progress.dart';
 import '../models/work_interval.dart';
 import 'settings_store.dart';
@@ -1059,6 +1060,35 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
             r['group_key'] as String: r['position'] as int,
         },
       );
+
+  /// The calendar: every open unit as a bar over [basis] dates, laid out
+  /// on the parallel-lanes setting. Units missing either end are not
+  /// placed and are listed in `unplaced` (group keys).
+  ({LaneLayout layout, List<String> unplaced}) calendarLayout({
+    CalendarBasis basis = CalendarBasis.work,
+  }) {
+    final spans = <Span>[];
+    final unplaced = <String>[];
+    for (final g in partGroups()) {
+      if (!g.status.isOpen) continue;
+      final (start, end) = switch (basis) {
+        CalendarBasis.production => (g.kickoffAt, g.dueAt),
+        CalendarBasis.work => (
+          g.planStartAt ?? g.kickoffAt,
+          g.planEndAt ?? g.dueAt,
+        ),
+      };
+      if (start == null || end == null || end.isBefore(start)) {
+        unplaced.add(g.key);
+      } else {
+        spans.add(Span(g.key, start, end));
+      }
+    }
+    return (
+      layout: layoutLanes(spans, settings.parallelLanes),
+      unplaced: unplaced,
+    );
+  }
 
   /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
   /// display order, replacing any earlier order. Units not listed fall

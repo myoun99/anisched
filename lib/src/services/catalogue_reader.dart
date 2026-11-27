@@ -5,6 +5,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/lanes.dart';
 import '../models/progress.dart';
 import 'catalogue_store.dart';
 
@@ -60,6 +61,11 @@ abstract interface class CatalogueReader {
     int episodeId,
   );
   Future<List<({int id, String name, int? closingDay})>> clients();
+
+  /// See [CatalogueStore.calendarLayout].
+  Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({
+    CalendarBasis basis = CalendarBasis.work,
+  });
 
   /// See [CatalogueStore.hasGroupOrder].
   Future<bool> hasGroupOrder();
@@ -155,6 +161,11 @@ class SyncCatalogueReader implements CatalogueReader {
 
   @override
   Future<bool> hasGroupOrder() => _run(() => store.hasGroupOrder);
+
+  @override
+  Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({
+    CalendarBasis basis = CalendarBasis.work,
+  }) => _run(() => store.calendarLayout(basis: basis));
 
   @override
   Future<void> close() async => _closed = true;
@@ -358,6 +369,11 @@ class BackgroundCatalogueReader implements CatalogueReader {
 
   @override
   Future<bool> hasGroupOrder() => _ask((s) => s.hasGroupOrder);
+
+  @override
+  Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({
+    CalendarBasis basis = CalendarBasis.work,
+  }) => _ask((s) => s.calendarLayout(basis: basis));
 
   @override
   Future<void> close() async {
