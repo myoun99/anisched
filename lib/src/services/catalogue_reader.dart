@@ -73,6 +73,18 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.roles].
   Future<List<({int id, String name, List<String> stages})>> roles();
 
+  /// Search for the registration screen: see [CatalogueStore.searchClients],
+  /// [CatalogueStore.searchWorks] and [CatalogueStore.searchEpisodes].
+  Future<List<({int id, String name, int? closingDay})>> searchClients(
+    String query,
+  );
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  searchWorks(String query, {int? clientId});
+  Future<List<({int id, String number, String? title})>> searchEpisodes(
+    int workId,
+    String query,
+  );
+
   /// See [CatalogueStore.workCutFormat].
   Future<({String prefix, int digits})> workCutFormat(int workId);
 
@@ -171,6 +183,22 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<List<({int id, String name, List<String> stages})>> roles() =>
       _run(store.roles);
+
+  @override
+  Future<List<({int id, String name, int? closingDay})>> searchClients(
+    String query,
+  ) => _run(() => store.searchClients(query));
+
+  @override
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  searchWorks(String query, {int? clientId}) =>
+      _run(() => store.searchWorks(query, clientId: clientId));
+
+  @override
+  Future<List<({int id, String number, String? title})>> searchEpisodes(
+    int workId,
+    String query,
+  ) => _run(() => store.searchEpisodes(workId, query));
 
   @override
   Future<({String prefix, int digits})> workCutFormat(int workId) =>
@@ -387,6 +415,22 @@ class BackgroundCatalogueReader implements CatalogueReader {
   @override
   Future<List<({int id, String name, List<String> stages})>> roles() =>
       _ask((s) => s.roles());
+
+  @override
+  Future<List<({int id, String name, int? closingDay})>> searchClients(
+    String query,
+  ) => _ask((s) => s.searchClients(query));
+
+  @override
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  searchWorks(String query, {int? clientId}) =>
+      _ask((s) => s.searchWorks(query, clientId: clientId));
+
+  @override
+  Future<List<({int id, String number, String? title})>> searchEpisodes(
+    int workId,
+    String query,
+  ) => _ask((s) => s.searchEpisodes(workId, query));
 
   @override
   Future<({String prefix, int digits})> workCutFormat(int workId) =>
