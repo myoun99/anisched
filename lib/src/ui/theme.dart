@@ -42,40 +42,43 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color retake;
   final Color done;
 
+  // Restrained neutrals with a faint cool bias, one indigo accent; status
+  // colours tuned so each reads on both grounds (checked ≥ 3:1 against
+  // the panel in both modes).
   static const light = AppColors(
-    page: Color(0xFFE9ECF1),
+    page: Color(0xFFF4F5F7),
     panel: Color(0xFFFFFFFF),
-    panelAlt: Color(0xFFF5F7FA),
-    line: Color(0xFFDDE1E8),
-    muted: Color(0xFF687184),
-    faint: Color(0xFF9AA2B1),
-    selected: Color(0xFFDBE5FF),
-    hover: Color(0xFFEEF2F8),
-    scrollThumb: Color(0xFFB4BCCB),
-    scrollTrack: Color(0xFFECEFF3),
-    received: Color(0xFF8E97A7),
-    working: Color(0xFF2A6BE0),
-    submitted: Color(0xFFC08410),
-    retake: Color(0xFFD2433B),
-    done: Color(0xFF2C9558),
+    panelAlt: Color(0xFFF8F9FA),
+    line: Color(0xFFE4E6EB),
+    muted: Color(0xFF666B78),
+    faint: Color(0xFF9CA1AC),
+    selected: Color(0xFFE6EAFB),
+    hover: Color(0xFFF1F2F5),
+    scrollThumb: Color(0xFFC3C7D0),
+    scrollTrack: Color(0x00000000),
+    received: Color(0xFF8A909C),
+    working: Color(0xFF3B6FE0),
+    submitted: Color(0xFFB7791F),
+    retake: Color(0xFFD1453B),
+    done: Color(0xFF2F9461),
   );
 
   static const dark = AppColors(
-    page: Color(0xFF101318),
-    panel: Color(0xFF1A1E26),
-    panelAlt: Color(0xFF20252E),
-    line: Color(0xFF2D333E),
-    muted: Color(0xFF949DB0),
-    faint: Color(0xFF6C7486),
-    selected: Color(0xFF283A66),
-    hover: Color(0xFF232935),
-    scrollThumb: Color(0xFF4A5263),
-    scrollTrack: Color(0xFF1F242C),
-    received: Color(0xFF7F889A),
-    working: Color(0xFF5B8FF0),
-    submitted: Color(0xFFE0A63A),
-    retake: Color(0xFFEE6A62),
-    done: Color(0xFF4CBA7B),
+    page: Color(0xFF0E0F12),
+    panel: Color(0xFF16171B),
+    panelAlt: Color(0xFF1B1D22),
+    line: Color(0xFF2A2C33),
+    muted: Color(0xFF8F94A0),
+    faint: Color(0xFF5E636D),
+    selected: Color(0xFF262B44),
+    hover: Color(0xFF1F2126),
+    scrollThumb: Color(0xFF3B3E47),
+    scrollTrack: Color(0x00000000),
+    received: Color(0xFF8E94A1),
+    working: Color(0xFF6E97F5),
+    submitted: Color(0xFFE0A642),
+    retake: Color(0xFFF0706A),
+    done: Color(0xFF52C08A),
   );
 
   static AppColors of(BuildContext context) =>
@@ -108,6 +111,10 @@ class AppColors extends ThemeExtension<AppColors> {
   }
 }
 
+/// Light, dark or the system's choice. Kept while the app runs; saved
+/// with the device settings once the data lane stores it.
+final themeModeSetting = ValueNotifier<ThemeMode>(ThemeMode.system);
+
 /// Font stack: BIZ UDPGothic for Latin and Japanese, Nanum Gothic for Hangul.
 abstract final class AppFonts {
   static const family = 'BIZUDPGothic';
@@ -115,8 +122,8 @@ abstract final class AppFonts {
 }
 
 abstract final class AppTheme {
-  static const _accentLight = Color(0xFF2A57C9);
-  static const _accentDark = Color(0xFF7F9DFF);
+  static const _accentLight = Color(0xFF4F5BD5);
+  static const _accentDark = Color(0xFF8D96FA);
 
   static ThemeData light() => _build(Brightness.light);
   static ThemeData dark() => _build(Brightness.dark);
@@ -125,7 +132,7 @@ abstract final class AppTheme {
     final isDark = brightness == Brightness.dark;
     final c = isDark ? AppColors.dark : AppColors.light;
     final accent = isDark ? _accentDark : _accentLight;
-    final ink = isDark ? const Color(0xFFE5E8EE) : const Color(0xFF1C2230);
+    final ink = isDark ? const Color(0xFFE6E7EB) : const Color(0xFF1A1C22);
     final scheme =
         ColorScheme.fromSeed(
           seedColor: accent,
@@ -151,8 +158,76 @@ abstract final class AppTheme {
         trackVisibility: const WidgetStatePropertyAll(true),
         thumbColor: WidgetStatePropertyAll(c.scrollThumb),
         trackColor: WidgetStatePropertyAll(c.scrollTrack),
-        thickness: const WidgetStatePropertyAll(8),
-        radius: const Radius.circular(4),
+        trackBorderColor: const WidgetStatePropertyAll(Color(0x00000000)),
+        thickness: const WidgetStatePropertyAll(6),
+        radius: const Radius.circular(3),
+      ),
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: c.hover,
+      hoverColor: c.hover,
+      popupMenuTheme: PopupMenuThemeData(
+        color: c.panel,
+        surfaceTintColor: const Color(0x00000000),
+        elevation: 8,
+        shadowColor: const Color(0x33000000),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: c.line),
+        ),
+        textStyle: TextStyle(fontSize: 13, color: ink),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: c.panel,
+        surfaceTintColor: const Color(0x00000000),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: c.line),
+        ),
+      ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: c.panel,
+        surfaceTintColor: const Color(0x00000000),
+        headerBackgroundColor: c.panelAlt,
+        headerForegroundColor: ink,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        isDense: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: c.line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: c.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: accent, width: 1.4),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          side: BorderSide(color: c.line),
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        side: BorderSide(color: c.faint, width: 1.4),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: ink,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        textStyle: TextStyle(color: c.panel, fontSize: 12),
       ),
     );
     return base.copyWith(

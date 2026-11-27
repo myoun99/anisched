@@ -35,18 +35,23 @@ class AnischedApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Anisched',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      scrollBehavior: const AlwaysScrollbarBehavior(),
-      home: AppShell(
-        reader: reader,
-        store: store,
-        timer: timer,
-        session: session,
-        remote: remote,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeSetting,
+      builder: (context, mode, _) => MaterialApp(
+        themeMode: mode,
+        themeAnimationDuration: Duration.zero,
+        title: 'Anisched',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        scrollBehavior: const AlwaysScrollbarBehavior(),
+        home: AppShell(
+          reader: reader,
+          store: store,
+          timer: timer,
+          session: session,
+          remote: remote,
+        ),
       ),
     );
   }

@@ -29,7 +29,13 @@ class SheetView extends StatefulWidget {
     this.toolbar,
     this.onReorder,
     this.onTaskTap,
+    this.onDue,
+    this.onTaskDue,
   });
+
+  /// Sets a unit's deadline / one cut's own deadline.
+  final void Function(PartGroup group, DateTime due)? onDue;
+  final void Function(TaskRow task, DateTime due)? onTaskDue;
 
   /// A cut tapped in the opened details (starts the timer, or picks it
   /// while picking); null: taps pick.
@@ -162,6 +168,9 @@ class _SheetViewState extends State<SheetView> {
                       selected: _selected == p.key,
                       signals: widget.signals[p.key],
                       picked: sel?.of(p) ?? Picked.none,
+                      onDue: widget.onDue == null
+                          ? null
+                          : (d) => widget.onDue!(p, d),
                       onLongPress: sel == null
                           ? null
                           : () => sel.toggleGroup(p),
@@ -179,6 +188,10 @@ class _SheetViewState extends State<SheetView> {
                         usual: widget.paces[p.stageName],
                         isPicked: sel?.has,
                         onTask: widget.onTaskTap ?? sel?.toggleTask,
+                        onDue: widget.onDue == null
+                            ? null
+                            : (d) => widget.onDue!(p, d),
+                        onTaskDue: widget.onTaskDue,
                       ),
                   ],
                 );

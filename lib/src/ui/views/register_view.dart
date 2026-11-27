@@ -11,6 +11,7 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
+import '../fold.dart';
 import '../format.dart';
 import '../instant.dart';
 import '../pick_field.dart';
@@ -92,9 +93,13 @@ class _RegisterViewState extends State<RegisterView> {
   List<String> get _allStages =>
       {for (final r in widget.roles) ...r.stages}.toList();
 
+  void _refold() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    Folds.newCuts.addListener(_refold);
+    Folds.savedCuts.addListener(_refold);
     if (widget.roles.isNotEmpty) _stages.addAll(widget.roles.first.stages);
   }
 
@@ -108,6 +113,8 @@ class _RegisterViewState extends State<RegisterView> {
 
   @override
   void dispose() {
+    Folds.newCuts.removeListener(_refold);
+    Folds.savedCuts.removeListener(_refold);
     _start.dispose();
     _count.dispose();
     super.dispose();
@@ -326,26 +333,19 @@ class _RegisterViewState extends State<RegisterView> {
                   sliver: SliverToBoxAdapter(child: _summary(context)),
                 ),
                 SliverPadding(
-                  padding: _gridPadding,
-                  sliver: SliverGrid.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 60,
-                          mainAxisExtent: 24,
-                          mainAxisSpacing: 2,
-                          crossAxisSpacing: 2,
-                        ),
-                    itemCount: cells.length + 1,
-                    itemBuilder: (context, i) => i == cells.length
-                        ? _plusCell(context)
-                        : _cell(context, cells[i], clashes.contains(cells[i])),
+                  padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FoldToggle(
+                        key: const Key('fold-new-cuts'),
+                        state: Folds.newCuts,
+                        label: '${cells.length} cut',
+                      ),
+                    ),
                   ),
                 ),
-                if (_saved.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-                    sliver: SliverToBoxAdapter(child: _savedBar(context)),
-                  ),
+                if (Folds.newCuts.value)
                   SliverPadding(
                     padding: _gridPadding,
                     sliver: SliverGrid.builder(
@@ -356,11 +356,37 @@ class _RegisterViewState extends State<RegisterView> {
                             mainAxisSpacing: 2,
                             crossAxisSpacing: 2,
                           ),
-                      itemCount: _saved.length,
-                      itemBuilder: (context, i) =>
-                          _savedCell(context, _saved[i]),
+                      itemCount: cells.length + 1,
+                      itemBuilder: (context, i) => i == cells.length
+                          ? _plusCell(context)
+                          : _cell(
+                              context,
+                              cells[i],
+                              clashes.contains(cells[i]),
+                            ),
                     ),
                   ),
+                if (_saved.isNotEmpty) ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                    sliver: SliverToBoxAdapter(child: _savedBar(context)),
+                  ),
+                  if (Folds.savedCuts.value)
+                    SliverPadding(
+                      padding: _gridPadding,
+                      sliver: SliverGrid.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 60,
+                              mainAxisExtent: 24,
+                              mainAxisSpacing: 2,
+                              crossAxisSpacing: 2,
+                            ),
+                        itemCount: _saved.length,
+                        itemBuilder: (context, i) =>
+                            _savedCell(context, _saved[i]),
+                      ),
+                    ),
                 ],
               ],
             ),
@@ -712,10 +738,12 @@ class _RegisterViewState extends State<RegisterView> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text(
-          '${_episode?.title ?? ''} 등록된 컷 '
-          '${_saved.where((x) => !x.archived).length}',
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        FoldToggle(
+          key: const Key('fold-saved-cuts'),
+          state: Folds.savedCuts,
+          label:
+              '${_episode?.title ?? ''} 등록된 컷 '
+              '${_saved.where((x) => !x.archived).length}',
         ),
         ToolbarButton(
           key: const Key('saved-remove'),

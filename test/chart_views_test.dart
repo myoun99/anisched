@@ -17,6 +17,7 @@ const devices = {
   'desktop': Size(1440, 900),
   'tablet portrait': Size(800, 1280),
   'phone portrait': Size(412, 915),
+  'small phone portrait': Size(390, 844),
   'phone landscape': Size(915, 412),
 };
 
