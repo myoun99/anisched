@@ -220,25 +220,46 @@ class DocumentSession {
   Future<void> save() => _serial(() async {
     final ref = _ref;
     if (ref == null || !_dirty) return;
-    await _writeTo(ref);
+    await _writeInPlace(ref);
   });
 
   /// Writes to [ref] (a place the user just picked) and binds to it.
   /// "Save" of an untitled document is this too.
-  Future<void> saveAs(DocumentRef ref) => _serial(() async {
-    await _writeTo(ref);
-    _ref = ref;
-    _recents = touchRecent(_recents, ref, _clock());
-    _persist();
-    _emit(DocumentChange.state);
-  });
+  Future<void> saveAs(DocumentRef ref) async {
+    await saveAsPlaced((staged, _) async {
+      await _files.replaceFrom(staged, ref);
+      return ref;
+    }, name: ref.name);
+  }
 
-  Future<void> _writeTo(DocumentRef ref) async {
+  /// Save As where the platform picks the place only once the file exists
+  /// (iOS export picker, Android create-document, the macOS save panel
+  /// that must mint its bookmark after the write): the finished document
+  /// is staged under [name] and [place] puts it somewhere and answers
+  /// where, or null when the user backed out. Answers whether it was
+  /// saved; on true the session is bound to the new place.
+  Future<bool> saveAsPlaced(DocumentPlacer place, {required String name}) =>
+      _serial(() async {
+        final ref = await _writeTo(place, name: name);
+        if (ref == null) return false;
+        _ref = ref;
+        _recents = touchRecent(_recents, ref, _clock());
+        _persist();
+        _emit(DocumentChange.state);
+        return true;
+      });
+
+  /// Writes the working database and hands it to [place]; null when
+  /// [place] declined (nothing changed).
+  Future<DocumentRef?> _writeTo(DocumentPlacer place, {String? name}) async {
     final editsAtStart = _edits;
-    final out = _stagingPath('out');
+    final folder = Directory(_stagingPath('out'))..createSync();
+    final out = _join(folder.path, _documentFileName(name ?? 'Untitled'));
+    final DocumentRef? ref;
     try {
       final content = await exportDocument(workingPath, out);
-      await _files.replaceFrom(out, ref);
+      ref = await place(out, _documentFileName(name ?? 'Untitled'));
+      if (ref == null) return null;
       final stat = await _files.stat(ref);
       _fingerprint = DocumentFingerprint(
         size: content.size,
@@ -254,7 +275,11 @@ class DocumentSession {
       _emit(DocumentChange.state);
       rethrow;
     } finally {
-      _delete(out);
+      try {
+        folder.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Staging is cleared at the next start.
+      }
     }
     _lastSaveError = null;
     if (_edits == editsAtStart) {
@@ -264,7 +289,14 @@ class DocumentSession {
     }
     _persist();
     _emit(DocumentChange.state);
+    return ref;
   }
+
+  /// Writes to the bound [ref] in place.
+  Future<void> _writeInPlace(DocumentRef ref) => _writeTo((staged, _) async {
+    await _files.replaceFrom(staged, ref);
+    return ref;
+  }, name: ref.name);
 
   // ---- reading ----
 
@@ -411,7 +443,7 @@ class DocumentSession {
     final ref = _ref;
     if (ref != null) {
       try {
-        await _writeTo(ref);
+        await _writeInPlace(ref);
       } on Object {
         // Falls through to the snapshot.
       }
@@ -519,3 +551,21 @@ class DocumentSession {
 }
 
 String _join(String a, String b) => '$a${Platform.pathSeparator}$b';
+
+/// [name] as a document file name: the extension added when missing, path
+/// separators taken out.
+String _documentFileName(String name) {
+  final clean = name.replaceAll(RegExp(r'[/\\:]'), '_').trim();
+  final base = clean.isEmpty ? 'Untitled' : clean;
+  return base.toLowerCase().endsWith('.$documentExtension')
+      ? base
+      : '$base.$documentExtension';
+}
+
+/// Puts the finished document at [stagedPath] (named [fileName]) in its
+/// place and answers where it went, or null when the user backed out.
+/// It may move the staged file.
+typedef DocumentPlacer = Future<DocumentRef?> Function(
+  String stagedPath,
+  String fileName,
+);
