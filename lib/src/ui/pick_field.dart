@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'instant.dart';
 import 'theme.dart';
 
 /// One choice in a [PickField] list.
@@ -38,7 +39,7 @@ class PickField<T> extends StatelessWidget {
   final double width;
 
   Future<void> _open(BuildContext context) async {
-    final picked = await showDialog<PickOption<T>>(
+    final picked = await showInstantDialog<PickOption<T>>(
       context: context,
       builder: (_) =>
           _PickDialog<T>(title: label, search: search, onCreate: onCreate),
@@ -148,6 +149,7 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
             Padding(
               padding: const EdgeInsets.all(12),
               child: TextField(
+                onTapOutside: unfocusOutside,
                 key: const Key('pick-search'),
                 controller: _query,
                 focusNode: _focus,
@@ -210,7 +212,7 @@ Future<String?> askName(
   BuildContext context, {
   required String title,
   String initial = '',
-}) => showDialog<String>(
+}) => showInstantDialog<String>(
   context: context,
   builder: (_) => _NameDialog(title: title, initial: initial),
 );
@@ -238,6 +240,7 @@ class _NameDialogState extends State<_NameDialog> {
   Widget build(BuildContext context) => AlertDialog(
     title: Text(widget.title, style: const TextStyle(fontSize: 15)),
     content: TextField(
+      onTapOutside: unfocusOutside,
       key: const Key('name-input'),
       controller: _ctl,
       autofocus: true,

@@ -9,6 +9,7 @@ import '../../services/catalogue_store.dart';
 import '../../services/document_session.dart';
 import '../../services/recovery_snapshots.dart';
 import '../format.dart';
+import '../instant.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -82,7 +83,7 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _addDaysOff() async {
-    final r = await showDateRangePicker(
+    final r = await showInstantDateRangePicker(
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
