@@ -1,6 +1,7 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/ui/selection.dart';
+import 'package:anisched/src/ui/selection_bar.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/sample_catalogue.dart';
 
 final now = DateTime(2026, 11, 27, 14);
+
+Finder picked(String text) =>
+    find.descendant(of: find.byType(SelectionBar), matching: find.text(text));
 
 void main() {
   test('a group is picked whole, in part, or not at all', () {
@@ -47,10 +51,10 @@ void main() {
     final g = store.partGroups().firstWhere(
       (g) => g.workTitle == '별빛 정류장' && g.partLabel == 'C',
     );
-    expect(find.text('0건'), findsOneWidget);
+    expect(picked('0건'), findsOneWidget);
     await t.longPress(find.byKey(Key('line-${g.key}')));
     await t.pump();
-    expect(find.text('${g.total}건'), findsOneWidget);
+    expect(picked('${g.total}건'), findsOneWidget);
 
     await t.tap(find.byKey(const Key('apply-submitted')));
     await t.pump();
@@ -59,6 +63,6 @@ void main() {
         .partGroups(includeDone: true)
         .firstWhere((x) => x.key == g.key);
     expect(after.tasks.every((x) => x.status == TaskStatus.submitted), isTrue);
-    expect(find.text('0건'), findsOneWidget);
+    expect(picked('0건'), findsOneWidget);
   });
 }

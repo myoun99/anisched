@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/registration.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/lanes.dart';
@@ -10,9 +11,14 @@ import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/work_timer.dart';
+import 'filter.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
+import 'timer_bar.dart';
+import 'widgets.dart';
+import 'views/register_view.dart';
+import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
@@ -69,7 +75,10 @@ class _AppShellState extends State<AppShell> {
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
   LaneLayout? _lanes;
-  bool _showDone = false;
+  ViewFilter _filter = const ViewFilter();
+  Map<int, ({String title, int? clientId})> _works = const {};
+  Map<int, String> _clients = const {};
+  List<({int id, String name, List<String> stages})> _roles = const [];
   final _selection = TaskSelection();
   int _refresh = 0;
 
@@ -92,6 +101,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _timerTask = widget.timer?.running()?.taskId;
     unawaited(_loadGroups());
   }
 
@@ -99,20 +109,70 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadGroups() async {
     final reader = widget.reader;
     if (reader == null) return;
-    final done = _showDone;
-    final (groups, signals, paces, lanes) = await (
+    final done = _filter.showDone;
+    final (groups, signals, paces, lanes, works, clients, roles) = await (
       reader.partGroups(includeDone: done),
       reader.signals(includeDone: done),
       reader.stagePaces(),
       reader.calendarLayout(basis: CalendarBasis.work),
+      reader.works(),
+      reader.clients(),
+      reader.roles(),
     ).wait;
     if (!mounted) return;
     setState(() {
+      _works = {
+        for (final w in works) w.id: (title: w.title, clientId: w.clientId),
+      };
+      _clients = {for (final c in clients) c.id: c.name};
+      _roles = roles;
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
       _lanes = lanes.layout;
     });
+  }
+
+  /// The task the timer last ran on, for resume.
+  int? _timerTask;
+
+  Widget _timerBar() {
+    final timer = widget.timer;
+    final running = timer?.running();
+    final id = running?.taskId ?? _timerTask;
+    TaskRow? task;
+    PartGroup? group;
+    for (final g in _groups) {
+      for (final t in g.tasks) {
+        if (t.id == id) {
+          task = t;
+          group = g;
+        }
+      }
+    }
+    return TimerBar(
+      running: running,
+      task: task,
+      group: group,
+      clock: widget.clock,
+      onStop: timer == null
+          ? null
+          : () {
+              timer.stop();
+              setState(() {});
+            },
+      onResume: timer == null || id == null ? null : () => _startTimer(id),
+    );
+  }
+
+  /// Starts the timer on a task (stopping any other first).
+  void _startTimer(int taskId) {
+    final timer = widget.timer;
+    if (timer == null) return;
+    timer
+      ..stop()
+      ..start(taskId: taskId);
+    setState(() => _timerTask = taskId);
   }
 
   /// Runs one write on the store, then reloads every view.
@@ -123,6 +183,61 @@ class _AppShellState extends State<AppShell> {
     setState(() => _refresh++);
     unawaited(_loadGroups());
   }
+
+  void _setFilter(ViewFilter f) {
+    final reload = f.showDone != _filter.showDone;
+    setState(() => _filter = f);
+    if (reload) unawaited(_loadGroups());
+  }
+
+  /// Units passing the filter, in the stored order.
+  List<PartGroup> _visible(DateTime now) {
+    final clientOf = {for (final e in _works.entries) e.key: e.value.clientId};
+    return [
+      for (final g in _groups)
+        if (_filter.matches(g, now, clientOf)) g,
+    ];
+  }
+
+  /// A drag in the list: [shownKeys] in their new order. Hidden units
+  /// keep their slots.
+  void _reorder(List<String> shownKeys) => _write((store) {
+    final shown = shownKeys.toSet();
+    final next = shownKeys.iterator;
+    store.setGroupOrder([
+      for (final g in _groups)
+        if (shown.contains(g.key)) (next..moveNext()).current else g.key,
+    ]);
+  });
+
+  List<Widget> _toolbar(int count) => [
+    ToolbarButton(
+      key: const Key('sort-by-due'),
+      label: '마감 순 정렬',
+      selected: false,
+      onTap: widget.store == null
+          ? null
+          : () => _write((s) => s.clearGroupOrder()),
+    ),
+    FilterButton(
+      filter: _filter,
+      onChanged: _setFilter,
+      clients: _clients,
+      works: {
+        for (final w in _works.entries)
+          if (_groups.any((g) => g.workId == w.key)) w.key: w.value.title,
+      },
+    ),
+    SizedBox(
+      height: 34,
+      child: Center(
+        child: Text(
+          '$count건',
+          style: TextStyle(color: AppColors.of(context).muted),
+        ),
+      ),
+    ),
+  ];
 
   static DateTime _startOf(DateTime d) => DateTime(d.year, d.month, d.day);
   static DateTime _endOf(DateTime d) =>
@@ -166,24 +281,28 @@ class _AppShellState extends State<AppShell> {
         widget.store?.settings.restWeekdays ??
         const {DateTime.saturday, DateTime.sunday};
     final writable = widget.store != null;
-    void showDone(bool on) {
-      setState(() => _showDone = on);
-      unawaited(_loadGroups());
-    }
-
+    final shown = _visible(now);
+    final toolbar = _toolbar(shown.length);
     return switch (v) {
       AppView.list => SheetView(
-        parts: _groups,
+        parts: shown,
         now: now,
         layout: layout,
-        showDone: _showDone,
+        showDone: _filter.showDone,
         signals: _signals,
         paces: _paces,
         selection: _selection,
-        onShowDoneChanged: showDone,
+        toolbar: toolbar,
+        onReorder: writable ? _reorder : null,
+        onTaskTap: widget.timer == null
+            ? null
+            : (t) => _selection.isEmpty
+                  ? _startTimer(t.id)
+                  : _selection.toggleTask(t),
       ),
       AppView.timeline => TimelineView(
-        parts: _groups,
+        parts: shown,
+        toolbar: toolbar,
         now: now,
         layout: layout,
         restWeekdays: rest,
@@ -202,7 +321,51 @@ class _AppShellState extends State<AppShell> {
         onClearPins: writable ? () => _write((s) => s.clearLanePins()) : null,
         onPlan: writable ? _plan : null,
       ),
-      AppView.register || AppView.settings => ViewSlot(view: v, layout: layout),
+      AppView.register => RegisterView(
+        now: now,
+        layout: layout,
+        reader: widget.reader,
+        roles: _roles,
+        onCreateClient: writable
+            ? (name) {
+                var id = 0;
+                _write((s) => id = s.addClient(name));
+                return id;
+              }
+            : null,
+        onCreateWork: writable
+            ? (title, client) {
+                var id = 0;
+                _write((s) => id = s.createWork(title, clientId: client));
+                return id;
+              }
+            : null,
+        onCreateEpisode: writable
+            ? (work, number) {
+                var id = 0;
+                _write((s) => id = s.addEpisode(work, number));
+                return id;
+              }
+            : null,
+        onRegister: writable
+            ? (draft) {
+                var n = 0;
+                _write((s) => n = register(s, draft).length);
+                return n;
+              }
+            : null,
+      ),
+      AppView.settings => SettingsView(
+        now: now,
+        store: widget.store,
+        reader: widget.reader,
+        paces: _paces,
+        refresh: _refresh,
+        onChanged: () {
+          setState(() => _refresh++);
+          unawaited(_loadGroups());
+        },
+      ),
     };
   }
 
@@ -248,6 +411,7 @@ class _AppShellState extends State<AppShell> {
                     ],
                   ),
                 ),
+                _timerBar(),
               ],
             ),
           ),
@@ -405,26 +569,6 @@ class _ViewButton extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Space reserved for one view until it is built from the data lane's
-/// models. It shows only the view's name.
-class ViewSlot extends StatelessWidget {
-  const ViewSlot({super.key, required this.view, required this.layout});
-
-  final AppView view;
-  final ScreenLayout layout;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return ColoredBox(
-      color: c.panelAlt,
-      child: Center(
-        child: Text(view.label, style: TextStyle(fontSize: 20, color: c.faint)),
       ),
     );
   }
