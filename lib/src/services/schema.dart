@@ -13,7 +13,8 @@ class Migration {
 /// a fix is a new step. Versions must be 1, 2, 3, … with no gaps.
 ///
 /// v1: timer intervals. v2: the work catalogue (clients, works, stages,
-/// episodes, cuts, storyboards, rates, tasks, retakes).
+/// episodes, cuts, storyboards, rates, tasks, retakes). v3: parts with
+/// per-stage deadlines, settings, and timer intervals linked to tasks.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -28,6 +29,7 @@ CREATE TABLE work_intervals (
     );
   }),
   const Migration(2, _v2Catalogue),
+  const Migration(3, _v3PartsAndSettings),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -192,5 +194,50 @@ void migrate(Database db, {List<Migration>? steps}) {
       db.execute('ROLLBACK;');
       rethrow;
     }
+  }
+}
+
+void _v3PartsAndSettings(Database db) {
+  for (final sql in const [
+    // A part is the bundle of cuts the user is assigned within an episode
+    // ("part B, 11 cuts"). planned_cut_count may be known before the cut
+    // list arrives.
+    '''
+CREATE TABLE parts (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  label TEXT NOT NULL,
+  sort_key TEXT NOT NULL,
+  planned_cut_count INTEGER
+    CHECK (planned_cut_count IS NULL OR planned_cut_count >= 0),
+  note TEXT,
+  archived_at INTEGER
+);''',
+    'CREATE INDEX parts_episode ON parts(episode_id, sort_key);',
+    'ALTER TABLE cuts ADD COLUMN part_id INTEGER REFERENCES parts(id);',
+    'CREATE INDEX cuts_part ON cuts(part_id);',
+    // The part's deadline for a stage; a cut task follows it unless the
+    // task sets its own due_at.
+    '''
+CREATE TABLE part_stage_dues (
+  part_id INTEGER NOT NULL REFERENCES parts(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  due_at INTEGER NOT NULL,
+  PRIMARY KEY (part_id, stage_id)
+);''',
+    '''
+CREATE VIEW task_dues AS
+SELECT t.id AS task_id,
+       COALESCE(t.due_at, d.due_at) AS due_at,
+       t.due_at IS NULL AND d.due_at IS NOT NULL AS from_part
+FROM tasks t
+LEFT JOIN cuts c ON c.id = t.cut_id
+LEFT JOIN part_stage_dues d
+  ON d.part_id = c.part_id AND d.stage_id = t.stage_id;''',
+    'CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);',
+    'ALTER TABLE work_intervals ADD COLUMN task_id INTEGER REFERENCES tasks(id);',
+    'CREATE INDEX work_intervals_task ON work_intervals(task_id);',
+  ]) {
+    db.execute(sql);
   }
 }

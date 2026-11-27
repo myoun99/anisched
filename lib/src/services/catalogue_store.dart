@@ -2,13 +2,17 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import 'settings_store.dart';
 
 /// Writes to the work catalogue that carry a rule beyond a plain INSERT:
 /// default stages, natural sort keys, retake numbering, rate resolution.
 class CatalogueStore {
-  CatalogueStore(this.db, {this.clock = systemClock});
+  CatalogueStore(this.db, {this.clock = systemClock})
+    : settings = SettingsStore(db);
 
   final Database db;
+
+  final SettingsStore settings;
 
   /// Source of "now"; injectable for tests.
   final Clock clock;
@@ -53,13 +57,59 @@ class CatalogueStore {
     return db.lastInsertRowId;
   }
 
-  int addCut(int episodeId, String number, {int? lengthMs}) {
+  int addCut(int episodeId, String number, {int? lengthMs, int? partId}) {
     db.execute(
-      'INSERT INTO cuts (episode_id, number, sort_key, length_ms) '
-      'VALUES (?, ?, ?, ?);',
-      [episodeId, number, naturalSortKey(number), lengthMs],
+      'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
+      'VALUES (?, ?, ?, ?, ?);',
+      [episodeId, number, naturalSortKey(number), lengthMs, partId],
     );
     return db.lastInsertRowId;
+  }
+
+  /// Adds a part (a bundle of the user's cuts) to an episode. The cut
+  /// count may be known before the cuts themselves.
+  int addPart(int episodeId, String label, {int? plannedCutCount}) {
+    db.execute(
+      'INSERT INTO parts (episode_id, label, sort_key, planned_cut_count) '
+      'VALUES (?, ?, ?, ?);',
+      [episodeId, label, naturalSortKey(label), plannedCutCount],
+    );
+    return db.lastInsertRowId;
+  }
+
+  /// Sets the part's deadline for a stage; its cut tasks follow it unless
+  /// they carry their own.
+  void setPartDue(int partId, int stageId, DateTime dueAt) => db.execute(
+    'INSERT INTO part_stage_dues (part_id, stage_id, due_at) VALUES (?, ?, ?) '
+    'ON CONFLICT (part_id, stage_id) DO UPDATE SET due_at = excluded.due_at;',
+    [partId, stageId, dueAt.toUtc().millisecondsSinceEpoch],
+  );
+
+  /// Creates a task for [stageId] on every live cut of the part that does
+  /// not have one yet, and returns the new task ids.
+  List<int> addTasksForPart(int partId, int stageId) => _transaction(() {
+    final cuts = db.select(
+      'SELECT c.id FROM cuts c WHERE c.part_id = ? AND c.archived_at IS NULL '
+      'AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.cut_id = c.id '
+      'AND t.stage_id = ? AND t.archived_at IS NULL) ORDER BY c.sort_key;',
+      [partId, stageId],
+    );
+    return [for (final c in cuts) addTask(stageId, cutId: c['id'] as int)];
+  });
+
+  /// The task's deadline: its own, else its part's for the stage.
+  ({DateTime? dueAt, bool fromPart}) dueFor(int taskId) {
+    final r = db.select(
+      'SELECT due_at, from_part FROM task_dues WHERE task_id = ?;',
+      [taskId],
+    ).first;
+    final ms = r['due_at'] as int?;
+    return (
+      dueAt: ms == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true),
+      fromPart: r['from_part'] == 1,
+    );
   }
 
   int addStoryboard(int episodeId, String label) {
@@ -170,7 +220,10 @@ WHERE t.id = ?;''',
               [taskId],
             ).first['length_ms']
             as int?;
-    final base = rate.payFor(lengthMs: lengthMs);
+    final base = rate.payFor(
+      lengthMs: lengthMs,
+      rounding: settings.secondsRounding,
+    );
     if (base == null) return null;
     final extra =
         db.select(
@@ -180,6 +233,47 @@ WHERE t.id = ?;''',
             ).first['s']
             as int;
     return base + extra;
+  }
+
+  /// Pay for tasks completed in the billing period that closes in
+  /// [year]/[month], per currency (no conversion). Each client's own
+  /// closing day applies; works without a client close at month end.
+  /// `unpriced` counts completed tasks whose pay cannot be computed yet.
+  Map<String, ({int total, int unpriced})> monthlyTotals(int year, int month) {
+    final closingDays = {
+      null,
+      for (final r in db.select(
+        'SELECT DISTINCT closing_day FROM clients WHERE closing_day IS NOT NULL;',
+      ))
+        r['closing_day'] as int,
+    };
+    final totals = <String, ({int total, int unpriced})>{};
+    for (final day in closingDays) {
+      final p = billingPeriod(year, month, day);
+      final rows = db.select(
+        '''
+SELECT t.id, w.currency FROM tasks t
+JOIN work_stages s ON s.id = t.stage_id
+JOIN works w ON w.id = s.work_id
+LEFT JOIN clients cl ON cl.id = w.client_id
+WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
+  AND cl.closing_day IS ?;''',
+        [
+          p.start.toUtc().millisecondsSinceEpoch,
+          p.end.toUtc().millisecondsSinceEpoch,
+          day,
+        ],
+      );
+      for (final r in rows) {
+        final currency = r['currency'] as String;
+        final pay = payFor(r['id'] as int);
+        final prev = totals[currency] ?? (total: 0, unpriced: 0);
+        totals[currency] = pay == null
+            ? (total: prev.total, unpriced: prev.unpriced + 1)
+            : (total: prev.total + pay, unpriced: prev.unpriced);
+      }
+    }
+    return totals;
   }
 
   int _now() => clock().toUtc().millisecondsSinceEpoch;

@@ -2,9 +2,17 @@
 /// instant. Elapsed time is never stored — it is always derived from these
 /// two instants, so killing and relaunching the app mid-timer loses nothing.
 class WorkInterval {
-  const WorkInterval({required this.id, required this.start, this.stop});
+  const WorkInterval({
+    required this.id,
+    required this.start,
+    this.stop,
+    this.taskId,
+  });
 
   final int id;
+
+  /// The task this time was spent on, if any.
+  final int? taskId;
 
   /// UTC instant the timer started.
   final DateTime start;

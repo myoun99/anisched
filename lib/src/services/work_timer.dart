@@ -26,20 +26,22 @@ class WorkTimerStore {
   /// The running interval, if any.
   WorkInterval? running() {
     final rows = _db.select(
-      'SELECT id, started_at, stopped_at FROM work_intervals '
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
       'WHERE stopped_at IS NULL ORDER BY started_at DESC LIMIT 1;',
     );
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  /// Starts a timer now. Throws if one is already running.
-  WorkInterval start() {
+  /// Starts a timer now, optionally on [taskId]. Throws if one is already
+  /// running.
+  WorkInterval start({int? taskId}) {
     if (running() != null) throw TimerAlreadyRunningException();
     final now = clock().toUtc();
-    _db.execute('INSERT INTO work_intervals (started_at) VALUES (?);', [
-      now.millisecondsSinceEpoch,
-    ]);
-    return WorkInterval(id: _db.lastInsertRowId, start: now);
+    _db.execute(
+      'INSERT INTO work_intervals (started_at, task_id) VALUES (?, ?);',
+      [now.millisecondsSinceEpoch, taskId],
+    );
+    return WorkInterval(id: _db.lastInsertRowId, start: now, taskId: taskId);
   }
 
   /// Stops the running timer now and returns it, or null if none runs.
@@ -54,19 +56,34 @@ class WorkTimerStore {
       now.millisecondsSinceEpoch,
       open.id,
     ]);
-    return WorkInterval(id: open.id, start: open.start, stop: now);
+    return WorkInterval(
+      id: open.id,
+      start: open.start,
+      stop: now,
+      taskId: open.taskId,
+    );
   }
 
   /// Intervals that overlap `[from, to)`, oldest first, including a
   /// running one.
   List<WorkInterval> overlapping(DateTime from, DateTime to) {
     final rows = _db.select(
-      'SELECT id, started_at, stopped_at FROM work_intervals '
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
       'WHERE started_at < ? AND (stopped_at IS NULL OR stopped_at > ?) '
       'ORDER BY started_at;',
       [to.millisecondsSinceEpoch, from.millisecondsSinceEpoch],
     );
     return [for (final r in rows) _fromRow(r)];
+  }
+
+  /// All time recorded on [taskId] as of now, including a running timer.
+  Duration workedOn(int taskId) {
+    final rows = _db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE task_id = ?;',
+      [taskId],
+    );
+    return totalElapsed([for (final r in rows) _fromRow(r)], clock().toUtc());
   }
 
   /// Time worked inside `[from, to)` as of now.
@@ -79,6 +96,7 @@ class WorkTimerStore {
       id: r['id'] as int,
       start: _utc(r['started_at'] as int),
       stop: stopped == null ? null : _utc(stopped),
+      taskId: r['task_id'] as int?,
     );
   }
 

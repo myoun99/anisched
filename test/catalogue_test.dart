@@ -33,11 +33,29 @@ void main() {
         const Rate(RateUnit.perSecond, 10000).payFor(lengthMs: 3000),
         30000,
       );
-      expect(
-        const Rate(RateUnit.perSecond, 10000).payFor(lengthMs: 3500),
-        35000,
-      );
       expect(const Rate(RateUnit.perSecond, 10000).payFor(), isNull);
+    });
+
+    test('per-second rates round the length by the chosen mode', () {
+      const r = Rate(RateUnit.perSecond, 10000);
+      int? pay(int ms, SecondsRounding m) =>
+          r.payFor(lengthMs: ms, rounding: m);
+      // Default: nearest second, half up.
+      expect(r.payFor(lengthMs: 3500), 40000);
+      expect(r.payFor(lengthMs: 3499), 30000);
+      expect(pay(3500, SecondsRounding.exact), 35000);
+      expect(pay(3001, SecondsRounding.up), 40000);
+      expect(pay(3999, SecondsRounding.down), 30000);
+      expect(pay(3000, SecondsRounding.up), 30000);
+    });
+
+    test('day range starts at the configured minute', () {
+      final midnight = dayRange(DateTime(2026, 11, 28, 1), 0);
+      expect(midnight.start, DateTime(2026, 11, 28));
+      expect(midnight.end, DateTime(2026, 11, 29));
+      final fiveAm = dayRange(DateTime(2026, 11, 28, 1), 300);
+      expect(fiveAm.start, DateTime(2026, 11, 27, 5));
+      expect(fiveAm.end, DateTime(2026, 11, 28, 5));
     });
 
     test('billing period closes at month end by default', () {
@@ -156,6 +174,129 @@ void main() {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));
       expect(db.select('SELECT * FROM works'), isEmpty);
+    });
+
+    test('seconds rounding is a setting, nearest by default', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final genga = stageId(w, '원화');
+      store.setEpisodeRate(ep, genga, const Rate(RateUnit.perSecond, 10000));
+      final task = store.addTask(
+        genga,
+        cutId: store.addCut(ep, 'C001', lengthMs: 3500),
+      );
+      expect(store.payFor(task), 40000);
+      store.settings.secondsRounding = SecondsRounding.down;
+      expect(store.payFor(task), 30000);
+      expect(CatalogueStore(db).settings.secondsRounding, SecondsRounding.down);
+    });
+
+    test('day start is a setting, midnight by default', () {
+      expect(store.settings.dayStartMinutes, 0);
+      store.settings.dayStartMinutes = 300;
+      expect(store.settings.dayStartMinutes, 300);
+      expect(() => store.settings.dayStartMinutes = 24 * 60, throwsRangeError);
+    });
+  });
+
+  group('parts', () {
+    test('cut tasks follow the part deadline unless they set their own', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B', plannedCutCount: 11);
+      final lo = stageId(w, 'LO');
+      final c100 = store.addCut(ep, 'C100', partId: part);
+      final c101 = store.addCut(ep, 'C101', partId: part);
+      final partDue = DateTime.utc(2026, 12, 10);
+      store.setPartDue(part, lo, partDue);
+
+      final ids = store.addTasksForPart(part, lo);
+      expect(ids, hasLength(2));
+      expect(store.dueFor(ids.first), (dueAt: partDue, fromPart: true));
+
+      final own = DateTime.utc(2026, 12, 5);
+      db.execute('UPDATE tasks SET due_at = ? WHERE cut_id = ?', [
+        own.millisecondsSinceEpoch,
+        c101,
+      ]);
+      final t101 =
+          db
+                  .select('SELECT id FROM tasks WHERE cut_id = ?', [c101])
+                  .first
+                  .columnAt(0)
+              as int;
+      expect(store.dueFor(t101), (dueAt: own, fromPart: false));
+
+      // Moving the part deadline moves the cuts that follow it.
+      final later = DateTime.utc(2026, 12, 12);
+      store.setPartDue(part, lo, later);
+      final t100 =
+          db
+                  .select('SELECT id FROM tasks WHERE cut_id = ?', [c100])
+                  .first
+                  .columnAt(0)
+              as int;
+      expect(store.dueFor(t100).dueAt, later);
+      expect(store.dueFor(t101).dueAt, own);
+    });
+
+    test('addTasksForPart skips cuts that already have the stage', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B');
+      final lo = stageId(w, 'LO');
+      store.addCut(ep, 'C100', partId: part);
+      expect(store.addTasksForPart(part, lo), hasLength(1));
+      store.addCut(ep, 'C101', partId: part);
+      expect(store.addTasksForPart(part, lo), hasLength(1));
+      expect(store.addTasksForPart(part, lo), isEmpty);
+    });
+
+    test('a task outside any part has only its own deadline', () {
+      final w = store.createWork('작품A');
+      final cut = store.addCut(store.addEpisode(w, '#01'), 'C001');
+      final task = store.addTask(stageId(w, 'LO'), cutId: cut);
+      expect(store.dueFor(task), (dueAt: null, fromPart: false));
+    });
+  });
+
+  group('monthly totals', () {
+    test('count by completion date, per currency, per closing day', () {
+      db.execute("INSERT INTO clients (name, closing_day) VALUES ('X', 20)");
+      final client20 = db.lastInsertRowId;
+      final yen = store.createWork('엔 작품', clientId: client20);
+      final won = store.createWork('원 작품', currency: 'KRW');
+
+      int doneTask(int work, String cutNo, int rate, DateTime doneAt) {
+        final ep = store.addEpisode(work, '#$cutNo');
+        final lo = stageId(work, 'LO');
+        store.setEpisodeRate(ep, lo, Rate(RateUnit.fixed, rate));
+        final t = store.addTask(lo, cutId: store.addCut(ep, cutNo));
+        CatalogueStore(db, clock: () => doneAt).setStatus(t, TaskStatus.done);
+        return t;
+      }
+
+      // Client closes on the 20th: Nov period = Oct 21 .. Nov 20.
+      doneTask(yen, 'C1', 3000, DateTime(2026, 10, 25, 12));
+      doneTask(yen, 'C2', 4000, DateTime(2026, 11, 20, 23));
+      doneTask(yen, 'C3', 9999, DateTime(2026, 11, 21, 1)); // December
+      // No client: calendar month.
+      doneTask(won, 'C4', 50000, DateTime(2026, 11, 1));
+      doneTask(won, 'C5', 99999, DateTime(2026, 10, 31, 23)); // October
+      // Done but unpriced.
+      final ep = store.addEpisode(won, '#x');
+      final t = store.addTask(
+        stageId(won, 'LO'),
+        cutId: store.addCut(ep, 'C6'),
+      );
+      CatalogueStore(
+        db,
+        clock: () => DateTime(2026, 11, 2),
+      ).setStatus(t, TaskStatus.done);
+
+      final totals = store.monthlyTotals(2026, 11);
+      expect(totals['JPY'], (total: 7000, unpriced: 0));
+      expect(totals['KRW'], (total: 50000, unpriced: 1));
     });
   });
 }

@@ -146,5 +146,29 @@ void main() {
       expect(day27, const Duration(hours: 2));
       expect(day28, const Duration(hours: 2));
     });
+
+    test('time can be recorded on a task', () {
+      final db = openAppDatabase(':memory:');
+      addTearDown(db.close);
+      db
+        ..execute("INSERT INTO works (title, created_at) VALUES ('W', 0);")
+        ..execute(
+          "INSERT INTO work_stages (work_id, name, position) VALUES (1, 'LO', 0);",
+        )
+        ..execute(
+          "INSERT INTO episodes (work_id, number, sort_key) VALUES (1, '1', '1');",
+        )
+        ..execute(
+          "INSERT INTO cuts (episode_id, number, sort_key) VALUES (1, 'C1', 'c1');",
+        )
+        ..execute('INSERT INTO tasks (stage_id, cut_id) VALUES (1, 1);');
+      final store = WorkTimerStore(db, clock: clock);
+      expect(store.start(taskId: 1).taskId, 1);
+      now = t0.add(const Duration(minutes: 20));
+      expect(store.stop()!.taskId, 1);
+      store.start(); // untracked time does not count toward the task
+      now = t0.add(const Duration(hours: 1));
+      expect(store.workedOn(1), const Duration(minutes: 20));
+    });
   });
 }
