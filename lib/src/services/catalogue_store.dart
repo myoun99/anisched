@@ -265,30 +265,17 @@ class CatalogueStore {
       ..execute('DELETE FROM roles WHERE id = ?;', [roleId]);
   });
 
-  /// Registers work by role: for each of the role's stages, the work's
-  /// stage of that name (added at the end of the work's list if missing)
-  /// gets a task on every cut of [partId] — or on each of [cutIds] for
-  /// cuts outside a part. Cuts that already have the stage are skipped.
-  /// Returns the new task ids.
-  List<int> applyRole(
-    int roleId, {
-    required int workId,
+  /// Registers work by stage — the checkboxes on the registration
+  /// screen: each of [stageIds] gets a task on every cut of [partId], or
+  /// on each of [cutIds] for cuts outside a part. Cut × stage pairs that
+  /// already have a task are skipped. Returns the new task ids.
+  List<int> addTasksForStages(
+    List<int> stageIds, {
     int? partId,
     List<int> cutIds = const [],
   }) => _transaction(() {
-    final names = [
-      for (final r in db.select(
-        'SELECT stage_name FROM role_stages WHERE role_id = ? ORDER BY position;',
-        [roleId],
-      ))
-        r['stage_name'] as String,
-    ];
     final created = <int>[];
-    for (final name in names) {
-      final existing = stages(workId).where((s) => s.name == name);
-      final stage = existing.isEmpty
-          ? addStage(workId, name)
-          : existing.first.id;
+    for (final stage in stageIds) {
       if (partId != null) created.addAll(addTasksForPart(partId, stage));
       for (final cut in cutIds) {
         final has = db.select(
@@ -301,6 +288,98 @@ class CatalogueStore {
     }
     return created;
   });
+
+  /// The work's stage ids for a role — the shortcut that ticks the
+  /// role's checkboxes. A stage name the work lacks is added at the end
+  /// of its list.
+  List<int> roleStageIds(int roleId, int workId) => _transaction(() {
+    final names = [
+      for (final r in db.select(
+        'SELECT stage_name FROM role_stages WHERE role_id = ? ORDER BY position;',
+        [roleId],
+      ))
+        r['stage_name'] as String,
+    ];
+    return [
+      for (final name in names)
+        stages(workId).where((s) => s.name == name).firstOrNull?.id ??
+            addStage(workId, name),
+    ];
+  });
+
+  /// Registers work by role: [roleStageIds] then [addTasksForStages].
+  List<int> applyRole(
+    int roleId, {
+    required int workId,
+    int? partId,
+    List<int> cutIds = const [],
+  }) => _transaction(
+    () => addTasksForStages(
+      roleStageIds(roleId, workId),
+      partId: partId,
+      cutIds: cutIds,
+    ),
+  );
+
+  /// How the work writes cut numbers (default `C` and 3 digits).
+  ({String prefix, int digits}) workCutFormat(int workId) {
+    final r = db.select(
+      'SELECT cut_prefix, cut_digits FROM works WHERE id = ?;',
+      [workId],
+    ).first;
+    return (prefix: r['cut_prefix'] as String, digits: r['cut_digits'] as int);
+  }
+
+  void setWorkCutFormat(
+    int workId, {
+    required String prefix,
+    required int digits,
+  }) {
+    RangeError.checkValueInInterval(digits, 1, 8, 'digits');
+    db.execute(
+      'UPDATE works SET cut_prefix = ?, cut_digits = ? WHERE id = ?;',
+      [prefix, digits, workId],
+    );
+  }
+
+  /// The number the user typed, in the work's format: 1 → `C001`.
+  String cutNumberFor(int workId, int number) {
+    final f = workCutFormat(workId);
+    return cutNumberRun(
+      start: number,
+      count: 1,
+      prefix: f.prefix,
+      width: f.digits,
+    ).single;
+  }
+
+  /// Adds [count] cuts from [start] up to an episode in its work's
+  /// format (see [addCuts]).
+  ({List<int> added, List<String> skipped}) addCutRun(
+    int episodeId, {
+    required int start,
+    required int count,
+    int? partId,
+    int? lengthMs,
+  }) {
+    final workId =
+        db.select('SELECT work_id FROM episodes WHERE id = ?;', [
+              episodeId,
+            ]).first['work_id']
+            as int;
+    final f = workCutFormat(workId);
+    return addCuts(
+      episodeId,
+      cutNumberRun(
+        start: start,
+        count: count,
+        prefix: f.prefix,
+        width: f.digits,
+      ),
+      partId: partId,
+      lengthMs: lengthMs,
+    );
+  }
 
   /// Takes missing numbers out of an episode (archives those cuts, so
   /// they can be restored). Returns the numbers that were not there.

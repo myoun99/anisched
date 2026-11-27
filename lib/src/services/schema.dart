@@ -20,7 +20,8 @@ class Migration {
 /// production deadline, and a work's default rate unit. v7: days off.
 /// v8: the live_tasks view (archiving hides everything beneath). v9: the
 /// production kickoff date and the user's own order of schedule units.
-/// v10: role presets, pinned calendar lanes and shared-cut links.
+/// v10: role presets, pinned calendar lanes, shared-cut links and a work's
+/// cut-number format.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -426,15 +427,22 @@ CREATE TABLE lane_pins (
     // tasks; they only point at the group's first cut.
     'ALTER TABLE cuts ADD COLUMN shared_with INTEGER REFERENCES cuts(id);',
     'CREATE INDEX cuts_shared ON cuts(shared_with);',
+    // How a work writes cut numbers: prefix and zero-padded digits
+    // (C + 3 → C001). The user types only the number.
+    "ALTER TABLE works ADD COLUMN cut_prefix TEXT NOT NULL DEFAULT 'C';",
+    '''
+ALTER TABLE works ADD COLUMN cut_digits INTEGER NOT NULL DEFAULT 3
+  CHECK (cut_digits BETWEEN 1 AND 8);''',
   ]) {
     db.execute(sql);
   }
   // Seeded with a literal copy so this step never changes once shipped.
   const roles = [
+    // Ranks only (user): 원화 · 연출 · 작감 · 총작감 · 콘티.
     ('원화', ['LO', '원화']),
+    ('연출', ['LO 연출 수정', '원화 연출 수정']),
     ('작감', ['LO 작감 수정', '원화 작감 수정']),
     ('총작감', ['LO 총작감 수정', '원화 총작감 수정']),
-    ('연출', ['콘티 체크', 'LO 연출 수정', '원화 연출 수정']),
     ('콘티', ['콘티']),
   ];
   for (var i = 0; i < roles.length; i++) {
