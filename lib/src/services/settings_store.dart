@@ -14,6 +14,7 @@ class SettingsStore {
   static const _dayStartMinutes = 'day_start_minutes';
   static const _restWeekdays = 'rest_weekdays';
   static const _paceEnd = 'pace_end';
+  static const _recentPaceDays = 'recent_pace_days';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -58,6 +59,14 @@ class SettingsStore {
   }
 
   set paceEnd(PaceEnd end) => _set(_paceEnd, end.dbName);
+
+  /// How many days back the "recent" average speed looks. Default: 28.
+  int get recentPaceDays => int.tryParse(_get(_recentPaceDays) ?? '') ?? 28;
+
+  set recentPaceDays(int days) {
+    RangeError.checkValueInInterval(days, 1, 366, 'days');
+    _set(_recentPaceDays, '$days');
+  }
 
   String? _get(String key) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);

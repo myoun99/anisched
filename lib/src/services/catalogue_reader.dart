@@ -26,8 +26,11 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.monthlyTotals].
   Future<MonthlyTotals> monthlyTotals(int year, int month);
 
-  /// See [CatalogueStore.usualPaces].
-  Future<List<UsualPace>> usualPaces({int days = 28});
+  /// See [CatalogueStore.stagePaces].
+  Future<List<StagePace>> stagePaces();
+
+  /// See [CatalogueStore.signals].
+  Future<Map<String, GroupSignals>> signals({bool includeDone = false});
 
   /// Stops the reader. Pending and later reads fail with [StateError].
   Future<void> close();
@@ -74,8 +77,11 @@ class SyncCatalogueReader implements CatalogueReader {
       _run(() => store.monthlyTotals(year, month));
 
   @override
-  Future<List<UsualPace>> usualPaces({int days = 28}) =>
-      _run(() => store.usualPaces(days: days));
+  Future<List<StagePace>> stagePaces() => _run(store.stagePaces);
+
+  @override
+  Future<Map<String, GroupSignals>> signals({bool includeDone = false}) =>
+      _run(() => store.signals(includeDone: includeDone));
 
   @override
   Future<void> close() async => _closed = true;
@@ -237,8 +243,11 @@ class BackgroundCatalogueReader implements CatalogueReader {
       _ask((s) => s.monthlyTotals(year, month));
 
   @override
-  Future<List<UsualPace>> usualPaces({int days = 28}) =>
-      _ask((s) => s.usualPaces(days: days));
+  Future<List<StagePace>> stagePaces() => _ask((s) => s.stagePaces());
+
+  @override
+  Future<Map<String, GroupSignals>> signals({bool includeDone = false}) =>
+      _ask((s) => s.signals(includeDone: includeDone));
 
   @override
   Future<void> close() async {

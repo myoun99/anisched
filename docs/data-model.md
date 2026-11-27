@@ -18,6 +18,7 @@
 | `seconds_rounding` | 초당 단가에서 컷 길이를 초로 맞추는 방식 — **작품마다 덮어쓸 수 있음**(`works.seconds_rounding`, NULL=앱 설정) | `nearest`(반올림) |
 | `day_start_minutes` | 하루가 시작하는 시각(자정 뒤 분) | `0`(자정) |
 | `rest_weekdays` | 쉬는 요일(1=월 … 7=일), 하루 몇 컷 계산에서 뺌. 빈 값 = 매일 일함 | **토·일** |
+| `recent_pace_days` | 「최근 평균」 속도가 보는 날 수 | `28` |
 | `pace_end` | 하루 몇 컷의 끝: `plan`(내 계획 끝 → 없으면 마감) / `due`(제작 마감) | `plan` |
 
 **초당 단가 반올림은 「길이」에 적용한다** — 길이를 먼저 정수 초로 맞추고 단가를 곱한다.
@@ -110,7 +111,7 @@
 
 ## 읽기 경로 — `CatalogueReader` (앱은 `BackgroundCatalogueReader`)
 
-- 보기는 `CatalogueReader`(Future)로만 읽는다: `partGroups` · `today`(→ `TodayView`) · `monthlyTotals` · `usualPaces`.
+- 보기는 `CatalogueReader`(Future)로만 읽는다: `partGroups` · `today`(→ `TodayView`) · `signals` · `monthlyTotals` · `stagePaces`.
 - `BackgroundCatalogueReader.open(경로, writer: 메인 연결)` — 오래 사는 isolate 하나가 같은 파일을
   **읽기 전용**으로 따로 열고(WAL이라 메인이 쓰는 중에도 읽힘) 요청을 순서대로 처리. 쓰기는 메인 isolate 의
   `CatalogueStore` 그대로.
@@ -121,12 +122,20 @@
 - 「지금」은 메인 쪽 시계를 요청마다 실어 보냄(마감·하루 몇 컷 계산이 메인 시계 기준).
 - `SyncCatalogueReader` 는 테스트 전용.
 
-## 평소 속도 · 빠듯함
+## 평소 속도 · 빠듯함 · 날짜 신호
 
-- `usualPaces({days = 28})` — **공정 이름마다**(작품이 달라도 「LO」는 하나): 최근 4주(오늘 포함) 동안 넘긴 컷
-  (제출일, 제출 없이 완료면 완료일) ÷ 그 기간의 작업일(쉬는 요일·쉬는 날 뺌).
-- `paceLevel(필요 pace, 평소)` → `ok` · `tight`(평소 초과, 노랑) · `over`(1.5배 초과 또는 남은 작업일 없음, 빨강) ·
-  `unknown`(평소 기록 없음). 판정은 models 에 하나 — UI 는 사본을 만들지 않는다.
+- 속도는 **공정 이름마다**(작품이 달라도 「LO」는 하나), 넘긴 컷(제출일, 제출 없이 완료면 완료일) ÷ 작업일
+  (쉬는 요일·쉬는 날 뺌). `stagePaces()` 가 둘 다 돌려줌:
+  - **최근 평균** `recent` — 최근 N일(오늘 포함), N = 설정 `recent_pace_days`(기본 28).
+  - **지금까지 평균** `overall` — 그 공정에서 처음 넘긴 날부터 오늘까지.
+- 빠듯함 판정 `paceLevel(필요 pace, 기준)` — 기준 = **공정별 최근 평균**(유저 결정). 초과 `tight`, 1.5배 초과 또는 남은 작업일
+  0 이면 `over`, 기록 없음 `unknown`.
+- 날짜 신호는 **둘로 나뉜다**(유저: D 자리는 내 계획과 완전히 무관, 제작 마감만):
+  - `dueSignal` → `DueDone` · `DueSubmitted` · `DueNone`(마감 없음) · `DueLate(일)` · `DueDaysLeft(일)` — **dueAt 만** 봄.
+  - `planSignal` → 우선순위 `PlanOver`(계획 끝 > 마감) > `PlanLateStart`(계획 시작이 지났는데 받음 그대로) > `PlanHard` >
+    `PlanTight` > `PlanNotStarted(시작일)` > `PlanNone`. 손을 떠난 묶음(제출·완료)은 `PlanNone`.
+    속도 비교는 하루 몇 컷(`Pace`, 끝 = 내 계획 끝 → 없으면 마감) vs 그 공정의 최근 평균.
+  - UI 는 종류 → 글자·색만. `today()` 항목에 `due` · `plan` 이 들어 있고, 다른 보기는 `signals()`(묶음 키 → 신호 둘 + pace).
 
 ## 보기용 쿼리 (`CatalogueStore`)
 
