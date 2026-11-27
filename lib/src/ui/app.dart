@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Placeholder shell until a design direction is chosen.
+import 'shell.dart';
+import 'theme.dart';
+
 class AnischedApp extends StatelessWidget {
   const AnischedApp({super.key});
 
@@ -9,8 +11,10 @@ class AnischedApp extends StatelessWidget {
     return MaterialApp(
       title: 'Anisched',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF3B6EF5)),
-      home: const Scaffold(body: Center(child: Text('Anisched'))),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      scrollBehavior: const AlwaysScrollbarBehavior(),
+      home: const AppShell(),
     );
   }
 }
