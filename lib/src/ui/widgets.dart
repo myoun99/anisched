@@ -127,7 +127,7 @@ class PartProgress extends StatelessWidget {
   }
 }
 
-/// D-day text coloured by urgency.
+/// The deadline label: quiet, red only once the deadline has passed.
 class DueText extends StatelessWidget {
   const DueText(
     this.dueAt,
@@ -135,26 +135,32 @@ class DueText extends StatelessWidget {
     this.now, {
     super.key,
     this.dayStartMinutes = 0,
-  });
+  }) : days = null;
+
+  /// From days already counted (e.g. a today entry's `dueInDays`).
+  const DueText.days(this.days, this.status, {super.key})
+    : dueAt = null,
+      now = null,
+      dayStartMinutes = 0;
 
   final DateTime? dueAt;
+  final DateTime? now;
+  final int? days;
   final TaskStatus status;
-  final DateTime now;
   final int dayStartMinutes;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final l = dueLabel(dueAt, now, status, dayStartMinutes: dayStartMinutes);
-    final (color, bold) = switch (l.tone) {
-      DueTone.late => (c.retake, true),
-      DueTone.quiet || DueTone.none => (c.muted, false),
-    };
+    final l = now == null
+        ? dueLabelFromDays(days, status)
+        : dueLabel(dueAt, now!, status, dayStartMinutes: dayStartMinutes);
+    final late = l.tone == DueTone.late;
     return Text(
       l.text,
       style: TextStyle(
-        color: color,
-        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        color: late ? c.retake : c.muted,
+        fontWeight: late ? FontWeight.w700 : FontWeight.w400,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

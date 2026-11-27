@@ -26,11 +26,16 @@ enum DueTone { none, quiet, late }
   DateTime now,
   TaskStatus status, {
   int dayStartMinutes = 0,
-}) {
-  if (dueAt == null || status == TaskStatus.done) {
+}) => dueLabelFromDays(
+  dueAt == null ? null : dueInDays(dueAt, now, dayStartMinutes),
+  status,
+);
+
+/// [dueLabel] from days already counted (negative = late, null = none).
+({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
+  if (days == null || status == TaskStatus.done) {
     return (text: '—', tone: DueTone.none);
   }
-  final days = dueInDays(dueAt, now, dayStartMinutes);
   final text = days < 0 ? '${-days}일 지남' : (days == 0 ? 'D-day' : 'D-$days');
   final late = days < 0 && status.isOpen;
   return (text: text, tone: late ? DueTone.late : DueTone.quiet);

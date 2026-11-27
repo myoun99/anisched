@@ -17,6 +17,8 @@ class SheetView extends StatefulWidget {
     required this.layout,
     this.dayStartMinutes = 0,
     this.paceOf,
+    this.showDone,
+    this.onShowDoneChanged,
   });
 
   final List<PartGroup> parts;
@@ -31,13 +33,30 @@ class SheetView extends StatefulWidget {
   /// The group's pace, shown when a line opens.
   final Pace? Function(PartGroup group)? paceOf;
 
+  /// Whether done work is listed, when the caller owns that choice (it
+  /// then reloads [parts] with or without done work). Null keeps it here.
+  final bool? showDone;
+  final ValueChanged<bool>? onShowDoneChanged;
+
   @override
   State<SheetView> createState() => _SheetViewState();
 }
 
 class _SheetViewState extends State<SheetView> {
   int? _work;
-  bool _showDone = false;
+  bool _ownShowDone = false;
+
+  bool get _showDone => widget.showDone ?? _ownShowDone;
+
+  void _setShowDone(bool on) {
+    final cb = widget.onShowDoneChanged;
+    if (cb != null) {
+      cb(on);
+    } else {
+      setState(() => _ownShowDone = on);
+    }
+  }
+
   final _expanded = <String>{};
   String? _selected;
   final _rows = ScrollController();
@@ -81,7 +100,7 @@ class _SheetViewState extends State<SheetView> {
                 key: const Key('toggle-done'),
                 label: _showDone ? '완료 보임' : '완료 숨김',
                 selected: _showDone,
-                onTap: () => setState(() => _showDone = !_showDone),
+                onTap: () => _setShowDone(!_showDone),
               ),
             ],
           ),
