@@ -19,3 +19,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # BIZ UDPGothic carries Latin and Japanese; Nanum Gothic fills in Hangul.
+  # Both are SIL OFL 1.1 (licences next to the files), bundled so the app
+  # renders the same offline on every platform.
+  fonts:
+    - family: BIZUDPGothic
+      fonts:
+        - asset: assets/fonts/BIZUDPGothic-Regular.ttf
+        - asset: assets/fonts/BIZUDPGothic-Bold.ttf
+          weight: 700
+    - family: NanumGothic
+      fonts:
+        - asset: assets/fonts/NanumGothic-Regular.ttf
+        - asset: assets/fonts/NanumGothic-Bold.ttf
+          weight: 700
