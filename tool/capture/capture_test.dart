@@ -6,6 +6,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:anisched/src/services/catalogue_reader.dart';
+import 'package:anisched/src/services/work_timer.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +53,41 @@ Future<void> loadFonts() async {
 typedef Scenario = Future<void> Function(WidgetTester t, Size size);
 
 final scenarios = <String, (AppView, Scenario)>{
+  // Round 2: an opened line (cuts folded, D label is a button) and a cut
+  // on the time bar, paused.
+  'details-open': (
+    AppView.list,
+    (t, size) async {
+      final lines = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('line-'),
+      );
+      await t.tap(lines.at(0));
+      await t.pump();
+      final fold = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('fold-cuts-'),
+      );
+      await t.tap(fold.first);
+      await t.pump();
+      final chip = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('cut-'),
+      );
+      if (chip.evaluate().isNotEmpty) {
+        await t.tap(chip.first);
+        await t.pump();
+      }
+      await t.tap(fold.first);
+      await t.pump();
+    },
+  ),
+  'settings': (AppView.settings, (t, size) async {}),
+  'timeline': (AppView.timeline, (t, size) async {}),
+
   // ① The filter popover, open over the list.
   'filter-open': (
     AppView.list,
@@ -106,42 +143,47 @@ void main() {
   final out = Directory('build/captures')..createSync(recursive: true);
   setUpAll(loadFonts);
 
-  for (final MapEntry(key: name, value: (view, act)) in scenarios.entries) {
-    for (final MapEntry(key: label, value: size) in sizes.entries) {
-      testWidgets('$name $label', (t) async {
-        t.view.physicalSize = size * 2;
-        t.view.devicePixelRatio = 2;
-        addTearDown(t.view.reset);
-        final store = sampleCatalogue(now);
-        final shot = GlobalKey();
-        await t.pumpWidget(
-          RepaintBoundary(
-            key: shot,
-            child: MaterialApp(
-              debugShowCheckedModeBanner: false,
-              theme: AppTheme.light(),
-              scrollBehavior: const AlwaysScrollbarBehavior(),
-              home: AppShell(
-                initialView: view,
-                reader: SyncCatalogueReader(store),
-                store: store,
-                clock: () => now,
+  for (final dark in [false, true]) {
+    for (final MapEntry(key: base, value: (view, act)) in scenarios.entries) {
+      final name = dark ? '$base-dark' : base;
+      for (final MapEntry(key: label, value: size) in sizes.entries) {
+        testWidgets('$name $label', (t) async {
+          Folds.cutsInDetails.value = false;
+          t.view.physicalSize = size * 2;
+          t.view.devicePixelRatio = 2;
+          addTearDown(t.view.reset);
+          final store = sampleCatalogue(now);
+          final shot = GlobalKey();
+          await t.pumpWidget(
+            RepaintBoundary(
+              key: shot,
+              child: MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: dark ? AppTheme.dark() : AppTheme.light(),
+                scrollBehavior: const AlwaysScrollbarBehavior(),
+                home: AppShell(
+                  initialView: view,
+                  reader: SyncCatalogueReader(store),
+                  store: store,
+                  timer: WorkTimerStore(store.db, clock: () => now),
+                  clock: () => now,
+                ),
               ),
             ),
-          ),
-        );
-        await t.pump();
-        await act(t, size);
-        await t.pump(const Duration(milliseconds: 500));
-        final boundary =
-            shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-        await t.runAsync(() async {
-          final image = await boundary.toImage(pixelRatio: 2);
-          final png = await image.toByteData(format: ui.ImageByteFormat.png);
-          File('${out.path}/$name-$label.png')
-              .writeAsBytesSync(png!.buffer.asUint8List());
+          );
+          await t.pump();
+          await act(t, size);
+          await t.pump(const Duration(milliseconds: 500));
+          final boundary =
+              shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+          await t.runAsync(() async {
+            final image = await boundary.toImage(pixelRatio: 2);
+            final png = await image.toByteData(format: ui.ImageByteFormat.png);
+            File('${out.path}/$name-$label.png')
+                .writeAsBytesSync(png!.buffer.asUint8List());
+          });
         });
-      });
+      }
     }
   }
 }

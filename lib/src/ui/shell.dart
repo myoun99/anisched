@@ -281,6 +281,7 @@ class _AppShellState extends State<AppShell> {
     SizedBox(
       height: 34,
       child: Center(
+        widthFactor: 1,
         child: Text(
           '$count건',
           style: TextStyle(color: AppColors.of(context).muted),

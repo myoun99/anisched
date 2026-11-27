@@ -299,25 +299,26 @@ class _ChartBarState extends State<ChartBar> {
     };
   }
 
-  Widget _handle(BarEdge edge, double dayWidth) => GestureDetector(
-    key: Key('bar-${edge.name}'),
-    behavior: HitTestBehavior.opaque,
-    onHorizontalDragStart: (_) => setState(() {
-      _edge = edge;
-      _dx = 0;
-    }),
-    onHorizontalDragUpdate: (d) => setState(() => _dx += d.delta.dx),
-    onHorizontalDragEnd: (_) {
-      final (s, e) = _dates(dayWidth);
-      setState(() => _edge = null);
-      widget.onDates?.call(s, e);
-    },
-    onHorizontalDragCancel: () => setState(() => _edge = null),
-    child: const MouseRegion(
-      cursor: SystemMouseCursors.resizeLeftRight,
-      child: SizedBox(width: 14),
-    ),
-  );
+  Widget _handle(BarEdge edge, double dayWidth, double handle) =>
+      GestureDetector(
+        key: Key('bar-${edge.name}'),
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => setState(() {
+          _edge = edge;
+          _dx = 0;
+        }),
+        onHorizontalDragUpdate: (d) => setState(() => _dx += d.delta.dx),
+        onHorizontalDragEnd: (_) {
+          final (s, e) = _dates(dayWidth);
+          setState(() => _edge = null);
+          widget.onDates?.call(s, e);
+        },
+        onHorizontalDragCancel: () => setState(() => _edge = null),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          child: SizedBox(width: handle),
+        ),
+      );
 
   Widget _face() {
     final face = SizedBox.expand(
@@ -348,6 +349,8 @@ class _ChartBarState extends State<ChartBar> {
         final (s, e) = _dates(dw);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
+        // Two grips never wider than a third of the bar each.
+        final handle = (width / 3).clamp(2.0, 14.0);
         return Stack(
           clipBehavior: Clip.hardEdge,
           children: [
@@ -371,9 +374,11 @@ class _ChartBarState extends State<ChartBar> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (widget.onDates != null) _handle(BarEdge.start, dw),
+                      if (widget.onDates != null)
+                        _handle(BarEdge.start, dw, handle),
                       Expanded(child: _face()),
-                      if (widget.onDates != null) _handle(BarEdge.end, dw),
+                      if (widget.onDates != null)
+                        _handle(BarEdge.end, dw, handle),
                     ],
                   ),
                 ),

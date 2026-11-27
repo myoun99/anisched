@@ -111,6 +111,26 @@ class _SettingsViewState extends State<SettingsView> {
             controller: controller,
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
             children: [
+              _section('화면', [
+                ValueListenableBuilder<ThemeMode>(
+                  valueListenable: themeModeSetting,
+                  builder: (context, mode, _) => _FillRow(
+                    children: [
+                      for (final (m, l) in const [
+                        (ThemeMode.system, '시스템'),
+                        (ThemeMode.light, '라이트'),
+                        (ThemeMode.dark, '다크'),
+                      ])
+                        SegmentButton(
+                          key: Key('theme-${m.name}'),
+                          label: l,
+                          selected: mode == m,
+                          onTap: () => themeModeSetting.value = m,
+                        ),
+                    ],
+                  ),
+                ),
+              ]),
               _section('쉬는 요일', [
                 _FillRow(
                   children: [

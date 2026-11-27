@@ -89,6 +89,7 @@ class _WorkViewState extends State<WorkView> {
                 SizedBox(
                   height: 34,
                   child: Center(
+                    widthFactor: 1,
                     child: Text(
                       '오늘 $busy / ${lanes.lanes}',
                       style: TextStyle(color: c.muted),
