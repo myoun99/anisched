@@ -52,18 +52,18 @@ void main() {
       final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
       final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
       final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
-      expect(store.settings.timerFollowsCut, isFalse);
+      expect(store.settings.timerAutoStart, isFalse);
 
       timer.start(taskId: a);
       expect(timer.selectionChanged(b, follow: false), isNull);
       expect(timer.running(), isNull);
       expect(timer.selectionChanged(a, follow: true), isNull); // paused stays
 
-      store.settings.timerFollowsCut = true;
+      store.settings.timerAutoStart = true;
       timer.start(taskId: a);
       expect(
         timer
-            .selectionChanged(b, follow: store.settings.timerFollowsCut)!
+            .selectionChanged(b, follow: store.settings.timerAutoStart)!
             .taskId,
         b,
       );

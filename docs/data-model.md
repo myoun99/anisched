@@ -23,7 +23,7 @@
 | `week_start` | 주가 시작하는 요일(이번 주 막대) | `1`(월) |
 | `recent_pace_days` | 「최근 평균」 속도가 보는 날 수 | `28` |
 | `pace_end` | 하루 몇 컷의 끝: `plan`(내 계획 끝 → 없으면 마감) / `due`(제작 마감) | `plan` |
-| `timer_follows_cut` | 타이머가 도는 중 다른 컷으로 옮기면: `1` 따라감 / `0` 일시정지 | `0`(멈춤) |
+| `timer_auto_start` | 컷 바꾸면 타이머 자동 시작(`timerAutoStart`): 도는 중 다른 컷으로 옮기면 `1` 새 컷으로 / `0` 일시정지. 멈춘 상태면 그대로 | `0`(멈춤) |
 
 **초당 단가 반올림은 「길이」에 적용한다** — 길이를 먼저 정수 초로 맞추고 단가를 곱한다.
 - `nearest` 반올림: 3.5초 → 4초, 3.49초 → 3초
@@ -198,7 +198,7 @@
 ## 타이머 = 작업 시간 기록 (유저 2026-11-27)
 
 - 일시정지/시작 토글만 — 정지·리셋 없음. `WorkTimerStore.toggle(taskId:)`: 같은 작업이면 멈춤, 다른 작업이 돌고 있으면 그쪽을 멈추고 이 작업으로.
-- 컷을 옮기면 `selectionChanged(taskId, follow: settings.timerFollowsCut)` — 멈춘 상태면 아무것도 안 함.
+- 컷을 옮기면 `selectionChanged(taskId, follow: settings.timerAutoStart)` — 멈춘 상태면 아무것도 안 함.
 - 누적: `workedOn(taskIds)`(리더에도) = 모든 구간 합 + 도는 구간은 지금까지. `TaskRow.worked` 도 같은 값. 도는 타이머 = `runningTimer()`.
 - `submitted_at` 은 **첫 제출**만 기록(속도·통계가 컷을 한 번 셈). 리테이크 재제출은 그 테이크의 `retakes.submitted_at`.
 

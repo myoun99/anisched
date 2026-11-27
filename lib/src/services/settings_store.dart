@@ -20,7 +20,7 @@ class SettingsStore {
   static const _weekStart = 'week_start';
   static const _parallelLanes = 'parallel_lanes';
   static const _laneNames = 'lane_names';
-  static const _timerFollowsCut = 'timer_follows_cut';
+  static const _timerAutoStart = 'timer_auto_start';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -111,12 +111,12 @@ class SettingsStore {
   set laneNames(List<String?> names) =>
       _set(_laneNames, jsonEncode([for (final n in names) n ?? '']));
 
-  /// Switching to another cut while the timer runs: true moves the timer
-  /// to the new cut, false (default) pauses it.
-  bool get timerFollowsCut => _get(_timerFollowsCut) == '1';
+  /// "Start the timer when the cut changes": switching to another cut
+  /// while the timer runs moves it to the new cut when true; false
+  /// (default) pauses it. A paused timer stays paused either way.
+  bool get timerAutoStart => _get(_timerAutoStart) == '1';
 
-  set timerFollowsCut(bool follow) =>
-      _set(_timerFollowsCut, follow ? '1' : '0');
+  set timerAutoStart(bool follow) => _set(_timerAutoStart, follow ? '1' : '0');
 
   String? _get(String key) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);

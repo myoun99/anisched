@@ -78,7 +78,7 @@ class WorkTimerStore {
   }
 
   /// The user moved to [taskId] (another cut). With the timer running it
-  /// follows the move when [follow] (setting `timerFollowsCut`), else
+  /// follows the move when [follow] (setting `timerAutoStart`), else
   /// pauses. Nothing happens while paused or on the same task.
   WorkInterval? selectionChanged(int? taskId, {required bool follow}) {
     final open = running();
