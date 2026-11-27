@@ -4,6 +4,7 @@ import 'instant.dart';
 
 import '../models/catalogue.dart';
 import '../models/progress.dart';
+import 'theme.dart';
 import 'widgets.dart';
 
 /// The deadline windows the filter offers. Except [all], handed-in work
@@ -136,20 +137,47 @@ class FilterButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Compact rows: a small check, the label; section names as dim
+    // captions. No Material check-row padding.
+    final c = AppColors.of(context);
     PopupMenuItem<_Choice> item(_Choice v, String text, bool on) =>
-        CheckedPopupMenuItem<_Choice>(value: v, checked: on, child: Text(text));
+        PopupMenuItem<_Choice>(
+          value: v,
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            spacing: 6,
+            children: [
+              SizedBox(
+                width: 14,
+                child: on ? const Icon(Icons.check, size: 14) : null,
+              ),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: on ? FontWeight.w700 : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
     PopupMenuItem<_Choice> head(String text) => PopupMenuItem<_Choice>(
       enabled: false,
-      height: 28,
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      ),
+      height: 22,
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+      child: Text(text, style: TextStyle(fontSize: 11, color: c.muted)),
     );
     return PopupMenuButton<_Choice>(
       key: const Key('filter-button'),
       tooltip: '',
       popUpAnimationStyle: instant,
+      menuPadding: const EdgeInsets.symmetric(vertical: 4),
+      constraints: const BoxConstraints(minWidth: 150, maxWidth: 220),
       onSelected: (c) => onChanged(switch (c) {
         _Range(:final range) => filter.copyWith(range: range),
         _Client(:final id) => filter.copyWith(clientId: () => id),

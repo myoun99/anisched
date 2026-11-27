@@ -28,12 +28,51 @@ void main() {
       );
       await t.pump();
       expect(t.takeException(), isNull);
+      await t.ensureVisible(find.byKey(const Key('rest-3')));
+      await t.pump();
       await t.tap(find.byKey(const Key('rest-3')));
       await t.pump();
       expect(store.settings.restWeekdays, {3, 6, 7});
+      await t.ensureVisible(find.byKey(const Key('lanes-3')));
+      await t.pump();
       await t.tap(find.byKey(const Key('lanes-3')));
       await t.pump();
       expect(store.settings.parallelLanes, 3);
     });
   }
+
+  testWidgets('the 화면 row switches light and dark', (t) async {
+    final store = sampleCatalogue(now);
+    await t.pumpWidget(
+      ValueListenableBuilder<ThemeMode>(
+        valueListenable: themeModeSetting,
+        builder: (context, mode, _) => MaterialApp(
+          themeMode: mode,
+          themeAnimationDuration: Duration.zero,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          home: AppShell(
+            initialView: AppView.settings,
+            reader: SyncCatalogueReader(store),
+            store: store,
+            clock: () => now,
+          ),
+        ),
+      ),
+    );
+    await t.pump();
+    await t.tap(find.byKey(const Key('theme-dark')));
+    await t.pump();
+    expect(
+      Theme.of(t.element(find.byType(AppShell))).brightness,
+      Brightness.dark,
+    );
+    await t.tap(find.byKey(const Key('theme-light')));
+    await t.pump();
+    expect(
+      Theme.of(t.element(find.byType(AppShell))).brightness,
+      Brightness.light,
+    );
+    themeModeSetting.value = ThemeMode.system;
+  });
 }

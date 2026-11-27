@@ -2,6 +2,7 @@ import 'package:anisched/src/core/size_class.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:anisched/src/ui/views/sheet_view.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -40,6 +41,12 @@ PartGroup part(List<PartGroup> gs, String work, String label, String stage) =>
     );
 
 void main() {
+  setUp(() {
+    Folds.cutsInDetails.value = true;
+    Folds.newCuts.value = true;
+    Folds.savedCuts.value = true;
+  });
+
   for (final size in const [
     Size(1440, 900),
     Size(1280, 800),
@@ -125,5 +132,20 @@ void main() {
         findsWidgets,
       );
     }
+  });
+
+  testWidgets('cut chips fold away and stay folded for the next unit', (
+    t,
+  ) async {
+    Folds.cutsInDetails.value = false;
+    final gs = await pumpSheet(t, const Size(1280, 800));
+    final g = part(gs, '별빛 정류장', 'C', 'LO');
+    await t.tap(find.byKey(Key('line-${g.key}')));
+    await t.pump();
+    final chip = find.byKey(Key('cut-${g.tasks.first.id}'));
+    expect(chip, findsNothing);
+    await t.tap(find.byKey(Key('fold-cuts-${g.key}')));
+    await t.pump();
+    expect(Folds.cutsInDetails.value, isTrue);
   });
 }

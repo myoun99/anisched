@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/size_class.dart';
 import '../../models/catalogue.dart';
 import '../../models/progress.dart';
+import '../due_button.dart';
 import '../format.dart';
 import '../selection.dart';
 import '../theme.dart';
@@ -23,7 +24,11 @@ class TimelineView extends StatefulWidget {
     this.selection,
     this.toolbar,
     this.onReorder,
+    this.onDue,
   });
+
+  /// Sets a unit's deadline (tap on its D label).
+  final void Function(PartGroup group, DateTime due)? onDue;
 
   /// Turns on the rows' drag grips; gets the shown keys in their new order.
   final ValueChanged<List<String>>? onReorder;
@@ -124,6 +129,7 @@ class _TimelineViewState extends State<TimelineView> {
                     narrow: widget.layout.size == SizeClass.narrow,
                     restWeekdays: widget.restWeekdays,
                     onSchedule: widget.onSchedule,
+                    onDue: widget.onDue,
                     selection: widget.selection,
                   ),
                 ),
@@ -148,7 +154,10 @@ class _TimelineRow extends StatelessWidget {
     required this.restWeekdays,
     this.onSchedule,
     this.selection,
+    this.onDue,
   });
+
+  final void Function(PartGroup group, DateTime due)? onDue;
 
   /// Row index for the drag grip; null hides it.
   final int? index;
@@ -224,14 +233,22 @@ class _TimelineRow extends StatelessWidget {
               ],
             ),
           ),
-          Text(
-            due.text,
-            style: TextStyle(
-              fontSize: 12,
-              color: due.tone == DueTone.late
-                  ? Theme.of(context).colorScheme.error
-                  : c.muted,
-              fontWeight: due.tone == DueTone.late ? FontWeight.w700 : null,
+          DueButton(
+            key: Key('tl-due-${g.key}'),
+            due: g.dueAt,
+            onPicked: onDue == null ? null : (d) => onDue!(g, d),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Text(
+                due.text,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: due.tone == DueTone.late
+                      ? Theme.of(context).colorScheme.error
+                      : c.muted,
+                  fontWeight: due.tone == DueTone.late ? FontWeight.w700 : null,
+                ),
+              ),
             ),
           ),
         ],

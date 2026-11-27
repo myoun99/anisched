@@ -4,6 +4,7 @@ import 'package:anisched/src/ui/selection.dart';
 import 'package:anisched/src/ui/selection_bar.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,6 +16,12 @@ Finder picked(String text) =>
     find.descendant(of: find.byType(SelectionBar), matching: find.text(text));
 
 void main() {
+  setUp(() {
+    Folds.cutsInDetails.value = true;
+    Folds.newCuts.value = true;
+    Folds.savedCuts.value = true;
+  });
+
   test('a group is picked whole, in part, or not at all', () {
     final groups = sampleCatalogue(now).partGroups();
     final g = groups.firstWhere((g) => g.total > 1);
