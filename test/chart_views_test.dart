@@ -90,7 +90,7 @@ void main() {
         of: find.byKey(Key('tl-bar-${g.key}')),
         matching: find.byKey(const Key('bar-end')),
       );
-      final dayWidth = (1440 - 250) / 35;
+      const dayWidth = (1440 - 250) / 35;
       await t.drag(handle, Offset(dayWidth * 3, 0));
       await t.pump();
       expect(got, isNotNull);
