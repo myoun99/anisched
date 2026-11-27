@@ -140,6 +140,29 @@ void main() {
     final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
     final ep = store.episodes(work.id).firstWhere((e) => e.number == '#07');
     expect(store.cuts(ep.id).map((c) => c.number), isNot(contains('C014')));
+    expect(saved, findsOneWidget, reason: 'kept on the grid, crossed out');
+    await t.tap(saved);
+    await t.pump();
+    await t.tap(find.byKey(const Key('saved-remove')));
+    await t.pump();
+    await t.pump();
+    expect(store.cuts(ep.id).map((c) => c.number), contains('C014'));
+
+    await t.tap(find.byKey(const Key('saved-C014')));
+    await t.tap(find.byKey(const Key('saved-C015')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('saved-share')));
+    await t.pump();
+    await t.pump();
+    bool shared(String n) =>
+        store.cuts(ep.id).firstWhere((c) => c.number == n).sharedLabel != null;
+    expect(shared('C014'), isTrue);
+    await t.tap(find.byKey(const Key('saved-C015')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('saved-share')));
+    await t.pump();
+    await t.pump();
+    expect(shared('C015'), isFalse);
 
     await t.tap(find.byKey(const Key('saved-C012')));
     await t.pump();

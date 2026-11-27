@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
+import '../../models/catalogue.dart';
+import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
 import '../format.dart';
@@ -71,7 +73,7 @@ class _RegisterViewState extends State<RegisterView> {
   Set<String> _taken = const {};
 
   /// The picked episode's saved cuts, and which of them are picked.
-  List<({int id, String number})> _saved = const [];
+  List<CutRow> _saved = const [];
   final _pickedSaved = <int>{};
   final _picked = <String>{};
   late DateTime _kickoff = DateTime(
@@ -135,11 +137,14 @@ class _RegisterViewState extends State<RegisterView> {
   Future<void> _loadTaken() async {
     final e = _episode;
     if (e == null) return;
-    final cuts = await widget.reader?.cuts(e.value);
+    final cuts = await widget.reader?.cuts(e.value, includeArchived: true);
     if (!mounted || cuts == null) return;
     setState(() {
-      _taken = {for (final c in cuts) c.number};
-      _saved = [for (final c in cuts) (id: c.id, number: c.number)];
+      _taken = {
+        for (final c in cuts)
+          if (!c.archived) c.number,
+      };
+      _saved = cuts;
       _pickedSaved.retainWhere((id) => _saved.any((c) => c.id == id));
     });
   }
@@ -677,7 +682,7 @@ class _RegisterViewState extends State<RegisterView> {
     unawaited(_loadTaken());
   }
 
-  Future<void> _renameSaved(({int id, String number}) cut) async {
+  Future<void> _renameSaved(CutRow cut) async {
     final name = await askName(context, title: '컷 이름', initial: cut.number);
     if (name == null || name.trim().isEmpty || !mounted) return;
     if (_taken.contains(name.trim()) && name.trim() != cut.number) {
@@ -701,7 +706,8 @@ class _RegisterViewState extends State<RegisterView> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
-          '${_episode?.title ?? ''} 등록된 컷 ${_saved.length}',
+          '${_episode?.title ?? ''} 등록된 컷 '
+          '${_saved.where((x) => !x.archived).length}',
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         ToolbarButton(
@@ -709,14 +715,25 @@ class _RegisterViewState extends State<RegisterView> {
           label: '빼기',
           selected: false,
           onTap: can
-              ? () => _edit((s) => s.removeCutIds(picked.map((x) => x.id)))
+              ? () => _edit((s) {
+                  if (picked.every((x) => x.archived)) {
+                    for (final x in picked) {
+                      s.restore(ArchiveKind.cut, x.id);
+                    }
+                  } else {
+                    s.removeCutIds([
+                      for (final x in picked)
+                        if (!x.archived) x.id,
+                    ]);
+                  }
+                })
               : null,
         ),
         ToolbarButton(
           key: const Key('saved-split'),
           label: 'A/B',
           selected: false,
-          onTap: can
+          onTap: can && picked.every((x) => !x.archived)
               ? () => _edit((s) {
                   for (final x in picked) {
                     s.splitCut(x.id, ['A', 'B']);
@@ -728,7 +745,13 @@ class _RegisterViewState extends State<RegisterView> {
           key: const Key('saved-share'),
           label: '겸용',
           selected: false,
-          onTap: can && picked.length >= 2
+          onTap: can && picked.every((x) => x.sharedLabel != null)
+              ? () => _edit((s) {
+                  for (final x in picked) {
+                    s.unlinkSharedCut(x.id);
+                  }
+                })
+              : can && picked.length >= 2 && picked.every((x) => !x.archived)
               ? () => _edit(
                   (s) => s.linkSharedCuts([for (final x in picked) x.id]),
                 )
@@ -738,7 +761,7 @@ class _RegisterViewState extends State<RegisterView> {
           key: const Key('saved-rename'),
           label: '이름',
           selected: false,
-          onTap: can && picked.length == 1
+          onTap: can && picked.length == 1 && !picked.single.archived
               ? () => _renameSaved(picked.single)
               : null,
         ),
@@ -751,11 +774,13 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _savedCell(BuildContext context, ({int id, String number}) cut) {
+  Widget _savedCell(BuildContext context, CutRow cut) {
     final c = AppColors.of(context);
     final scheme = Theme.of(context).colorScheme;
     final on = _pickedSaved.contains(cut.id);
     final clash = _clashSaved == cut.id;
+    final shared = cut.sharedLabel != null;
+    final head = cut.sharedHeadCutId == cut.id;
     return MetaData(
       metaData: cut.id,
       behavior: HitTestBehavior.opaque,
@@ -776,20 +801,31 @@ class _RegisterViewState extends State<RegisterView> {
           child: DecoratedBox(
             key: Key('saved-${cut.number}'),
             decoration: BoxDecoration(
-              color: on ? c.selected : c.panelAlt,
+              color: on ? c.selected : (cut.archived ? null : c.panelAlt),
               border: Border.all(
-                color: clash ? scheme.error : (on ? c.selected : c.line),
+                color: clash
+                    ? scheme.error
+                    : shared
+                    ? scheme.primary
+                    : (on ? c.selected : c.line),
+                width: clash || shared ? 1.6 : 1,
               ),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Center(
               child: Text(
-                cut.number,
+                head ? cut.sharedLabel! : cut.number,
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: TextStyle(
                   fontSize: 11,
-                  color: clash ? scheme.error : null,
+                  color: clash
+                      ? scheme.error
+                      : cut.archived
+                      ? c.faint
+                      : (shared ? scheme.primary : null),
+                  fontWeight: shared ? FontWeight.w700 : null,
+                  decoration: cut.archived ? TextDecoration.lineThrough : null,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
