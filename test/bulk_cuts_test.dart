@@ -294,4 +294,28 @@ void main() {
     store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.done);
     expect(store.monthlyTotals(2026, 11)['JPY']!.total, 5000);
   });
+
+  test('the cut list shows shared groups and, on request, archived cuts', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C4');
+    final ids = r.cutIds;
+    store
+      ..linkSharedCuts([ids[1], ids[2]])
+      ..removeCutIds([ids[3]]);
+    var rows = store.cuts(r.episodeId);
+    expect(rows.map((c) => c.number), ['C1', 'C2', 'C3']);
+    expect(rows.map((c) => c.sharedHeadCutId), [null, ids[1], ids[1]]);
+    expect(rows.map((c) => c.sharedLabel), [null, 'C2-3', 'C2-3']);
+    expect(rows.every((c) => !c.archived), isTrue);
+
+    rows = store.cuts(r.episodeId, includeArchived: true);
+    expect(rows.map((c) => (c.number, c.archived)), [
+      ('C1', false),
+      ('C2', false),
+      ('C3', false),
+      ('C4', true),
+    ]);
+    store.restore(ArchiveKind.cut, ids[3]);
+    expect(store.cuts(r.episodeId).last.number, 'C4');
+  });
 }

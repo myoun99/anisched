@@ -57,9 +57,7 @@ abstract interface class CatalogueReader {
   Future<List<({int id, String number, String? title})>> episodes(int workId);
   Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
   parts(int episodeId);
-  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
-    int episodeId,
-  );
+  Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false});
   Future<List<({int id, String name, int? closingDay})>> clients();
 
   /// See [CatalogueStore.calendarLayout].
@@ -165,9 +163,8 @@ class SyncCatalogueReader implements CatalogueReader {
   parts(int episodeId) => _run(() => store.parts(episodeId));
 
   @override
-  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
-    int episodeId,
-  ) => _run(() => store.cuts(episodeId));
+  Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false}) =>
+      _run(() => store.cuts(episodeId, includeArchived: includeArchived));
 
   @override
   Future<List<({int id, String name, int? closingDay})>> clients() =>
@@ -397,9 +394,8 @@ class BackgroundCatalogueReader implements CatalogueReader {
   parts(int episodeId) => _ask((s) => s.parts(episodeId));
 
   @override
-  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
-    int episodeId,
-  ) => _ask((s) => s.cuts(episodeId));
+  Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false}) =>
+      _ask((s) => s.cuts(episodeId, includeArchived: includeArchived));
 
   @override
   Future<List<({int id, String name, int? closingDay})>> clients() =>
