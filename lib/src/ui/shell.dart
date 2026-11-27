@@ -189,12 +189,8 @@ class _AppShellState extends State<AppShell> {
       onToggle: timer == null || id == null
           ? null
           : () {
-              if (on) {
-                timer.stop();
-                setState(() {});
-              } else {
-                _startTimer(id);
-              }
+              timer.toggle(taskId: id);
+              setState(() => _timerTask = id);
             },
     );
   }
@@ -204,24 +200,10 @@ class _AppShellState extends State<AppShell> {
   void _pickForTimer(int taskId) {
     final timer = widget.timer;
     if (timer == null) return;
-    if (_timerAutoStart) {
-      _startTimer(taskId);
-      return;
-    }
-    if (timer.running()?.taskId != taskId) timer.stop();
-    setState(() => _timerTask = taskId);
-  }
-
-  /// Whether picking a cut starts recording at once (setting; default off).
-  bool get _timerAutoStart => false;
-
-  /// Starts the timer on a task (stopping any other first).
-  void _startTimer(int taskId) {
-    final timer = widget.timer;
-    if (timer == null) return;
-    timer
-      ..stop()
-      ..start(taskId: taskId);
+    timer.selectionChanged(
+      taskId,
+      autoStart: widget.store?.settings.timerAutoStart ?? false,
+    );
     setState(() => _timerTask = taskId);
   }
 

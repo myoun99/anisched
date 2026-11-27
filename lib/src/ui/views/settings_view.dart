@@ -131,6 +131,20 @@ class _SettingsViewState extends State<SettingsView> {
                   ),
                 ),
               ]),
+              _section('작업 시간', [
+                _Line(
+                  children: [
+                    const Expanded(child: Text('컷을 고르면 바로 기록 시작')),
+                    Switch(
+                      key: const Key('timer-auto-start'),
+                      value: widget.store?.settings.timerAutoStart ?? false,
+                      onChanged: widget.store == null
+                          ? null
+                          : (v) => _set((st) => st.settings.timerAutoStart = v),
+                    ),
+                  ],
+                ),
+              ]),
               _section('쉬는 요일', [
                 _FillRow(
                   children: [
