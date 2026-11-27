@@ -2,6 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/progress.dart';
 import 'settings_store.dart';
 
 /// Writes to the work catalogue that carry a rule beyond a plain INSERT:
@@ -307,6 +308,151 @@ WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
       }
     }
     return totals;
+  }
+
+  /// Every live task of live works with what the views show, in display
+  /// order (work, episode, part, stage, cut). One query: rates, lengths,
+  /// takes, paid retakes and timer time are resolved in SQL.
+  List<TaskRow> taskRows({int? workId}) {
+    final now = _now();
+    final rounding = settings.secondsRounding;
+    final rows = db.select(
+      '''
+SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
+       d.due_at AS part_due,
+       s.id AS stage_id, s.name AS stage_name,
+       w.id AS work_id, w.title, w.currency,
+       e.id AS episode_id, e.number AS episode_number,
+       c.id AS cut_id, c.number AS cut_number, c.length_ms,
+       sb.id AS storyboard_id, sb.label AS storyboard_label,
+       p.id AS part_id, p.label AS part_label, p.planned_cut_count,
+       COALESCE(t.rate_unit, r.unit) AS unit,
+       COALESCE(t.rate_amount, r.amount) AS amount,
+       (SELECT COALESCE(MAX(take), 1) FROM retakes WHERE task_id = t.id)
+         AS take,
+       (SELECT COALESCE(SUM(amount), 0) FROM retakes
+         WHERE task_id = t.id AND paid = 1) AS extra,
+       (SELECT COALESCE(SUM(MAX(COALESCE(stopped_at, ?1) - started_at, 0)), 0)
+         FROM work_intervals WHERE task_id = t.id) AS worked_ms
+FROM tasks t
+JOIN work_stages s ON s.id = t.stage_id
+JOIN works w ON w.id = s.work_id
+LEFT JOIN cuts c ON c.id = t.cut_id
+LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
+JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
+LEFT JOIN parts p ON p.id = c.part_id
+LEFT JOIN part_stage_dues d
+  ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
+WHERE t.archived_at IS NULL AND w.archived_at IS NULL
+  AND (?2 IS NULL OR w.id = ?2)
+ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
+         c.sort_key, t.id;''',
+      [now, workId],
+    );
+    DateTime? utc(Object? ms) => ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
+    return [
+      for (final r in rows)
+        TaskRow(
+          id: r['id'] as int,
+          status: TaskStatus.fromDb(r['status'] as String),
+          take: r['take'] as int,
+          workId: r['work_id'] as int,
+          workTitle: r['title'] as String,
+          currency: r['currency'] as String,
+          episodeId: r['episode_id'] as int,
+          episodeNumber: r['episode_number'] as String,
+          stageId: r['stage_id'] as int,
+          stageName: r['stage_name'] as String,
+          cutId: r['cut_id'] as int?,
+          cutNumber: r['cut_number'] as String?,
+          lengthMs: r['length_ms'] as int?,
+          storyboardId: r['storyboard_id'] as int?,
+          storyboardLabel: r['storyboard_label'] as String?,
+          partId: r['part_id'] as int?,
+          partLabel: r['part_label'] as String?,
+          plannedCutCount: r['planned_cut_count'] as int?,
+          receivedAt: utc(r['received_at']),
+          ownDueAt: utc(r['own_due']),
+          partDueAt: utc(r['part_due']),
+          pay: _pay(
+            r['unit'] as String?,
+            r['amount'] as int?,
+            r['length_ms'] as int?,
+            r['extra'] as int,
+            rounding,
+          ),
+          worked: Duration(milliseconds: r['worked_ms'] as int),
+        ),
+    ];
+  }
+
+  /// Schedule units (part × stage, or a solo task) with progress, status,
+  /// pay and time, in display order.
+  List<PartGroup> partGroups({int? workId}) =>
+      groupRows(taskRows(workId: workId));
+
+  /// The "today" list: open groups due within [horizonDays] working days
+  /// (or late), plus any group in progress or in retake whatever its
+  /// deadline. Sorted by days left (no deadline last), then urgency.
+  /// `late` counts late open groups plus late open cuts whose own
+  /// deadline overrides their part's.
+  ({List<({PartGroup group, int? dueInDays})> entries, int late}) today({
+    int horizonDays = 4,
+  }) {
+    final now = clock();
+    final dayStart = settings.dayStartMinutes;
+    int? left(DateTime? due) =>
+        due == null ? null : dueInDays(due, now, dayStart);
+
+    final groups = partGroups();
+    var late = 0;
+    final entries = <({PartGroup group, int? dueInDays})>[];
+    for (final g in groups) {
+      final status = g.status;
+      final days = left(g.dueAt);
+      if (status.isOpen && days != null && days < 0) late++;
+      for (final t in g.tasks) {
+        if (t.dueOverridden && t.isOpen) {
+          final d = left(t.ownDueAt);
+          if (d != null && d < 0) late++;
+        }
+      }
+      final due = days != null && days <= horizonDays;
+      final active =
+          status == TaskStatus.inProgress || status == TaskStatus.retake;
+      if (status.isOpen && (due || active)) {
+        entries.add((group: g, dueInDays: days));
+      }
+    }
+    entries.sort((a, b) {
+      final da = a.dueInDays;
+      final dbb = b.dueInDays;
+      if (da != dbb) {
+        if (da == null) return 1;
+        if (dbb == null) return -1;
+        return da.compareTo(dbb);
+      }
+      return a.group.status.urgency.compareTo(b.group.status.urgency);
+    });
+    return (entries: entries, late: late);
+  }
+
+  static int? _pay(
+    String? unit,
+    int? amount,
+    int? lengthMs,
+    int extra,
+    SecondsRounding rounding,
+  ) {
+    if (unit == null || amount == null) return null;
+    final base = Rate(
+      RateUnit.fromDb(unit),
+      amount,
+    ).payFor(lengthMs: lengthMs, rounding: rounding);
+    return base == null ? null : base + extra;
   }
 
   int _now() => clock().toUtc().millisecondsSinceEpoch;
