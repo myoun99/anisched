@@ -90,4 +90,28 @@ void main() {
     expect(store.hasGroupOrder, isFalse);
     expect(store.partGroups().first.key, first);
   });
+
+  testWidgets('the timeline grip saves the same order', (t) async {
+    t.view.physicalSize = const Size(1280, 800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final store = sampleCatalogue(now);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          initialView: AppView.timeline,
+          reader: SyncCatalogueReader(store),
+          store: store,
+          clock: () => now,
+        ),
+      ),
+    );
+    await t.pump();
+    final first = store.partGroups().first.key;
+    await t.drag(find.byKey(Key('tl-grip-$first')), const Offset(0, 150));
+    await t.pumpAndSettle();
+    expect(store.hasGroupOrder, isTrue);
+    expect(store.partGroups().first.key, isNot(first));
+  });
 }

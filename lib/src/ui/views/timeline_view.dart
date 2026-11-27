@@ -22,7 +22,11 @@ class TimelineView extends StatefulWidget {
     this.onSchedule,
     this.selection,
     this.toolbar,
+    this.onReorder,
   });
+
+  /// Turns on the rows' drag grips; gets the shown keys in their new order.
+  final ValueChanged<List<String>>? onReorder;
 
   /// Controls before the pager (the shell's sort and filter buttons);
   /// null shows the row count.
@@ -100,12 +104,19 @@ class _TimelineViewState extends State<TimelineView> {
             child: OwnScroll(
               builder: (controller) => Scrollbar(
                 controller: controller,
-                child: ListView.builder(
-                  controller: controller,
+                child: ReorderableListView.builder(
+                  scrollController: controller,
+                  buildDefaultDragHandles: false,
                   itemCount: rows.length,
                   itemExtent: 46,
+                  onReorderItem: (from, to) {
+                    final keys = [for (final r in rows) r.key];
+                    keys.insert(to, keys.removeAt(from));
+                    widget.onReorder?.call(keys);
+                  },
                   itemBuilder: (context, i) => _TimelineRow(
                     key: ValueKey(rows[i].key),
+                    index: widget.onReorder == null ? null : i,
                     group: rows[i],
                     window: window,
                     now: widget.now,
@@ -128,6 +139,7 @@ class _TimelineViewState extends State<TimelineView> {
 class _TimelineRow extends StatelessWidget {
   const _TimelineRow({
     super.key,
+    this.index,
     required this.group,
     required this.window,
     required this.now,
@@ -138,6 +150,8 @@ class _TimelineRow extends StatelessWidget {
     this.selection,
   });
 
+  /// Row index for the drag grip; null hides it.
+  final int? index;
   final PartGroup group;
   final ChartWindow window;
   final DateTime now;
@@ -158,10 +172,23 @@ class _TimelineRow extends StatelessWidget {
     final end = g.dueAt;
     final sel = selection;
     Widget label = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: EdgeInsets.only(left: index == null ? 10 : 0, right: 10),
       child: Row(
         spacing: 6,
         children: [
+          if (index != null)
+            ReorderableDragStartListener(
+              index: index!,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.grab,
+                child: SizedBox(
+                  key: Key('tl-grip-${g.key}'),
+                  width: 20,
+                  height: 46,
+                  child: Icon(Icons.drag_indicator, size: 16, color: c.faint),
+                ),
+              ),
+            ),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
