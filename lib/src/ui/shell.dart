@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../controllers/registration.dart';
 import '../core/clock.dart';
@@ -178,20 +179,41 @@ class _AppShellState extends State<AppShell> {
         }
       }
     }
+    final on = running != null && running.taskId == id;
     return TimerBar(
-      running: running,
+      running: on,
       task: task,
       group: group,
       clock: widget.clock,
-      onStop: timer == null
+      worked: timer == null || id == null ? null : () => timer.workedOn(id),
+      onToggle: timer == null || id == null
           ? null
           : () {
-              timer.stop();
-              setState(() {});
+              if (on) {
+                timer.stop();
+                setState(() {});
+              } else {
+                _startTimer(id);
+              }
             },
-      onResume: timer == null || id == null ? null : () => _startTimer(id),
     );
   }
+
+  /// Puts a cut on the time bar. Recording starts only when the user
+  /// chose that in settings; otherwise the bar waits, paused.
+  void _pickForTimer(int taskId) {
+    final timer = widget.timer;
+    if (timer == null) return;
+    if (_timerAutoStart) {
+      _startTimer(taskId);
+      return;
+    }
+    if (timer.running()?.taskId != taskId) timer.stop();
+    setState(() => _timerTask = taskId);
+  }
+
+  /// Whether picking a cut starts recording at once (setting; default off).
+  bool get _timerAutoStart => false;
 
   /// Starts the timer on a task (stopping any other first).
   void _startTimer(int taskId) {
@@ -325,7 +347,7 @@ class _AppShellState extends State<AppShell> {
         onTaskTap: widget.timer == null
             ? null
             : (t) => _selection.isEmpty
-                  ? _startTimer(t.id)
+                  ? _pickForTimer(t.id)
                   : _selection.toggleTask(t),
       ),
       AppView.timeline => TimelineView(
@@ -420,47 +442,54 @@ class _AppShellState extends State<AppShell> {
           onSelect: _select,
           expand: narrow,
         );
-        return Scaffold(
-          body: SafeArea(
-            bottom: !narrow,
-            child: Column(
-              children: [
-                _TopBar(
-                  title: widget.session == null
-                      ? null
-                      : ValueListenableBuilder<RemoteCheck?>(
-                          valueListenable:
-                              widget.remote ??
-                              ValueNotifier<RemoteCheck?>(null),
-                          builder: (context, remote, _) => DocumentMenu(
-                            session: widget.session!,
-                            picker: widget.picker,
-                            remote: remote,
+        // Status bar text follows the theme: dark on light, light on dark
+        // (iOS and Android both read this).
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+              .copyWith(statusBarColor: Colors.transparent),
+          child: Scaffold(
+            body: SafeArea(
+              bottom: !narrow,
+              child: Column(
+                children: [
+                  _TopBar(
+                    title: widget.session == null
+                        ? null
+                        : ValueListenableBuilder<RemoteCheck?>(
+                            valueListenable:
+                                widget.remote ??
+                                ValueNotifier<RemoteCheck?>(null),
+                            builder: (context, remote, _) => DocumentMenu(
+                              session: widget.session!,
+                              picker: widget.picker,
+                              remote: remote,
+                            ),
                           ),
-                        ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 16,
-                    children: [if (wide) selectionBar, if (!narrow) switcher],
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 16,
+                      children: [if (wide) selectionBar, if (!narrow) switcher],
+                    ),
                   ),
-                ),
-                // Below wide screens the picked-task actions get a row of
-                // their own, always there, so nothing shifts or overlaps.
-                if (!wide) _SelectionRow(child: selectionBar),
-                Expanded(
-                  child: IndexedStack(
-                    index: _view.index,
-                    sizing: StackFit.expand,
-                    children: [
-                      for (final v in AppView.values) _viewFor(v, layout),
-                    ],
+                  // Below wide screens the picked-task actions get a row of
+                  // their own, always there, so nothing shifts or overlaps.
+                  if (!wide) _SelectionRow(child: selectionBar),
+                  Expanded(
+                    child: IndexedStack(
+                      index: _view.index,
+                      sizing: StackFit.expand,
+                      children: [
+                        for (final v in AppView.values) _viewFor(v, layout),
+                      ],
+                    ),
                   ),
-                ),
-                _timerBar(),
-              ],
+                  _timerBar(),
+                ],
+              ),
             ),
+            bottomNavigationBar: narrow ? _BottomBar(child: switcher) : null,
           ),
-          bottomNavigationBar: narrow ? _BottomBar(child: switcher) : null,
         );
       },
     );

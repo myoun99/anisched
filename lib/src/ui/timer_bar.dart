@@ -4,31 +4,35 @@ import 'package:flutter/material.dart';
 
 import '../core/clock.dart';
 import '../models/progress.dart';
-import '../models/work_interval.dart';
 import 'format.dart';
 import 'theme.dart';
 
-/// The work timer along the bottom of every view: which cut, how long,
-/// and stop / resume. Its space is always there.
+/// The work-time log along the bottom of every view: which cut, the time
+/// recorded on it so far (all sessions added up), and one start / pause
+/// toggle. Its space is always there.
 class TimerBar extends StatefulWidget {
   const TimerBar({
     super.key,
     required this.running,
     required this.task,
     required this.group,
-    this.onStop,
-    this.onResume,
+    this.worked,
+    this.onToggle,
     this.clock = systemClock,
   });
 
-  /// The open interval, if a timer runs.
-  final WorkInterval? running;
+  /// Whether time is being recorded on [task] now.
+  final bool running;
 
-  /// The task the timer runs on, or last ran on (for resume).
+  /// The cut on the bar (picked last, or the one running).
   final TaskRow? task;
   final PartGroup? group;
-  final VoidCallback? onStop;
-  final VoidCallback? onResume;
+
+  /// Time recorded on [task] as of now, a running interval included.
+  final Duration Function()? worked;
+
+  /// Starts or pauses recording on [task].
+  final VoidCallback? onToggle;
   final Clock clock;
 
   @override
@@ -51,7 +55,7 @@ class _TimerBarState extends State<TimerBar> {
   }
 
   void _sync() {
-    if (widget.running == null) {
+    if (!widget.running) {
       _tick?.cancel();
       _tick = null;
     } else {
@@ -74,11 +78,13 @@ class _TimerBarState extends State<TimerBar> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final ink = Theme.of(context).colorScheme.onSurface;
-    final r = widget.running;
+    final scheme = Theme.of(context).colorScheme;
     final t = widget.task;
     final g = widget.group;
-    final elapsed = r?.elapsed(widget.clock()) ?? Duration.zero;
+    final run = widget.running;
+    final worked = t == null
+        ? Duration.zero
+        : (widget.worked?.call() ?? Duration.zero);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.panel,
@@ -115,39 +121,32 @@ class _TimerBarState extends State<TimerBar> {
                 ),
               ),
               Text(
-                _clock(elapsed),
+                _clock(worked),
                 key: const Key('timer-clock'),
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: r == null ? c.muted : ink,
+                  color: run ? scheme.onSurface : c.muted,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-              SizedBox(
-                width: 104,
-                height: 36,
-                child: r != null
-                    ? FilledButton(
-                        key: const Key('timer-stop'),
-                        onPressed: widget.onStop,
-                        style: const ButtonStyle(
-                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
-                        ),
-                        child: const Text('정지', maxLines: 1, softWrap: false),
-                      )
-                    : OutlinedButton(
-                        key: const Key('timer-resume'),
-                        onPressed: t == null ? null : widget.onResume,
-                        style: const ButtonStyle(
-                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
-                        ),
-                        child: const Text(
-                          '다시 시작',
-                          maxLines: 1,
-                          softWrap: false,
-                        ),
-                      ),
+              SizedBox.square(
+                dimension: 40,
+                child: IconButton.filled(
+                  key: const Key('timer-toggle'),
+                  tooltip: '',
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    backgroundColor: run ? scheme.primary : c.panelAlt,
+                    foregroundColor: run ? scheme.onPrimary : scheme.onSurface,
+                    side: run ? null : BorderSide(color: c.line),
+                  ),
+                  onPressed: t == null ? null : widget.onToggle,
+                  icon: Icon(
+                    run ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: 22,
+                  ),
+                ),
               ),
             ],
           ),
