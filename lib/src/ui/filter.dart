@@ -6,20 +6,23 @@ import '../models/catalogue.dart';
 import '../models/progress.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'text/strings.dart';
 
 /// The deadline windows the filter offers. Except [all], handed-in work
 /// (submitted or done) never matches.
 enum DueRange {
-  all('전체'),
-  today('오늘'),
-  late('지난 것'),
-  within3('3일 안'),
-  within14('2주 안'),
-  later('그 뒤');
+  all(S.fAll),
+  today(S.today),
+  late(S.fLate),
+  within3(S.fWithin3),
+  within14(S.fWithin14),
+  later(S.fLater);
 
-  const DueRange(this.label);
+  const DueRange(this.word);
 
-  final String label;
+  final S word;
+
+  String get label => word.t;
 }
 
 /// What the list and the timeline show: one deadline window, one client,
@@ -130,9 +133,9 @@ class FilterButton extends StatelessWidget {
       if (filter.range != DueRange.all) filter.range.label,
       if (filter.clientId != null) clients[filter.clientId] ?? '',
       if (filter.workId != null) works[filter.workId] ?? '',
-      if (filter.showDone) '완료 포함',
+      if (filter.showDone) S.fWithDone.t,
     ];
-    return parts.isEmpty ? '전체' : parts.join(' · ');
+    return parts.isEmpty ? S.fAll.t : parts.join(' · ');
   }
 
   @override
@@ -185,21 +188,21 @@ class FilterButton extends StatelessWidget {
         _Done() => filter.copyWith(showDone: !filter.showDone),
       }),
       itemBuilder: (_) => [
-        head('기간'),
+        head(S.fPeriod.t),
         for (final r in DueRange.values)
           item(_Range(r), r.label, filter.range == r),
         if (clients.isNotEmpty) ...[
-          head('회사'),
-          item(const _Client(null), '모든 회사', filter.clientId == null),
+          head(S.client.t),
+          item(const _Client(null), S.allClients.t, filter.clientId == null),
           for (final e in clients.entries)
             item(_Client(e.key), e.value, filter.clientId == e.key),
         ],
-        head('작품'),
-        item(const _Work(null), '모든 작품', filter.workId == null),
+        head(S.title.t),
+        item(const _Work(null), S.allTitles.t, filter.workId == null),
         for (final e in works.entries)
           item(_Work(e.key), e.value, filter.workId == e.key),
-        head('완료'),
-        item(const _Done(), '완료도 보기', filter.showDone),
+        head(S.stDone.t),
+        item(const _Done(), S.showDone.t, filter.showDone),
       ],
       child: ToolbarButton(
         label: _label,

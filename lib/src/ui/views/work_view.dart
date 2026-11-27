@@ -6,6 +6,7 @@ import '../../models/progress.dart';
 import '../format.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../text/strings.dart';
 import 'chart.dart';
 
 /// The user's own work periods laid out on parallel lanes (「라인 1 · 2」).
@@ -45,7 +46,19 @@ class WorkView extends StatefulWidget {
 }
 
 class _WorkViewState extends State<WorkView> {
-  int _shift = 0;
+  void _onView() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    chartView.addListener(_onView);
+  }
+
+  @override
+  void dispose() {
+    chartView.removeListener(_onView);
+    super.dispose();
+  }
 
   double get _labelWidth => switch (widget.layout.size) {
     SizeClass.wide => 100,
@@ -57,10 +70,10 @@ class _WorkViewState extends State<WorkView> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final lanes = widget.lanes;
-    final window = ChartWindow.around(
+    final window = ChartWindow.of(
       widget.now,
       widget.layout.size,
-      shift: _shift,
+      chartView.value,
     );
     final rowCount = lanes == null
         ? 0
@@ -81,7 +94,7 @@ class _WorkViewState extends State<WorkView> {
               if (lanes != null && lanes.pinned.isNotEmpty)
                 ToolbarButton(
                   key: const Key('lanes-auto'),
-                  label: '자동 배치',
+                  label: S.autoPlace.t,
                   selected: false,
                   onTap: widget.onClearPins,
                 ),
@@ -91,45 +104,61 @@ class _WorkViewState extends State<WorkView> {
                   child: Center(
                     widthFactor: 1,
                     child: Text(
-                      '오늘 $busy / ${lanes.lanes}',
+                      S.todayBusy.f({'a': busy, 'b': lanes.lanes}),
                       style: TextStyle(color: c.muted),
                     ),
                   ),
                 ),
               ChartPager(
-                onShift: (d) => setState(() => _shift += d),
-                onToday: () => setState(() => _shift = 0),
+                onShift: (d) => chartView.value = chartView.value.scrolled(d),
+                onToday: () =>
+                    chartView.value = ChartView(days: chartView.value.days),
+                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
+                  window.days,
+                  zoomIn: zoomIn,
+                ),
               ),
             ],
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.line)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: _labelWidth),
-                Expanded(
-                  child: ChartHeader(
-                    window: window,
-                    today: widget.now,
-                    restWeekdays: widget.restWeekdays,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Expanded(
-            child: OwnScroll(
-              builder: (controller) => Scrollbar(
-                controller: controller,
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: rowCount,
-                  itemExtent: 52,
-                  itemBuilder: (context, r) =>
-                      _laneRow(context, lanes!, r, window),
-                ),
+            child: ChartViewport(
+              days: window.days,
+              labelWidth: _labelWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: c.line)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(width: _labelWidth),
+                        Expanded(
+                          child: ChartHeader(
+                            window: window,
+                            today: widget.now,
+                            restWeekdays: widget.restWeekdays,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: OwnScroll(
+                      builder: (controller) => Scrollbar(
+                        controller: controller,
+                        child: ListView.builder(
+                          controller: controller,
+                          itemCount: rowCount,
+                          itemExtent: 52,
+                          itemBuilder: (context, r) =>
+                              _laneRow(context, lanes!, r, window),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -172,7 +201,7 @@ class _WorkViewState extends State<WorkView> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 10),
                 child: Text(
-                  over ? '넘침' : '라인 ${r + 1}',
+                  over ? S.overflow.t : S.laneN.f({'n': r + 1}),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

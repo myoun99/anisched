@@ -9,6 +9,7 @@ import '../platform/documents.dart';
 import '../services/document_session.dart';
 import 'pick_field.dart';
 import 'theme.dart';
+import 'text/strings.dart';
 
 /// Where the user picks a document to open, and where Save As puts it.
 abstract interface class DocumentPicker {
@@ -52,7 +53,7 @@ class PathPromptPicker implements DocumentPicker {
 
   @override
   Future<DocumentRef?> pickOpen(BuildContext context) async =>
-      _ref(await askName(context, title: '열기'));
+      _ref(await askName(context, title: S.fileOpen.t));
 
   @override
   Future<bool> saveAs(
@@ -61,7 +62,7 @@ class PathPromptPicker implements DocumentPicker {
     String suggestedName,
   ) async {
     final ref = _ref(
-      await askName(context, title: '저장', initial: suggestedName),
+      await askName(context, title: S.fileSave.t, initial: suggestedName),
     );
     if (ref == null) return false;
     await session.saveAs(ref);
@@ -87,7 +88,7 @@ class DocumentMenu extends StatelessWidget {
   final RemoteCheck? remote;
 
   static String displayName(DocumentRef? ref) {
-    if (ref == null) return '무제';
+    if (ref == null) return S.untitled.t;
     final n = ref.name;
     return n.endsWith('.anisched') ? n.substring(0, n.length - 9) : n;
   }
@@ -133,23 +134,29 @@ class DocumentMenu extends StatelessWidget {
         PopupMenuItem(
           key: const Key('file-new'),
           value: () => unawaited(_run(context, session.startUntitled)),
-          child: const Text('새로'),
+          child: _MenuLine(icon: Icons.note_add_outlined, label: S.fileNew.t),
         ),
         PopupMenuItem(
           key: const Key('file-open'),
           value: () => unawaited(_open(context, null)),
-          child: const Text('열기'),
+          child: _MenuLine(
+            icon: Icons.folder_open_outlined,
+            label: S.fileOpen.t,
+          ),
         ),
         PopupMenuItem(
           key: const Key('file-save-as'),
           value: () => unawaited(_saveAs(context)),
-          child: Text(doc == null ? '저장' : '다른 이름으로 저장'),
+          child: _MenuLine(
+            icon: doc == null ? Icons.save_outlined : Icons.save_as_outlined,
+            label: doc == null ? S.fileSave.t : S.fileSaveAs.t,
+          ),
         ),
         if (recents.isNotEmpty) const PopupMenuDivider(),
         for (final r in recents)
           PopupMenuItem(
             value: () => unawaited(_open(context, r)),
-            child: Text(displayName(r)),
+            child: _MenuLine(icon: Icons.history, label: displayName(r)),
           ),
       ],
       child: Padding(
@@ -178,18 +185,77 @@ class DocumentMenu extends StatelessWidget {
   /// One icon in a reserved slot: saved, waiting to save, not saved
   /// anywhere yet, or a problem (red).
   Widget _stateIcon(BuildContext context) {
+    final st = SaveState.of(context, session, remote);
+    final i = Icon(
+      st.icon,
+      key: const Key('file-state'),
+      size: 16,
+      color: st.color,
+    );
+    return Tooltip(message: st.detail ?? st.word, child: i);
+  }
+}
+
+/// Where the document stands, as one icon and one word (and the error,
+/// when there is one).
+class SaveState {
+  const SaveState(this.icon, this.color, this.word, [this.detail]);
+
+  final IconData icon;
+  final Color color;
+  final String word;
+  final String? detail;
+
+  static SaveState of(
+    BuildContext context,
+    DocumentSession session,
+    RemoteCheck? remote,
+  ) {
     final c = AppColors.of(context);
     final red = Theme.of(context).colorScheme.error;
     final err = session.lastSaveError;
-    final (icon, color, tip) = switch (remote) {
-      _ when err != null => (Icons.error_outline, red, '$err'),
-      RemoteMissing() => (Icons.error_outline, red, '파일 없음'),
-      RemoteUnreachable(:final error) => (Icons.cloud_off, red, '$error'),
-      _ when session.document == null => (Icons.cloud_off, c.faint, ''),
-      _ when session.dirty => (Icons.cloud_upload_outlined, c.muted, ''),
-      _ => (Icons.cloud_done_outlined, c.muted, ''),
+    return switch (remote) {
+      _ when err != null => SaveState(
+        Icons.error_outline,
+        red,
+        S.notSaved.t,
+        '$err',
+      ),
+      RemoteMissing() => SaveState(Icons.error_outline, red, S.fileMissing.t),
+      RemoteUnreachable(:final error) => SaveState(
+        Icons.cloud_off,
+        red,
+        S.notSaved.t,
+        '$error',
+      ),
+      _ when session.document == null => SaveState(
+        Icons.cloud_off,
+        c.faint,
+        S.notSaved.t,
+      ),
+      _ when session.dirty => SaveState(
+        Icons.cloud_upload_outlined,
+        c.muted,
+        S.saving.t,
+      ),
+      _ => SaveState(Icons.cloud_done_outlined, c.muted, S.saved.t),
     };
-    final i = Icon(icon, key: const Key('file-state'), size: 16, color: color);
-    return tip.isEmpty ? i : Tooltip(message: tip, child: i);
   }
+}
+
+/// A file menu line: an icon, then its word.
+class _MenuLine extends StatelessWidget {
+  const _MenuLine({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    spacing: 10,
+    children: [
+      Icon(icon, size: 18, color: AppColors.of(context).muted),
+      Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+    ],
+  );
 }

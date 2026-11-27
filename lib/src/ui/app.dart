@@ -1,14 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'shell.dart';
+import 'text/strings.dart';
 import 'theme.dart';
 
-class AnischedApp extends StatelessWidget {
+class AnischedApp extends StatefulWidget {
   const AnischedApp({
     super.key,
     this.reader,
@@ -34,23 +36,69 @@ class AnischedApp extends StatelessWidget {
   final ValueListenable<RemoteCheck?>? remote;
 
   @override
+  State<AnischedApp> createState() => _AnischedAppState();
+}
+
+class _AnischedAppState extends State<AnischedApp> with WidgetsBindingObserver {
+  final _settings = Listenable.merge([themeModeSetting, appLang]);
+
+  @override
+  void initState() {
+    super.initState();
+    appLang.addListener(_relabel);
+    languageSetting.addListener(_resolve);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    languageSetting.removeListener(_resolve);
+    appLang.removeListener(_relabel);
+    super.dispose();
+  }
+
+  void _resolve() => appLang.value = resolveLang(
+    languageSetting.value,
+    WidgetsBinding.instance.platformDispatcher.locales,
+  );
+
+  /// The device language changed: follow it unless one is fixed.
+  @override
+  void didChangeLocales(List<Locale>? locales) => _resolve();
+
+  /// Words are read in build methods, some of them under const widgets:
+  /// on a language change every element builds again (state is kept).
+  void _relabel() {
+    void mark(Element e) {
+      e.markNeedsBuild();
+      e.visitChildren(mark);
+    }
+
+    (context as Element).visitChildren(mark);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeModeSetting,
-      builder: (context, mode, _) => MaterialApp(
-        themeMode: mode,
+    return ListenableBuilder(
+      listenable: _settings,
+      builder: (context, _) => MaterialApp(
+        themeMode: themeModeSetting.value,
         themeAnimationDuration: Duration.zero,
         title: 'Anisched',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
+        locale: appLang.value.locale,
+        supportedLocales: [for (final l in Lang.values) l.locale],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        theme: AppTheme.light(appLang.value),
+        darkTheme: AppTheme.dark(appLang.value),
         scrollBehavior: const AlwaysScrollbarBehavior(),
         home: AppShell(
-          reader: reader,
-          store: store,
-          timer: timer,
-          session: session,
-          remote: remote,
+          reader: widget.reader,
+          store: widget.store,
+          timer: widget.timer,
+          session: widget.session,
+          remote: widget.remote,
         ),
       ),
     );

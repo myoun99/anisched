@@ -4,14 +4,15 @@ library;
 
 import '../models/catalogue.dart';
 import '../models/progress.dart';
+import 'text/strings.dart';
 
 extension TaskStatusLabel on TaskStatus {
   String get label => switch (this) {
-    TaskStatus.received => '받음',
-    TaskStatus.inProgress => '작업중',
-    TaskStatus.submitted => '제출',
-    TaskStatus.retake => '리테이크',
-    TaskStatus.done => '완료',
+    TaskStatus.received => S.stReceived.t,
+    TaskStatus.inProgress => S.stInProgress.t,
+    TaskStatus.submitted => S.stSubmitted.t,
+    TaskStatus.retake => S.stRetake.t,
+    TaskStatus.done => S.stDone.t,
   };
 }
 
@@ -36,7 +37,9 @@ enum DueTone { none, quiet, late }
   if (days == null || status == TaskStatus.done) {
     return (text: '—', tone: DueTone.none);
   }
-  final text = days < 0 ? '${-days}일 지남' : (days == 0 ? 'D-day' : 'D-$days');
+  final text = days < 0
+      ? S.daysLate.f({'n': -days})
+      : (days == 0 ? 'D-day' : 'D-$days');
   final late = days < 0 && status.isOpen;
   return (text: text, tone: late ? DueTone.late : DueTone.quiet);
 }
@@ -69,13 +72,16 @@ String formatMoney(String currency, int amount) {
   return '$sign$b';
 }
 
-const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-
 /// 「11/28(토)」 in local time.
 String formatDate(DateTime? d) {
   if (d == null) return '—';
   final l = d.toLocal();
-  return '${l.month}/${l.day}(${_weekdays[l.weekday - 1]})';
+  final wd = weekdayNames()[l.weekday - 1];
+  return switch (appLang.value) {
+    Lang.fr => '${l.day}/${l.month} $wd',
+    Lang.en => '${l.month}/${l.day} $wd',
+    _ => '${l.month}/${l.day}($wd)',
+  };
 }
 
 /// Sum of pay per currency, in first-seen order. No conversion.
@@ -89,14 +95,14 @@ Map<String, int> totalsByCurrency(Iterable<PartGroup> groups) {
 
 /// 「B파트」, 「파트 없음」 for an episode's loose cuts, or a storyboard's label.
 String groupTitle(PartGroup g) => switch (g.kind) {
-  GroupKind.part => '${g.partLabel}파트',
-  GroupKind.noPart => '파트 없음',
-  GroupKind.storyboard => g.storyboardLabel ?? '콘티',
+  GroupKind.part => S.partTitle.f({'p': g.partLabel}),
+  GroupKind.noPart => S.noPart.t,
+  GroupKind.storyboard => g.storyboardLabel ?? S.storyboard.t,
 };
 
 /// 「4컷」 for cuts, 「1건」 for a storyboard.
 String groupCount(PartGroup g) =>
-    g.kind == GroupKind.storyboard ? '1건' : '${g.total} cut';
+    g.kind == GroupKind.storyboard ? S.items.f({'n': 1}) : '${g.total} cut';
 
 /// A task's own name: its cut number or storyboard label.
 String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
@@ -104,10 +110,14 @@ String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
 /// The deadline signal as one label; only [DueLate] stands out.
 ({String text, bool late, bool quiet}) dueSignalLabel(DueSignal s) =>
     switch (s) {
-      DueDone() => (text: '완료', late: false, quiet: true),
-      DueSubmitted() => (text: '제출', late: false, quiet: true),
+      DueDone() => (text: S.stDone.t, late: false, quiet: true),
+      DueSubmitted() => (text: S.stSubmitted.t, late: false, quiet: true),
       DueNone() => (text: '—', late: false, quiet: true),
-      DueLate(:final days) => (text: '$days일 지남', late: true, quiet: false),
+      DueLate(:final days) => (
+        text: S.daysLate.f({'n': days}),
+        late: true,
+        quiet: false,
+      ),
       DueDaysLeft(:final days) => (
         text: days == 0 ? 'D-day' : 'D-$days',
         late: false,
@@ -126,9 +136,9 @@ PlanTone planTone(PlanSignal s) => switch (s) {
 
 /// Why the plan dot shows, for the opened details; null when it does not.
 String? planReason(PlanSignal s) => switch (s) {
-  PlanOver() => '실 작업 끝이 마감보다 늦음',
-  PlanHard() => '하루 할당이 최근 평균의 1.5배를 넘음',
-  PlanLateStart() => '실 작업 시작일이 지났는데 아직 시작 전',
-  PlanTight() => '하루 할당이 최근 평균보다 많음',
+  PlanOver() => S.planOver.t,
+  PlanHard() => S.planHard.t,
+  PlanLateStart() => S.planLateStart.t,
+  PlanTight() => S.planTight.t,
   PlanNotStarted() || PlanNone() => null,
 };

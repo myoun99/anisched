@@ -1,7 +1,8 @@
 // Screen captures for review on real fonts, not part of `flutter test`
 // (it only runs test/). Run:
 //   flutter test tool/capture/capture_test.dart
-// PNGs land in build/captures/<scenario>-<size>.png.
+// PNGs land in build/captures/<scenario>-<size>.png. CAPTURE=a,b limits
+// the run to those scenarios (light and dark).
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -9,10 +10,13 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/shell.dart';
+import 'package:anisched/src/ui/text/strings.dart';
+import 'package:anisched/src/ui/views/chart.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../test/support/sample_catalogue.dart';
@@ -43,6 +47,10 @@ Future<void> loadFonts() async {
   await family('NanumGothic', [
     'assets/fonts/NanumGothic-Regular.ttf',
     'assets/fonts/NanumGothic-Bold.ttf',
+  ]);
+  await family('NotoSansSC', [
+    'assets/fonts/NotoSansSC-Regular.otf',
+    'assets/fonts/NotoSansSC-Bold.otf',
   ]);
   final root = Platform.environment['FLUTTER_ROOT'] ?? '/opt/flutter';
   await family('MaterialIcons', [
@@ -87,6 +95,35 @@ final scenarios = <String, (AppView, Scenario)>{
   ),
   'settings': (AppView.settings, (t, size) async {}),
   'timeline': (AppView.timeline, (t, size) async {}),
+
+  // Round 3: the date area zoomed out two steps and scrolled a week on.
+  'timeline-zoom': (
+    AppView.timeline,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('chart-zoom-out')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('chart-zoom-out')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('chart-next')));
+      await t.pump();
+    },
+  ),
+  'work-zoom': (
+    AppView.work,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('chart-zoom-in')));
+      await t.pump();
+    },
+  ),
+  // Round 3: each language on the list and the settings.
+  for (final l in Lang.values)
+    if (l != Lang.ko) ...{
+      'list-${l.name}': (AppView.list, (t, size) async => appLang.value = l),
+      'settings-${l.name}': (
+        AppView.settings,
+        (t, size) async => appLang.value = l,
+      ),
+    },
 
   // ① The filter popover, open over the list.
   'filter-open': (
@@ -143,12 +180,22 @@ void main() {
   final out = Directory('build/captures')..createSync(recursive: true);
   setUpAll(loadFonts);
 
+  final only = Platform.environment['CAPTURE']?.split(',').toSet();
   for (final dark in [false, true]) {
     for (final MapEntry(key: base, value: (view, act)) in scenarios.entries) {
+      if (only != null && !only.contains(base)) continue;
       final name = dark ? '$base-dark' : base;
       for (final MapEntry(key: label, value: size) in sizes.entries) {
         testWidgets('$name $label', (t) async {
           Folds.cutsInDetails.value = false;
+          chartView.value = const ChartView();
+          appLang.value = Lang.ko;
+          addTearDown(() => appLang.value = Lang.ko);
+          // A scenario that only switches the language does so up front.
+          final langOnly =
+              base.contains('-') &&
+              Lang.values.any((l) => base.endsWith('-${l.name}'));
+          if (langOnly) await act(t, size);
           t.view.physicalSize = size * 2;
           t.view.devicePixelRatio = 2;
           addTearDown(t.view.reset);
@@ -159,6 +206,9 @@ void main() {
               key: shot,
               child: MaterialApp(
                 debugShowCheckedModeBanner: false,
+                locale: appLang.value.locale,
+                supportedLocales: [for (final l in Lang.values) l.locale],
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
                 theme: dark ? AppTheme.dark() : AppTheme.light(),
                 scrollBehavior: const AlwaysScrollbarBehavior(),
                 home: AppShell(
@@ -172,7 +222,7 @@ void main() {
             ),
           );
           await t.pump();
-          await act(t, size);
+          if (!langOnly) await act(t, size);
           await t.pump(const Duration(milliseconds: 500));
           final boundary =
               shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
