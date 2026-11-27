@@ -24,6 +24,7 @@
 
 `core` · `models` · `services` · `controllers` 는 `ui/` 와 위젯 프레임워크를 import 하지 않는다.
 이 순서로 안쪽만 import 한다.
+`platform/` 은 services 위 · ui 아래의 플랫폼 채널 층 — `flutter/services` 까지만, 위젯은 안 된다.
 
 ## 머지 게이트
 
