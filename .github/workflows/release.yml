@@ -1,0 +1,210 @@
+name: Release
+
+# Hand-run only (no cron, no push trigger): Anicel's account was suspended
+# after ~130 runs a day plus a daily macOS runner. Tick only the platforms
+# you need — iOS and macOS each take a macOS runner.
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Build number to stamp. Empty = this run's number + 1000.
+        required: false
+        type: string
+      android:
+        description: Android APK (signed with the upload key)
+        type: boolean
+        default: true
+      ios:
+        description: iOS → TestFlight (macOS runner)
+        type: boolean
+        default: false
+      macos:
+        description: macOS, Developer ID signed and notarized (macOS runner)
+        type: boolean
+        default: false
+      windows:
+        description: Windows x64 zip
+        type: boolean
+        default: false
+      linux:
+        description: Linux x64 tar.gz
+        type: boolean
+        default: false
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+  BUILD_NUMBER: ${{ inputs.build_number || github.run_number + 1000 }}
+
+jobs:
+  android:
+    if: inputs.android
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set — a debug-signed APK cannot update an earlier install"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          {
+            echo "ORG_GRADLE_PROJECT_anischedUploadStoreFile=$RUNNER_TEMP/upload.jks"
+            echo "ORG_GRADLE_PROJECT_anischedUploadStorePassword=$STORE_PASSWORD"
+            echo "ORG_GRADLE_PROJECT_anischedUploadKeyAlias=$KEY_ALIAS"
+            echo "ORG_GRADLE_PROJECT_anischedUploadKeyPassword=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - run: flutter pub get
+      - run: bash tool/release_build.sh apk "$BUILD_NUMBER"
+      - run: cp build/app/outputs/flutter-apk/app-release.apk "Anisched-$BUILD_NUMBER.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anisched-android
+          path: Anisched-*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  ios:
+    if: inputs.ios
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash tool/release_build.sh ios "$BUILD_NUMBER" --no-codesign
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: ios
+      - name: Sign and upload to TestFlight
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          FASTLANE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          MATCH_GIT_USER: ${{ secrets.MATCH_GIT_USER }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_CHANGELOG: '1'
+        run: bundle exec fastlane ios beta
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fastlane-ios-logs
+          path: /Users/runner/Library/Logs/gym/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    if: inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash tool/release_build.sh macos "$BUILD_NUMBER"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: ios
+      - name: Sign, notarize, package
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          FASTLANE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_CHANGELOG: '1'
+        run: bundle exec fastlane mac developer_id
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anisched-macos
+          path: ios/build/mac/*.zip
+          if-no-files-found: error
+          retention-days: 90
+
+  windows:
+    if: inputs.windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash tool/release_build.sh windows "$BUILD_NUMBER"
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "Anisched-windows-$env:BUILD_NUMBER.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anisched-windows
+          path: Anisched-windows-*.zip
+          if-no-files-found: error
+          retention-days: 90
+
+  linux:
+    if: inputs.linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash tool/release_build.sh linux "$BUILD_NUMBER"
+      - name: Package
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg"
+          cp -a build/linux/x64/release/bundle "$RUNNER_TEMP/pkg/Anisched"
+          tar -C "$RUNNER_TEMP/pkg" -czf "Anisched-linux-$BUILD_NUMBER.tar.gz" Anisched
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anisched-linux
+          path: Anisched-linux-*.tar.gz
+          if-no-files-found: error
+          retention-days: 90

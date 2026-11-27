@@ -1,0 +1,144 @@
+# Signing for Anisched, adapted from Anicel's Fastfile. The CI files only
+# call these lanes; this file is the one place that knows how to sign.
+#
+# Shared with Anicel on purpose: the same Apple team, App Store Connect API
+# key and match repository (myoun99/anicel-certificates). match keeps one
+# distribution certificate for the team and a profile per bundle id, so a
+# second app costs no certificate slot (the team has two).
+default_platform(:ios)
+
+APP_IDENTIFIER = "com.myoun.anisched".freeze
+
+def asc_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID").strip,
+    issuer_id: ENV.fetch("ASC_ISSUER_ID").strip,
+    key_content: ENV.fetch("ASC_KEY_CONTENT"),
+    in_house: false,
+  )
+end
+
+# MATCH_GIT_USER defaults to oauth2 so the host can move (GitHub, GitLab)
+# by changing secrets only — Anicel learned this during the 2026-09
+# suspension.
+def match_git_authorization
+  user = ENV.fetch("MATCH_GIT_USER", "").strip
+  user = "oauth2" if user.empty?
+  ["#{user}:#{ENV.fetch('MATCH_GIT_TOKEN').strip}"].pack("m0")
+end
+
+require "tmpdir"
+
+# Developer ID cannot be created with an API key (Account Holder only), so
+# the .p12 comes in as a secret. The G2 intermediate is the only one the
+# certificate chains to — request "G2 Sub-CA" when issuing.
+def import_developer_id
+  keychain = ENV.fetch("MATCH_KEYCHAIN_NAME")
+  keychain_password = ENV.fetch("MATCH_KEYCHAIN_PASSWORD")
+  Dir.mktmpdir do |dir|
+    intermediate = File.join(dir, "DeveloperIDG2CA.cer")
+    sh("curl", "-fsSL", "-o", intermediate,
+       "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer")
+    import_certificate(
+      certificate_path: intermediate,
+      keychain_name: keychain,
+      keychain_password: keychain_password,
+    )
+    p12 = File.join(dir, "developer_id.p12")
+    File.binwrite(p12, ENV.fetch("DEVELOPER_ID_P12").unpack1("m"))
+    import_certificate(
+      certificate_path: p12,
+      certificate_password: ENV.fetch("DEVELOPER_ID_P12_PASSWORD").strip,
+      keychain_name: keychain,
+      keychain_password: keychain_password,
+    )
+  end
+end
+
+platform :ios do
+  desc "Build a signed .ipa and ship it to TestFlight (internal testers)"
+  lane :beta do
+    key = asc_key
+    setup_ci
+    # setup_ci turns match readonly on; the first run must create the
+    # profile for this bundle id.
+    match(
+      api_key: key,
+      type: "appstore",
+      platform: "ios",
+      app_identifier: APP_IDENTIFIER,
+      git_url: ENV.fetch("MATCH_GIT_URL").strip,
+      git_basic_authorization: match_git_authorization,
+      storage_mode: "git",
+      readonly: false,
+    )
+    profile_name = ENV.fetch("sigh_#{APP_IDENTIFIER}_appstore_profile-name")
+    # Read the team from the installed profile rather than a secret: a stray
+    # newline in APPLE_TEAM_ID once broke Anicel's signing with an error that
+    # never named the secret.
+    team_id = (
+      ENV["sigh_#{APP_IDENTIFIER}_appstore_team-id"] ||
+      ENV.fetch("FASTLANE_TEAM_ID")
+    ).strip
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Runner.xcodeproj",
+      team_id: team_id,
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name,
+      targets: ["Runner"],
+    )
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      output_directory: "build",
+      output_name: "Anisched.ipa",
+      export_options: {
+        provisioningProfiles: { APP_IDENTIFIER => profile_name },
+      },
+    )
+    upload_to_testflight(
+      api_key: key,
+      skip_waiting_for_build_processing: true,
+    )
+  end
+end
+
+platform :mac do
+  desc "Sign, notarize and zip the Mac app for direct distribution"
+  lane :developer_id do
+    repo = File.expand_path("../..")
+    output = File.join(repo, "ios", "build", "mac")
+    key = asc_key
+    setup_ci
+    import_developer_id
+    team_id = ENV.fetch("FASTLANE_TEAM_ID").strip
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: File.join(repo, "macos", "Runner.xcodeproj"),
+      team_id: team_id,
+      code_sign_identity: "Developer ID Application",
+      targets: ["Runner"],
+    )
+    app = build_mac_app(
+      workspace: File.join(repo, "macos", "Runner.xcworkspace"),
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "developer-id",
+      output_directory: output,
+      xcargs: "ENABLE_HARDENED_RUNTIME=YES OTHER_CODE_SIGN_FLAGS=--timestamp",
+      export_options: {
+        signingStyle: "manual",
+        signingCertificate: "Developer ID Application",
+        teamID: team_id,
+      },
+    )
+    unless app.to_s.end_with?(".app") && File.directory?(app.to_s)
+      UI.user_error!("the export gave #{app.inspect}, not an .app in #{output}")
+    end
+    notarize(package: app, api_key: key, print_log: true)
+    sh("ditto", "-c", "-k", "--keepParent", app,
+       File.join(output, "Anisched-macOS.zip"))
+  end
+end
