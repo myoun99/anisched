@@ -18,6 +18,7 @@
 | `seconds_rounding` | 초당 단가에서 컷 길이를 초로 맞추는 방식 — **작품마다 덮어쓸 수 있음**(`works.seconds_rounding`, NULL=앱 설정) | `nearest`(반올림) |
 | `day_start_minutes` | 하루가 시작하는 시각(자정 뒤 분) | `0`(자정) |
 | `rest_weekdays` | 쉬는 요일(1=월 … 7=일), 하루 몇 컷 계산에서 뺌. 빈 값 = 매일 일함 | **토·일** |
+| `week_start` | 주가 시작하는 요일(이번 주 막대) | `1`(월) |
 | `recent_pace_days` | 「최근 평균」 속도가 보는 날 수 | `28` |
 | `pace_end` | 하루 몇 컷의 끝: `plan`(내 계획 끝 → 없으면 마감) / `due`(제작 마감) | `plan` |
 
@@ -168,6 +169,27 @@
 
 ## 쓰기 API 메모
 
+입력 화면용(쓰기는 메인 isolate 의 `CatalogueStore`, 목록 읽기는 리더):
+
+| 할 일 | 쓰기 | 목록(리더) |
+|---|---|---|
+| 거래처 | `addClient(이름, closingDay:)` | `clients()` |
+| 작품 등록 | `createWork(제목, currency:, clientId:, presetId:)` · `setWorkDefaultRateUnit` · `setWorkRounding` | `works()` · 프리셋 `presets()` |
+| 화 | `addEpisode(작품, 번호, title:)` · 화 단가 `setEpisodeRate` | `episodes(작품)` |
+| 파트 | `addPart(화, 라벨, plannedCutCount:)` · `renamePart` · `setPlannedCutCount` | `parts(화)`(살아 있는 컷 수 포함) |
+| 컷 여러 개 | `parseCutNumbers(입력)` → `addCuts(화, 번호들, partId:, lengthMs:)`(이미 있는 번호는 건너뛰고 알려 줌) | `cuts(화)` |
+| 컷 손보기 | `setCutsPart(컷들, 파트 또는 null)`(같은 화의 파트만) · `setCutLength` | |
+| 파트 × 공정 | `setPartDue` · `clearPartDue` · `setPartPlan(start:, end:)` · `addTasksForPart` | |
+| 컷 × 공정 | `addTask` · `setTaskDue` · `setTaskPlan` · `setTaskRate` · `setStatus` / `setStatusMany` · `requestRetake` | |
+| 쉬는 날 | `addDaysOff` · `removeDaysOff` | `daysOff`(스토어) |
+
+컷 번호 입력(`parseCutNumbers`): 쉼표·`、`·공백으로 나눔. 범위는 `~` `〜` `–` `—` `..`(`C100~C110`, `C100~110`, 앞자리 0 유지).
+**하이픈 `-` 은 범위가 아니라 겸용 컷 번호 하나**(`C012-014`). 분할 `C012A` 는 그대로. 거꾸로 된 범위·1000개 넘는 범위·접두어가
+다른 범위는 오류 목록으로.
+
+작업시간: `weekHours(weekOf:)` — 주 시작 요일 설정(`week_start`, 기본 월요일) · 하루 시작 설정 적용, 도는 타이머 포함.
+`dayIntervals(day:)` — 그날의 타이머 구간(작품 id 포함, 하루 막대용).
+
 - 일괄 상태 변경 `setStatusMany(작업 id 목록, 상태)` — 한 트랜잭션, 하나라도 실패하면 전부 그대로.
   화면은 「선택(여러 개) → 동작」 방식(유저 결정).
 
@@ -184,3 +206,9 @@
 
 정해진 것(하루 몇 컷): 남은 날은 계획 시작일(오늘보다 뒤면)부터 · 끝은 내 계획 끝(없으면 마감) ·
 쉬는 요일 기본 토·일 + 쉬는 날 표 · 계획이 시작된 일은 끝이 지나도 「오늘」에 남김.
+
+## 남은 질문 (입력)
+
+1. **컷 번호 범위 표기** — 지금: `~`(와 `–` `..`)만 범위, 하이픈은 겸용 컷. 「C100-C110」을 범위로 쓰는 습관이면
+   겸용과 겹친다 — ① 지금대로 ② 하이픈도 범위, 겸용은 `/`(`C012/014`) — 추천 ①.
+2. **분할 컷 범위**(`C012A~C012C` → A, B, C)를 쓸 일이 있나 — 추천: 필요할 때 추가.

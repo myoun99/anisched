@@ -2,7 +2,9 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/cut_numbers.dart';
 import '../models/progress.dart';
+import '../models/work_interval.dart';
 import 'settings_store.dart';
 
 /// Writes to the work catalogue that carry a rule beyond a plain INSERT:
@@ -99,6 +101,263 @@ class CatalogueStore {
     );
     return db.lastInsertRowId;
   }
+
+  /// Adds many cuts to an episode in one transaction — for example the
+  /// numbers from [parseCutNumbers]. Numbers already live in the episode
+  /// are skipped and reported, not duplicated.
+  ({List<int> added, List<String> skipped}) addCuts(
+    int episodeId,
+    Iterable<String> numbers, {
+    int? partId,
+    int? lengthMs,
+  }) => _transaction(() {
+    final existing = {
+      for (final r in db.select(
+        'SELECT number FROM cuts WHERE episode_id = ? AND archived_at IS NULL;',
+        [episodeId],
+      ))
+        r['number'] as String,
+    };
+    final added = <int>[];
+    final skipped = <String>[];
+    for (final n in numbers) {
+      if (!existing.add(n)) {
+        skipped.add(n);
+        continue;
+      }
+      added.add(addCut(episodeId, n, lengthMs: lengthMs, partId: partId));
+    }
+    return (added: added, skipped: skipped);
+  });
+
+  /// Puts cuts in a part (or takes them out with null). The part must be
+  /// in the cuts' episode.
+  void setCutsPart(Iterable<int> cutIds, int? partId) => _transaction(() {
+    for (final id in cutIds) {
+      db.execute(
+        'UPDATE cuts SET part_id = ?1 WHERE id = ?2 AND (?1 IS NULL OR '
+        'episode_id = (SELECT episode_id FROM parts WHERE id = ?1));',
+        [partId, id],
+      );
+      if (db.updatedRows != 1) {
+        throw ArgumentError('Cut $id is not in the part\'s episode.');
+      }
+    }
+  });
+
+  /// Sets or clears a cut's length (for per-second rates).
+  void setCutLength(int cutId, int? lengthMs) => db.execute(
+    'UPDATE cuts SET length_ms = ? WHERE id = ?;',
+    [lengthMs, cutId],
+  );
+
+  void renamePart(int partId, String label) => db.execute(
+    'UPDATE parts SET label = ?, sort_key = ? WHERE id = ?;',
+    [label, naturalSortKey(label), partId],
+  );
+
+  /// Sets or clears how many cuts the part is expected to have.
+  void setPlannedCutCount(int partId, int? count) => db.execute(
+    'UPDATE parts SET planned_cut_count = ? WHERE id = ?;',
+    [count, partId],
+  );
+
+  /// Removes the part's deadline for a stage; its cuts keep their own.
+  void clearPartDue(int partId, int stageId) => db.execute(
+    'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
+    [partId, stageId],
+  );
+
+  /// Adds a client; [closingDay] null closes at month end.
+  int addClient(String name, {int? closingDay}) {
+    db.execute('INSERT INTO clients (name, closing_day) VALUES (?, ?);', [
+      name,
+      closingDay,
+    ]);
+    return db.lastInsertRowId;
+  }
+
+  List<({int id, String name, int? closingDay})> clients() => [
+    for (final r in db.select(
+      'SELECT id, name, closing_day FROM clients WHERE archived_at IS NULL '
+      'ORDER BY name, id;',
+    ))
+      (
+        id: r['id'] as int,
+        name: r['name'] as String,
+        closingDay: r['closing_day'] as int?,
+      ),
+  ];
+
+  /// Live works, newest first.
+  List<({int id, String title, String currency, int? clientId})> works() => [
+    for (final r in db.select(
+      'SELECT id, title, currency, client_id FROM works '
+      'WHERE archived_at IS NULL ORDER BY created_at DESC, id DESC;',
+    ))
+      (
+        id: r['id'] as int,
+        title: r['title'] as String,
+        currency: r['currency'] as String,
+        clientId: r['client_id'] as int?,
+      ),
+  ];
+
+  /// A work's live episodes in number order.
+  List<({int id, String number, String? title})> episodes(int workId) => [
+    for (final r in db.select(
+      'SELECT id, number, title FROM episodes '
+      'WHERE work_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
+      [workId],
+    ))
+      (
+        id: r['id'] as int,
+        number: r['number'] as String,
+        title: r['title'] as String?,
+      ),
+  ];
+
+  /// An episode's live parts in label order, with their live cut counts.
+  List<({int id, String label, int? plannedCutCount, int cutCount})> parts(
+    int episodeId,
+  ) => [
+    for (final r in db.select(
+      'SELECT p.id, p.label, p.planned_cut_count, '
+      '(SELECT COUNT(*) FROM cuts c WHERE c.part_id = p.id '
+      'AND c.archived_at IS NULL) AS cut_count '
+      'FROM parts p WHERE p.episode_id = ? AND p.archived_at IS NULL '
+      'ORDER BY p.sort_key, p.id;',
+      [episodeId],
+    ))
+      (
+        id: r['id'] as int,
+        label: r['label'] as String,
+        plannedCutCount: r['planned_cut_count'] as int?,
+        cutCount: r['cut_count'] as int,
+      ),
+  ];
+
+  /// An episode's live cuts in number order.
+  List<({int id, String number, int? lengthMs, int? partId})> cuts(
+    int episodeId,
+  ) => [
+    for (final r in db.select(
+      'SELECT id, number, length_ms, part_id FROM cuts '
+      'WHERE episode_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
+      [episodeId],
+    ))
+      (
+        id: r['id'] as int,
+        number: r['number'] as String,
+        lengthMs: r['length_ms'] as int?,
+        partId: r['part_id'] as int?,
+      ),
+  ];
+
+  /// Timer time per working day for the week holding [weekOf] (today when
+  /// null), starting on the week-start setting, days cut at the day-start
+  /// setting. A running timer counts up to now.
+  List<({DateTime day, Duration worked})> weekHours({DateTime? weekOf}) {
+    final now = clock();
+    final dayStart = settings.dayStartMinutes;
+    final anchor = dayRange(weekOf ?? now, dayStart).start;
+    final back = (anchor.weekday - settings.weekStart) % 7;
+    final first = DateTime(anchor.year, anchor.month, anchor.day - back);
+    final days = [
+      for (var i = 0; i < 7; i++)
+        DateTime(first.year, first.month, first.day + i),
+    ];
+    DateTime startOf(DateTime d) => d.add(Duration(minutes: dayStart));
+    final from = startOf(days.first);
+    final to = startOf(
+      DateTime(days.last.year, days.last.month, days.last.day + 1),
+    );
+    final spans = _intervals(from, to);
+    return [
+      for (final d in days)
+        (
+          day: d,
+          worked: totalElapsed(
+            spans,
+            now.toUtc(),
+            from: startOf(d).toUtc(),
+            to: startOf(DateTime(d.year, d.month, d.day + 1)).toUtc(),
+          ),
+        ),
+    ];
+  }
+
+  /// The timer stretches of the working day holding [day] (today when
+  /// null), clipped to it, oldest first, with the work they were on.
+  List<({DateTime start, DateTime end, bool running, int? workId, int? taskId})>
+  dayIntervals({DateTime? day}) {
+    final now = clock().toUtc();
+    final range = dayRange(day ?? clock(), settings.dayStartMinutes);
+    final from = range.start.toUtc();
+    final to = range.end.toUtc();
+    final rows = db.select(
+      '''
+SELECT i.started_at, i.stopped_at, i.task_id, s.work_id
+FROM work_intervals i
+LEFT JOIN tasks t ON t.id = i.task_id
+LEFT JOIN work_stages s ON s.id = t.stage_id
+WHERE i.started_at < ? AND (i.stopped_at IS NULL OR i.stopped_at > ?)
+ORDER BY i.started_at;''',
+      [_ms(to), _ms(from)],
+    );
+    DateTime utc(int ms) =>
+        DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+    return [
+      for (final r in rows)
+        if (_clip(
+              utc(r['started_at'] as int),
+              r['stopped_at'] == null ? now : utc(r['stopped_at'] as int),
+              from,
+              to,
+            )
+            case (final s, final e))
+          (
+            start: s,
+            end: e,
+            running: r['stopped_at'] == null,
+            workId: r['work_id'] as int?,
+            taskId: r['task_id'] as int?,
+          ),
+    ];
+  }
+
+  static (DateTime, DateTime)? _clip(
+    DateTime s,
+    DateTime e,
+    DateTime from,
+    DateTime to,
+  ) {
+    final a = s.isAfter(from) ? s : from;
+    final b = e.isBefore(to) ? e : to;
+    return b.isAfter(a) ? (a, b) : null;
+  }
+
+  List<WorkInterval> _intervals(DateTime from, DateTime to) => [
+    for (final r in db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE started_at < ? AND (stopped_at IS NULL OR stopped_at > ?);',
+      [_ms(to), _ms(from)],
+    ))
+      WorkInterval(
+        id: r['id'] as int,
+        start: DateTime.fromMillisecondsSinceEpoch(
+          r['started_at'] as int,
+          isUtc: true,
+        ),
+        stop: r['stopped_at'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                r['stopped_at'] as int,
+                isUtc: true,
+              ),
+        taskId: r['task_id'] as int?,
+      ),
+  ];
 
   /// Adds a part (a bundle of the user's cuts) to an episode. The cut
   /// count may be known before the cuts themselves.

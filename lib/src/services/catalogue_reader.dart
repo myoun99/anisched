@@ -7,6 +7,15 @@ import '../core/clock.dart';
 import '../models/progress.dart';
 import 'catalogue_store.dart';
 
+/// One stretch of timer time within a day.
+typedef DayInterval = ({
+  DateTime start,
+  DateTime end,
+  bool running,
+  int? workId,
+  int? taskId,
+});
+
 /// Monthly pay totals per currency (see [CatalogueStore.monthlyTotals]).
 typedef MonthlyTotals = Map<String, ({int total, int unpriced})>;
 
@@ -31,6 +40,25 @@ abstract interface class CatalogueReader {
 
   /// See [CatalogueStore.signals].
   Future<Map<String, GroupSignals>> signals({bool includeDone = false});
+
+  /// See [CatalogueStore.weekHours].
+  Future<List<({DateTime day, Duration worked})>> weekHours({DateTime? weekOf});
+
+  /// See [CatalogueStore.dayIntervals].
+  Future<List<DayInterval>> dayIntervals({DateTime? day});
+
+  /// Pickers for the input screens: see [CatalogueStore.works],
+  /// [CatalogueStore.episodes], [CatalogueStore.parts],
+  /// [CatalogueStore.cuts] and [CatalogueStore.clients].
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  works();
+  Future<List<({int id, String number, String? title})>> episodes(int workId);
+  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
+  parts(int episodeId);
+  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
+    int episodeId,
+  );
+  Future<List<({int id, String name, int? closingDay})>> clients();
 
   /// Stops the reader. Pending and later reads fail with [StateError].
   Future<void> close();
@@ -82,6 +110,36 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<Map<String, GroupSignals>> signals({bool includeDone = false}) =>
       _run(() => store.signals(includeDone: includeDone));
+
+  @override
+  Future<List<({DateTime day, Duration worked})>> weekHours({
+    DateTime? weekOf,
+  }) => _run(() => store.weekHours(weekOf: weekOf));
+
+  @override
+  Future<List<DayInterval>> dayIntervals({DateTime? day}) =>
+      _run(() => store.dayIntervals(day: day));
+
+  @override
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  works() => _run(store.works);
+
+  @override
+  Future<List<({int id, String number, String? title})>> episodes(int workId) =>
+      _run(() => store.episodes(workId));
+
+  @override
+  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
+  parts(int episodeId) => _run(() => store.parts(episodeId));
+
+  @override
+  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
+    int episodeId,
+  ) => _run(() => store.cuts(episodeId));
+
+  @override
+  Future<List<({int id, String name, int? closingDay})>> clients() =>
+      _run(store.clients);
 
   @override
   Future<void> close() async => _closed = true;
@@ -248,6 +306,36 @@ class BackgroundCatalogueReader implements CatalogueReader {
   @override
   Future<Map<String, GroupSignals>> signals({bool includeDone = false}) =>
       _ask((s) => s.signals(includeDone: includeDone));
+
+  @override
+  Future<List<({DateTime day, Duration worked})>> weekHours({
+    DateTime? weekOf,
+  }) => _ask((s) => s.weekHours(weekOf: weekOf));
+
+  @override
+  Future<List<DayInterval>> dayIntervals({DateTime? day}) =>
+      _ask((s) => s.dayIntervals(day: day));
+
+  @override
+  Future<List<({int id, String title, String currency, int? clientId})>>
+  works() => _ask((s) => s.works());
+
+  @override
+  Future<List<({int id, String number, String? title})>> episodes(int workId) =>
+      _ask((s) => s.episodes(workId));
+
+  @override
+  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
+  parts(int episodeId) => _ask((s) => s.parts(episodeId));
+
+  @override
+  Future<List<({int id, String number, int? lengthMs, int? partId})>> cuts(
+    int episodeId,
+  ) => _ask((s) => s.cuts(episodeId));
+
+  @override
+  Future<List<({int id, String name, int? closingDay})>> clients() =>
+      _ask((s) => s.clients());
 
   @override
   Future<void> close() async {

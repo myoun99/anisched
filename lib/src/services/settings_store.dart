@@ -15,6 +15,7 @@ class SettingsStore {
   static const _restWeekdays = 'rest_weekdays';
   static const _paceEnd = 'pace_end';
   static const _recentPaceDays = 'recent_pace_days';
+  static const _weekStart = 'week_start';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -66,6 +67,15 @@ class SettingsStore {
   set recentPaceDays(int days) {
     RangeError.checkValueInInterval(days, 1, 366, 'days');
     _set(_recentPaceDays, '$days');
+  }
+
+  /// The weekday a week starts on (1 = Monday … 7 = Sunday). Default:
+  /// Monday.
+  int get weekStart => int.tryParse(_get(_weekStart) ?? '') ?? DateTime.monday;
+
+  set weekStart(int weekday) {
+    RangeError.checkValueInInterval(weekday, 1, 7, 'weekday');
+    _set(_weekStart, '$weekday');
   }
 
   String? _get(String key) {

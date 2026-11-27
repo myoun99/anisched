@@ -212,6 +212,74 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       );
     });
 
+    test('many cuts at once; existing numbers are skipped', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B', plannedCutCount: 4);
+      store.addCut(ep, 'C101');
+      final r = store.addCuts(
+        ep,
+        ['C100', 'C101', 'C102'],
+        partId: part,
+        lengthMs: 3000,
+      );
+      expect(r.added, hasLength(2));
+      expect(r.skipped, ['C101']);
+      expect(store.cuts(ep).map((c) => (c.number, c.partId)), [
+        ('C100', part),
+        ('C101', null),
+        ('C102', part),
+      ]);
+      expect(store.parts(ep).single.cutCount, 2);
+    });
+
+    test('cuts move into a part of their episode only', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final other = store.addEpisode(w, '#02');
+      final part = store.addPart(ep, 'B');
+      final elsewhere = store.addPart(other, 'X');
+      final c = store.addCut(ep, 'C1');
+      store.setCutsPart([c], part);
+      expect(store.cuts(ep).single.partId, part);
+      expect(() => store.setCutsPart([c], elsewhere), throwsArgumentError);
+      expect(store.cuts(ep).single.partId, part); // rolled back
+      store.setCutsPart([c], null);
+      expect(store.cuts(ep).single.partId, isNull);
+    });
+
+    test('parts, cut lengths and part deadlines can be edited', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B', plannedCutCount: 11);
+      store
+        ..renamePart(part, 'B파트')
+        ..setPlannedCutCount(part, null);
+      expect(store.parts(ep).single.label, 'B파트');
+      expect(store.parts(ep).single.plannedCutCount, isNull);
+      final c = store.addCut(ep, 'C1', partId: part);
+      store.setCutLength(c, 2500);
+      expect(store.cuts(ep).single.lengthMs, 2500);
+      final lo = stageId(w, 'LO');
+      final task = store.addTasksForPart(part, lo).single;
+      store.setPartDue(part, lo, DateTime.utc(2026, 12, 10));
+      expect(store.dueFor(task).fromPart, isTrue);
+      store.clearPartDue(part, lo);
+      expect(store.dueFor(task).dueAt, isNull);
+    });
+
+    test('pickers: clients, works, episodes', () {
+      final client = store.addClient('스튜디오 X', closingDay: 20);
+      store.createWork('작품A', clientId: client);
+      final b = store.createWork('작품B');
+      store
+        ..addEpisode(b, '#10')
+        ..addEpisode(b, '#2');
+      expect(store.clients().single.closingDay, 20);
+      expect(store.works().map((w) => w.title).toSet(), {'작품A', '작품B'});
+      expect(store.episodes(b).map((e) => e.number), ['#2', '#10']);
+    });
+
     test('a failed createWork leaves no half-made work', () {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));
