@@ -280,6 +280,100 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       expect(store.episodes(b).map((e) => e.number), ['#2', '#10']);
     });
 
+    test('archiving hides everything beneath; restoring brings it back', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final lo = stageId(w, 'LO');
+      store.setEpisodeRate(ep, lo, const Rate(RateUnit.fixed, 1000));
+      final part = store.addPart(ep, 'B');
+      final c1 = store.addCut(ep, 'C1', partId: part);
+      store.addCut(ep, 'C2', partId: part);
+      final ids = store.addTasksForPart(part, lo);
+      int visible() => store.partGroups().fold(0, (a, g) => a + g.total);
+      expect(visible(), 2);
+
+      for (final (kind, id) in [
+        (ArchiveKind.work, w),
+        (ArchiveKind.episode, ep),
+        (ArchiveKind.part, part),
+      ]) {
+        store.archive(kind, id);
+        expect(visible(), 0, reason: '$kind hides its tasks');
+        store.restore(kind, id);
+        expect(visible(), 2, reason: '$kind restores them');
+      }
+      store.archive(ArchiveKind.cut, c1);
+      expect(visible(), 1);
+      expect(store.cuts(ep).map((c) => c.number), ['C2']);
+      store.archive(ArchiveKind.task, ids[1]);
+      expect(visible(), 0);
+      store
+        ..restore(ArchiveKind.cut, c1)
+        ..restore(ArchiveKind.task, ids[1]);
+      expect(visible(), 2);
+
+      // Archived work stops counting in monthly totals too.
+      store.setStatusMany(ids, TaskStatus.done);
+      expect(store.monthlyTotals(2026, 11)['JPY']!.total, 2000);
+      store.archive(ArchiveKind.work, w);
+      expect(store.monthlyTotals(2026, 11), isEmpty);
+    });
+
+    test('the trash lists what is archived, newest first', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final c = store.addCut(ep, 'C7');
+      final t = store.addTask(stageId(w, 'LO'), cutId: c);
+      store
+        ..archive(ArchiveKind.task, t)
+        ..archive(ArchiveKind.cut, c);
+      final trash = store.archived();
+      expect(trash.map((a) => (a.kind, a.label)).toSet(), {
+        (ArchiveKind.task, 'C7 · LO'),
+        (ArchiveKind.cut, '#01 C7'),
+      });
+    });
+
+    test('restoring onto a reused cut number is refused', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final old = store.addCut(ep, 'C1');
+      store.archive(ArchiveKind.cut, old);
+      store.addCut(ep, 'C1');
+      expect(() => store.restore(ArchiveKind.cut, old), throwsStateError);
+    });
+
+    test('a work edits its own stage list; presets stay as they were', () {
+      final w = store.createWork('작품A');
+      List<String> names() => store.stages(w).map((s) => s.name).toList();
+      final lo = stageId(w, 'LO');
+      final extra = store.addStage(w, 'LO 감독 수정', beforeStageId: lo);
+      expect(names().indexOf('LO 감독 수정'), names().indexOf('LO') - 1);
+      store.renameStage(extra, 'LO 감독 체크');
+      expect(names(), contains('LO 감독 체크'));
+      final end = store.addStage(w, '동화 체크');
+      expect(names().last, '동화 체크');
+
+      final reversed = [for (final s in store.stages(w)) s.id].reversed
+          .toList();
+      store.reorderStages(w, reversed);
+      expect(names().first, '동화 체크');
+      expect(
+        () => store.reorderStages(w, reversed.skip(1).toList()),
+        throwsArgumentError,
+      );
+
+      // Hiding a stage takes it out of the picker; its tasks stay.
+      final ep = store.addEpisode(w, '#01');
+      store.addTask(end, cutId: store.addCut(ep, 'C1'));
+      store.archive(ArchiveKind.stage, end);
+      expect(names(), isNot(contains('동화 체크')));
+      expect(store.partGroups().single.stageName, '동화 체크');
+      store.restore(ArchiveKind.stage, end);
+      expect(names(), contains('동화 체크'));
+      expect(store.presetStages(store.defaultPresetId()), defaultStageNames);
+    });
+
     test('a failed createWork leaves no half-made work', () {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));

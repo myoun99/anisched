@@ -69,6 +69,14 @@ void main() {
       store.stagePaces().map((u) => u.stageName),
     );
     expect((await reader.signals()).keys, store.signals().keys);
+    expect(await reader.works(), store.works());
+    expect(await reader.episodes(1), store.episodes(1));
+    expect(await reader.parts(ep), store.parts(ep));
+    expect(await reader.cuts(ep), store.cuts(ep));
+    expect(await reader.clients(), store.clients());
+    expect(await reader.weekHours(), store.weekHours());
+    expect(await reader.dayIntervals(), store.dayIntervals());
+    expect(await reader.archived(), store.archived());
   });
 
   test('a read after a write sees the write', () async {

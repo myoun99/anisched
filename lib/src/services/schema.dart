@@ -18,6 +18,7 @@ class Migration {
 /// v4: editable stage presets that new works copy. v5: a work's own
 /// seconds rounding. v6: the user's own plan (start/end) beside the
 /// production deadline, and a work's default rate unit. v7: days off.
+/// v8: the live_tasks view (archiving hides everything beneath).
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -37,6 +38,7 @@ CREATE TABLE work_intervals (
   const Migration(5, _v5WorkRounding),
   const Migration(6, _v6PlansAndDefaultUnit),
   const Migration(7, _v7DaysOff),
+  const Migration(8, _v8LiveTasks),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -345,4 +347,25 @@ CREATE TABLE days_off (
   CHECK (end_date >= start_date)
 );''');
   db.execute('CREATE INDEX days_off_end ON days_off(end_date);');
+}
+
+void _v8LiveTasks(Database db) {
+  // A task is live only when it and everything above it is: archiving a
+  // work, episode, part, cut or storyboard hides what lies beneath without
+  // touching it, so restoring brings it all back. Hidden stages do not
+  // hide their tasks.
+  db.execute('''
+CREATE VIEW live_tasks AS
+SELECT t.* FROM tasks t
+JOIN work_stages s ON s.id = t.stage_id
+JOIN works w ON w.id = s.work_id
+LEFT JOIN cuts c ON c.id = t.cut_id
+LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
+JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
+LEFT JOIN parts p ON p.id = c.part_id
+WHERE t.archived_at IS NULL AND w.archived_at IS NULL
+  AND e.archived_at IS NULL
+  AND (c.id IS NULL OR c.archived_at IS NULL)
+  AND (sb.id IS NULL OR sb.archived_at IS NULL)
+  AND (p.id IS NULL OR p.archived_at IS NULL);''');
 }

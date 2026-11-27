@@ -242,8 +242,10 @@ class CatalogueStore {
     int episodeId,
   ) => [
     for (final r in db.select(
-      'SELECT id, number, length_ms, part_id FROM cuts '
-      'WHERE episode_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
+      'SELECT c.id, c.number, c.length_ms, c.part_id FROM cuts c '
+      'LEFT JOIN parts p ON p.id = c.part_id '
+      'WHERE c.episode_id = ? AND c.archived_at IS NULL '
+      'AND (p.id IS NULL OR p.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
       [episodeId],
     ))
       (
@@ -358,6 +360,123 @@ ORDER BY i.started_at;''',
         taskId: r['task_id'] as int?,
       ),
   ];
+
+  /// Hides [id] of [kind] and everything beneath it from the views. The
+  /// rows stay; [restore] brings them back.
+  void archive(ArchiveKind kind, int id) {
+    db.execute(
+      'UPDATE ${kind.table} SET archived_at = ? '
+      'WHERE id = ? AND archived_at IS NULL;',
+      [_now(), id],
+    );
+  }
+
+  /// Brings back an archived item. Throws [StateError] when a live item
+  /// now takes its place (a cut number or a cut × stage reused since).
+  void restore(ArchiveKind kind, int id) {
+    try {
+      db.execute('UPDATE ${kind.table} SET archived_at = NULL WHERE id = ?;', [
+        id,
+      ]);
+    } on SqliteException catch (e) {
+      if (e.extendedResultCode == 2067 || e.resultCode == 19) {
+        throw StateError(
+          'Cannot restore ${kind.name} $id: a live one now uses its place.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Archived items, newest first, with a label to show: works by title,
+  /// episodes by number, parts by label, cuts by number, storyboards by
+  /// label, tasks by "cut or storyboard · stage", stages by name.
+  List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>
+  archived() {
+    final rows = db.select('''
+SELECT 'work' AS kind, id, title AS label, archived_at FROM works
+  WHERE archived_at IS NOT NULL
+UNION ALL SELECT 'episode', e.id, w.title || ' ' || e.number, e.archived_at
+  FROM episodes e JOIN works w ON w.id = e.work_id
+  WHERE e.archived_at IS NOT NULL
+UNION ALL SELECT 'part', p.id, e.number || ' ' || p.label, p.archived_at
+  FROM parts p JOIN episodes e ON e.id = p.episode_id
+  WHERE p.archived_at IS NOT NULL
+UNION ALL SELECT 'cut', c.id, e.number || ' ' || c.number, c.archived_at
+  FROM cuts c JOIN episodes e ON e.id = c.episode_id
+  WHERE c.archived_at IS NOT NULL
+UNION ALL SELECT 'storyboard', sb.id, e.number || ' ' || sb.label,
+    sb.archived_at
+  FROM storyboards sb JOIN episodes e ON e.id = sb.episode_id
+  WHERE sb.archived_at IS NOT NULL
+UNION ALL SELECT 'task', t.id,
+    COALESCE(c.number, sb.label) || ' · ' || s.name, t.archived_at
+  FROM tasks t JOIN work_stages s ON s.id = t.stage_id
+  LEFT JOIN cuts c ON c.id = t.cut_id
+  LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
+  WHERE t.archived_at IS NOT NULL
+UNION ALL SELECT 'stage', s.id, w.title || ' · ' || s.name, s.archived_at
+  FROM work_stages s JOIN works w ON w.id = s.work_id
+  WHERE s.archived_at IS NOT NULL
+ORDER BY 4 DESC, 1, 2;''');
+    return [
+      for (final r in rows)
+        (
+          kind: ArchiveKind.values.byName(r['kind'] as String),
+          id: r['id'] as int,
+          label: r['label'] as String,
+          archivedAt: DateTime.fromMillisecondsSinceEpoch(
+            r['archived_at'] as int,
+            isUtc: true,
+          ),
+        ),
+    ];
+  }
+
+  /// Adds a stage to a work's own list, at the end or before
+  /// [beforeStageId], and returns its id. Presets are not touched.
+  int addStage(int workId, String name, {int? beforeStageId}) =>
+      _transaction(() {
+        final ids = [for (final s in stages(workId)) s.id];
+        var at = ids.length;
+        if (beforeStageId != null) {
+          at = ids.indexOf(beforeStageId);
+          if (at < 0) {
+            throw ArgumentError.value(beforeStageId, 'beforeStageId');
+          }
+        }
+        db.execute(
+          'INSERT INTO work_stages (work_id, name, position) VALUES (?, ?, 0);',
+          [workId, name],
+        );
+        final id = db.lastInsertRowId;
+        _setOrder([...ids.take(at), id, ...ids.skip(at)]);
+        return id;
+      });
+
+  void renameStage(int stageId, String name) => db.execute(
+    'UPDATE work_stages SET name = ? WHERE id = ?;',
+    [name, stageId],
+  );
+
+  /// Puts a work's live stages in the order of [stageIds], which must be
+  /// exactly those stages.
+  void reorderStages(int workId, List<int> stageIds) => _transaction(() {
+    final live = {for (final s in stages(workId)) s.id};
+    if (stageIds.length != live.length || !live.containsAll(stageIds)) {
+      throw ArgumentError('Give every live stage of the work exactly once.');
+    }
+    _setOrder(stageIds);
+  });
+
+  void _setOrder(List<int> stageIds) {
+    for (var i = 0; i < stageIds.length; i++) {
+      db.execute('UPDATE work_stages SET position = ? WHERE id = ?;', [
+        i,
+        stageIds[i],
+      ]);
+    }
+  }
 
   /// Adds a part (a bundle of the user's cuts) to an episode. The cut
   /// count may be known before the cuts themselves.
@@ -545,11 +664,11 @@ WHERE t.id = ?;''',
       final p = billingPeriod(year, month, day);
       final rows = db.select(
         '''
-SELECT t.id, w.currency FROM tasks t
+SELECT t.id, w.currency FROM live_tasks t
 JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
 LEFT JOIN clients cl ON cl.id = w.client_id
-WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
+WHERE t.done_at >= ? AND t.done_at < ?
   AND cl.closing_day IS ?;''',
         [
           p.start.toUtc().millisecondsSinceEpoch,
@@ -611,12 +730,16 @@ LEFT JOIN part_stage_dues d
 LEFT JOIN part_stage_plans pl
   ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
-WHERE t.archived_at IS NULL AND w.archived_at IS NULL
-  AND (?2 IS NULL OR w.id = ?2)
+WHERE (?2 IS NULL OR w.id = ?2)
+  -- the live_tasks conditions, inlined: these joins are already here
+  AND t.archived_at IS NULL AND w.archived_at IS NULL
+  AND e.archived_at IS NULL
+  AND (c.id IS NULL OR c.archived_at IS NULL)
+  AND (sb.id IS NULL OR sb.archived_at IS NULL)
+  AND (p.id IS NULL OR p.archived_at IS NULL)
   AND (?3 = 1 OR t.status <> 'done' OR (t.storyboard_id IS NULL AND EXISTS (
-    SELECT 1 FROM cuts c2 JOIN tasks t2 ON t2.cut_id = c2.id
+    SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
     WHERE t2.stage_id = t.stage_id AND t2.status <> 'done'
-      AND t2.archived_at IS NULL AND c2.archived_at IS NULL
       AND (c2.part_id = c.part_id
         OR (c.part_id IS NULL AND c2.part_id IS NULL
             AND c2.episode_id = c.episode_id)))))
@@ -709,8 +832,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       for (final r in db.select(
         '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts
-FROM tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE t.archived_at IS NULL
+FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE 1
   AND COALESCE(t.submitted_at, t.done_at) >= ?
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name ORDER BY s.name;''',
@@ -738,8 +861,8 @@ GROUP BY s.name ORDER BY s.name;''',
       '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts,
        MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
-FROM tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE t.archived_at IS NULL
+FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE 1
   AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name;''',

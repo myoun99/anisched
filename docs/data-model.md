@@ -1,6 +1,6 @@
 # 데이터 모델
 
-> 데이터 담당. 유저 답 6차까지 반영 → 스키마 v7 + 보기용 쿼리. **❓ = 아직 유저 답이 필요한 것.**
+> 데이터 담당. 스키마 v8 + 보기용 쿼리 + 백그라운드 리더. **❓ = 아직 유저 답이 필요한 것.**
 
 ## 저장 원칙 (기술 결정)
 
@@ -29,7 +29,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v7)
+## 구조 (v8)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -182,6 +182,12 @@
 | 파트 × 공정 | `setPartDue` · `clearPartDue` · `setPartPlan(start:, end:)` · `addTasksForPart` | |
 | 컷 × 공정 | `addTask` · `setTaskDue` · `setTaskPlan` · `setTaskRate` · `setStatus` / `setStatusMany` · `requestRetake` | |
 | 쉬는 날 | `addDaysOff` · `removeDaysOff` | `daysOff`(스토어) |
+| 작품의 공정 목록 | `addStage(작품, 이름, beforeStageId:)` · `renameStage` · `reorderStages(작품, 전체 id 순서)` · 숨김 = `archive(stage)` | `stages(작품)` |
+| 보관(지우기) · 되살리기 | `archive(종류, id)` · `restore(종류, id)` — 작품·화·파트·컷·콘티·작업·공정 | `archived()`(휴지통, 최근 순) |
+
+보관 규칙: 위가 보관되면 아래가 모두 보기에서 빠진다(뷰 `live_tasks`) — 아래 행은 손대지 않으므로 되살리면 그대로 돌아온다.
+월 합계·평소 속도도 보관된 것은 세지 않는다. 공정 숨김만 예외: 선택지에서 빠질 뿐 그 공정의 작업은 계속 보인다.
+되살릴 자리를 이미 다른 것이 쓰고 있으면(같은 컷 번호를 새로 만든 경우 등) `StateError`.
 
 컷 번호 입력(`parseCutNumbers`): 쉼표·`、`·공백으로 나눔. 범위는 `~` `〜` `–` `—` `..`(`C100~C110`, `C100~110`, 앞자리 0 유지).
 **하이픈 `-` 은 범위가 아니라 겸용 컷 번호 하나**(`C012-014`). 분할 `C012A` 는 그대로. 거꾸로 된 범위·1000개 넘는 범위·접두어가
