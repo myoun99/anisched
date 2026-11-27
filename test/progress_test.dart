@@ -395,5 +395,34 @@ void main() {
         expect(t.cutsToday, closeTo(2 + 1 + 0.5, 1e-9));
       });
     });
+
+    test('today: planned work shows; a later plan dims, never hides', () {
+      // Planned to start today, deadline far away, untouched → listed.
+      final planned = partWithCuts('planned', ['C1'], lo, 20);
+      store.setPartPlan(planned, lo, start: now, end: DateTime(2026, 12, 3));
+      // Plan started yesterday and its end has passed → still listed.
+      final behind = partWithCuts('behind', ['C2'], lo, 20);
+      store.setPartPlan(
+        behind,
+        lo,
+        start: DateTime(2026, 11, 20),
+        end: DateTime(2026, 11, 25),
+      );
+      // Due in 2 days but planned to start 12/7 → listed, dimmed.
+      final later = partWithCuts('later', ['C3'], lo, 2);
+      store.setPartPlan(later, lo, start: DateTime(2026, 12, 7));
+      // Planned 12/7, deadline far, untouched → not listed.
+      final future = partWithCuts('future', ['C4'], lo, 20);
+      store.setPartPlan(future, lo, start: DateTime(2026, 12, 7));
+
+      final t = store.today();
+      final byLabel = {for (final e in t.entries) e.group.partLabel: e};
+      expect(byLabel.keys.toSet(), {'planned', 'behind', 'later'});
+      expect(byLabel['later']!.beforePlan, isTrue);
+      expect(byLabel['later']!.planStarted, isFalse);
+      expect(byLabel['planned']!.planStarted, isTrue);
+      expect(byLabel['behind']!.planStarted, isTrue);
+      expect(byLabel['planned']!.beforePlan, isFalse);
+    });
   });
 }

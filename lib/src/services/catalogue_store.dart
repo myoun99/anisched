@@ -414,15 +414,26 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     endAt: settings.paceEnd,
   );
 
-  /// The "today" list: open groups due within [horizonDays] working days
-  /// (or late), plus any group in progress or in retake whatever its
-  /// deadline. Sorted by days left (no deadline last), then urgency.
+  /// The "today" list: open groups that are due within [horizonDays] days
+  /// (or late), in progress or in retake, or whose planned start has come.
+  /// Nothing is hidden for a later planned start — such entries carry
+  /// `beforePlan` so the view can dim them ("starts 12/7").
+  /// Sorted by days left (no deadline last), then urgency.
   /// Each entry carries its [Pace]. `late` counts late open groups plus
   /// late open cuts whose own deadline overrides their part's.
   /// `cutsToday` sums what every open group asks of today — not only the
   /// listed ones — so overlapping parts add up.
   ({
-    List<({PartGroup group, int? dueInDays, Pace? pace})> entries,
+    List<
+      ({
+        PartGroup group,
+        int? dueInDays,
+        Pace? pace,
+        bool beforePlan,
+        bool planStarted,
+      })
+    >
+    entries,
     int late,
     double cutsToday,
   })
@@ -437,7 +448,16 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     final groups = partGroups();
     var late = 0;
     var cutsToday = 0.0;
-    final entries = <({PartGroup group, int? dueInDays, Pace? pace})>[];
+    final entries =
+        <
+          ({
+            PartGroup group,
+            int? dueInDays,
+            Pace? pace,
+            bool beforePlan,
+            bool planStarted,
+          })
+        >[];
     for (final g in groups) {
       final status = g.status;
       final days = left(g.dueAt);
@@ -459,8 +479,17 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       final due = days != null && days <= horizonDays;
       final active =
           status == TaskStatus.inProgress || status == TaskStatus.retake;
-      if (status.isOpen && (due || active)) {
-        entries.add((group: g, dueInDays: days, pace: pace));
+      final toStart = left(g.planStartAt);
+      final planStarted = toStart != null && toStart <= 0;
+      final beforePlan = toStart != null && toStart > 0;
+      if (status.isOpen && (due || active || planStarted)) {
+        entries.add((
+          group: g,
+          dueInDays: days,
+          pace: pace,
+          beforePlan: beforePlan,
+          planStarted: planStarted,
+        ));
       }
     }
     entries.sort((a, b) {
