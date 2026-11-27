@@ -3,6 +3,7 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/gestures.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,6 +33,12 @@ Future<CatalogueStore> pumpRegister(WidgetTester t, Size size) async {
 }
 
 void main() {
+  setUp(() {
+    Folds.cutsInDetails.value = true;
+    Folds.newCuts.value = true;
+    Folds.savedCuts.value = true;
+  });
+
   for (final size in const [
     Size(1440, 900),
     Size(800, 1280),

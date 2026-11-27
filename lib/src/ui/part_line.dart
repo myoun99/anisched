@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
 import 'due_button.dart';
+import 'fold.dart';
 import 'format.dart';
 import 'selection.dart';
 import 'theme.dart';
@@ -356,97 +357,116 @@ class PartDetails extends StatelessWidget {
                     ),
                   ],
                 ),
-              if (g.kind != GroupKind.storyboard)
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: [
-                    for (final t in g.tasks)
-                      _CutChip(
-                        task: t,
-                        highlighted: t.id == highlighted,
-                        onTap: onTask == null ? null : () => onTask!(t),
-                        onLongPress: onTaskDue == null
-                            ? null
-                            : () => DueButton(
-                                due: t.dueAt,
-                                onPicked: (d) => onTaskDue!(t, d),
-                                child: const SizedBox(),
-                              ).pick(context),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color:
-                                t.id == highlighted ||
-                                    (isPicked?.call(t) ?? false)
-                                ? c.selected
-                                : c.panel,
-                            border: Border.all(
-                              color: t.sharedLabel != null
-                                  ? Theme.of(context).colorScheme.primary
-                                  : c.line,
-                            ),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 5,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              spacing: 6,
-                              children: [
-                                Dot(c.of(t.status)),
-                                Flexible(
-                                  child: Text.rich(
-                                    TextSpan(
+              if (g.kind != GroupKind.storyboard) ...[
+                FoldToggle(
+                  key: Key('fold-cuts-${g.key}'),
+                  state: Folds.cutsInDetails,
+                  label: '${g.total} cut',
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: Folds.cutsInDetails,
+                  builder: (context, open, _) => !open
+                      ? const SizedBox.shrink()
+                      : Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            for (final t in g.tasks)
+                              _CutChip(
+                                task: t,
+                                highlighted: t.id == highlighted,
+                                onTap: onTask == null ? null : () => onTask!(t),
+                                onLongPress: onTaskDue == null
+                                    ? null
+                                    : () => DueButton(
+                                        due: t.dueAt,
+                                        onPicked: (d) => onTaskDue!(t, d),
+                                        child: const SizedBox(),
+                                      ).pick(context),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        t.id == highlighted ||
+                                            (isPicked?.call(t) ?? false)
+                                        ? c.selected
+                                        : c.panel,
+                                    border: Border.all(
+                                      color: t.sharedLabel != null
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                          : c.line,
+                                    ),
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      spacing: 6,
                                       children: [
-                                        TextSpan(
-                                          text: taskLabel(t),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
+                                        Dot(c.of(t.status)),
+                                        Flexible(
+                                          child: Text.rich(
+                                            TextSpan(
+                                              children: [
+                                                TextSpan(
+                                                  text: taskLabel(t),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                if (t.sharedLabel != null)
+                                                  TextSpan(
+                                                    text: ' ${t.sharedLabel}',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: c.muted,
+                                                    ),
+                                                  ),
+                                                if (t.take > 1)
+                                                  TextSpan(
+                                                    text: ' T${t.take}',
+                                                    style: TextStyle(
+                                                      color: c.retake,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                TextSpan(
+                                                  text:
+                                                      '  ${formatLength(t.lengthMs)}',
+                                                  style: TextStyle(
+                                                    color: c.muted,
+                                                  ),
+                                                ),
+                                                if (t.dueOverridden)
+                                                  TextSpan(
+                                                    text:
+                                                        '  ${formatDate(t.dueAt)}',
+                                                    style: TextStyle(
+                                                      color: accent,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                        if (t.sharedLabel != null)
-                                          TextSpan(
-                                            text: ' ${t.sharedLabel}',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: c.muted,
-                                            ),
-                                          ),
-                                        if (t.take > 1)
-                                          TextSpan(
-                                            text: ' T${t.take}',
-                                            style: TextStyle(
-                                              color: c.retake,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        TextSpan(
-                                          text: '  ${formatLength(t.lengthMs)}',
-                                          style: TextStyle(color: c.muted),
-                                        ),
-                                        if (t.dueOverridden)
-                                          TextSpan(
-                                            text: '  ${formatDate(t.dueAt)}',
-                                            style: TextStyle(
-                                              color: accent,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                          ],
                         ),
-                      ),
-                  ],
                 ),
+              ],
             ],
           ),
         ),

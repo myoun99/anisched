@@ -2,12 +2,19 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/sample_catalogue.dart';
 
 void main() {
+  setUp(() {
+    Folds.cutsInDetails.value = true;
+    Folds.newCuts.value = true;
+    Folds.savedCuts.value = true;
+  });
+
   testWidgets('a picked cut waits paused; the toggle records and the total '
       'keeps adding up', (t) async {
     t.view.physicalSize = const Size(1280, 800);

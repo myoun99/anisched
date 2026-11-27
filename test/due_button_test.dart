@@ -2,6 +2,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -39,6 +40,12 @@ Future<void> pickDay(WidgetTester t, String day) async {
 }
 
 void main() {
+  setUp(() {
+    Folds.cutsInDetails.value = true;
+    Folds.newCuts.value = true;
+    Folds.savedCuts.value = true;
+  });
+
   testWidgets('the list D label sets the part deadline', (t) async {
     final store = await pumpShell(t, AppView.list);
     final g = store.partGroups().firstWhere((g) => g.partId != null);
