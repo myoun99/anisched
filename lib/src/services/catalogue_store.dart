@@ -320,6 +320,8 @@ WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
       '''
 SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
+       t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
+       pl.start_at AS part_plan_start, pl.end_at AS part_plan_end,
        s.id AS stage_id, s.name AS stage_name,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        e.id AS episode_id, e.number AS episode_number,
@@ -343,6 +345,8 @@ JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
 LEFT JOIN parts p ON p.id = c.part_id
 LEFT JOIN part_stage_dues d
   ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+LEFT JOIN part_stage_plans pl
+  ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
 WHERE t.archived_at IS NULL AND w.archived_at IS NULL
   AND (?2 IS NULL OR w.id = ?2)
@@ -377,6 +381,10 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           receivedAt: utc(r['received_at']),
           ownDueAt: utc(r['own_due']),
           partDueAt: utc(r['part_due']),
+          ownPlanStartAt: utc(r['own_plan_start']),
+          ownPlanEndAt: utc(r['own_plan_end']),
+          partPlanStartAt: utc(r['part_plan_start']),
+          partPlanEndAt: utc(r['part_plan_end']),
           pay: _pay(
             r['unit'] as String?,
             r['amount'] as int?,
@@ -444,6 +452,56 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
 
   static SecondsRounding _rounding(Object? work, SecondsRounding app) =>
       work == null ? app : SecondsRounding.fromDb(work as String);
+
+  /// Sets or clears one task's own production deadline (a cut's override
+  /// of its part's).
+  void setTaskDue(int taskId, DateTime? dueAt) => db.execute(
+    'UPDATE tasks SET due_at = ? WHERE id = ?;',
+    [_ms(dueAt), taskId],
+  );
+
+  /// Sets the user's own plan for a part × stage. Both null removes it.
+  void setPartPlan(int partId, int stageId, {DateTime? start, DateTime? end}) {
+    if (start == null && end == null) {
+      db.execute(
+        'DELETE FROM part_stage_plans WHERE part_id = ? AND stage_id = ?;',
+        [partId, stageId],
+      );
+      return;
+    }
+    db.execute(
+      'INSERT INTO part_stage_plans (part_id, stage_id, start_at, end_at) '
+      'VALUES (?, ?, ?, ?) ON CONFLICT (part_id, stage_id) '
+      'DO UPDATE SET start_at = excluded.start_at, end_at = excluded.end_at;',
+      [partId, stageId, _ms(start), _ms(end)],
+    );
+  }
+
+  /// Sets one task's own plan; a null end follows the part's.
+  void setTaskPlan(int taskId, {DateTime? start, DateTime? end}) {
+    if (start != null && end != null && end.isBefore(start)) {
+      throw ArgumentError('A plan cannot end before it starts.');
+    }
+    db.execute(
+      'UPDATE tasks SET plan_start_at = ?, plan_end_at = ? WHERE id = ?;',
+      [_ms(start), _ms(end), taskId],
+    );
+  }
+
+  /// The rate unit preselected when entering this work's rates.
+  RateUnit workDefaultRateUnit(int workId) => RateUnit.fromDb(
+    db.select('SELECT default_rate_unit FROM works WHERE id = ?;', [
+          workId,
+        ]).first['default_rate_unit']
+        as String,
+  );
+
+  void setWorkDefaultRateUnit(int workId, RateUnit unit) => db.execute(
+    'UPDATE works SET default_rate_unit = ? WHERE id = ?;',
+    [unit.dbName, workId],
+  );
+
+  static int? _ms(DateTime? t) => t?.toUtc().millisecondsSinceEpoch;
 
   /// Gives one task (one stage of one cut) its own rate; null goes back to
   /// the episode's rate for the stage.

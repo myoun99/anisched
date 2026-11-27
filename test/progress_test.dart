@@ -243,5 +243,81 @@ void main() {
       db.execute('UPDATE works SET archived_at = 1');
       expect(store.partGroups(), isEmpty);
     });
+
+    test('my plan sits beside the deadline, part default + cut override', () {
+      final part = partWithCuts('B', ['C1', 'C2'], lo, 20); // due in 20 days
+      final ids = tasksOf(part, lo);
+      final start = DateTime(2026, 12, 7);
+      final end = DateTime(2026, 12, 12);
+      store.setPartPlan(part, lo, start: start, end: end);
+
+      var g = store.partGroups().single;
+      expect(g.planStartAt, start.toUtc());
+      expect(g.planEndAt, end.toUtc());
+      expect(g.dueAt, now.add(const Duration(days: 20)).toUtc());
+      expect(g.slackDays, daysBetween(end, now.add(const Duration(days: 20))));
+      expect(g.tasks.every((t) => !t.planOverridden), isTrue);
+
+      // One cut planned to finish later than the part: only its end moves.
+      final lateEnd = DateTime(2026, 12, 20);
+      store.setTaskPlan(ids[1], end: lateEnd);
+      g = store.partGroups().single;
+      expect(g.tasks[1].planStartAt, start.toUtc());
+      expect(g.tasks[1].planEndAt, lateEnd.toUtc());
+      expect(g.tasks[1].planOverridden, isTrue);
+      expect(g.tasks[1].slackDays, -3); // due 12/17, planned 12/20
+      expect(g.tasks[0].planEndAt, end.toUtc());
+
+      store.setPartPlan(part, lo);
+      g = store.partGroups().single;
+      expect(g.planStartAt, isNull);
+      expect(g.slackDays, isNull);
+      expect(g.tasks[1].planEndAt, lateEnd.toUtc());
+    });
+
+    test('a plan cannot end before it starts', () {
+      final part = partWithCuts('B', ['C1'], lo, 5);
+      expect(
+        () => store.setPartPlan(
+          part,
+          lo,
+          start: DateTime(2026, 12, 10),
+          end: DateTime(2026, 12, 9),
+        ),
+        throwsA(isA<SqliteException>()),
+      );
+      expect(
+        () => store.setTaskPlan(
+          tasksOf(part, lo).single,
+          start: DateTime(2026, 12, 10),
+          end: DateTime(2026, 12, 9),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('part-less cuts plan from the earliest start to the latest end', () {
+      final a = store.addTask(lo, cutId: store.addCut(ep, 'C1'));
+      final b = store.addTask(lo, cutId: store.addCut(ep, 'C2'));
+      store
+        ..setTaskPlan(
+          a,
+          start: DateTime(2026, 12, 3),
+          end: DateTime(2026, 12, 4),
+        )
+        ..setTaskPlan(
+          b,
+          start: DateTime(2026, 12, 1),
+          end: DateTime(2026, 12, 2),
+        )
+        ..setTaskDue(a, DateTime(2026, 12, 9));
+      final g = store.partGroups().single;
+      expect(g.kind, GroupKind.noPart);
+      expect(g.planStartAt, DateTime(2026, 12).toUtc());
+      expect(g.planEndAt, DateTime(2026, 12, 4).toUtc());
+      expect(g.slackDays, 5);
+      store.setTaskDue(a, null);
+      expect(store.partGroups().single.dueAt, isNull);
+    });
   });
 }
