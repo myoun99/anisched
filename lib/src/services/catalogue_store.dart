@@ -203,6 +203,105 @@ class CatalogueStore {
     });
   }
 
+  /// Archives the given cuts (missing numbers picked on the grid); they
+  /// can be restored.
+  void removeCutIds(Iterable<int> cutIds) => _transaction(() {
+    for (final id in cutIds) {
+      archive(ArchiveKind.cut, id);
+    }
+  });
+
+  /// Role presets in order, each with the stage names it takes on.
+  List<({int id, String name, List<String> stages})> roles() {
+    final stages = <int, List<String>>{};
+    for (final r in db.select(
+      'SELECT role_id, stage_name FROM role_stages ORDER BY role_id, position;',
+    )) {
+      (stages[r['role_id'] as int] ??= []).add(r['stage_name'] as String);
+    }
+    return [
+      for (final r in db.select(
+        'SELECT id, name FROM roles ORDER BY position, id;',
+      ))
+        (
+          id: r['id'] as int,
+          name: r['name'] as String,
+          stages: stages[r['id'] as int] ?? const [],
+        ),
+    ];
+  }
+
+  /// Adds a role at the end and returns its id.
+  int createRole(String name, List<String> stageNames) => _transaction(() {
+    db.execute(
+      'INSERT INTO roles (name, position) '
+      'VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM roles));',
+      [name],
+    );
+    final id = db.lastInsertRowId;
+    setRoleStages(id, stageNames);
+    return id;
+  });
+
+  void renameRole(int roleId, String name) =>
+      db.execute('UPDATE roles SET name = ? WHERE id = ?;', [name, roleId]);
+
+  /// Replaces a role's stage names, in order.
+  void setRoleStages(int roleId, List<String> stageNames) => _transaction(() {
+    db.execute('DELETE FROM role_stages WHERE role_id = ?;', [roleId]);
+    final names = stageNames.toSet().toList();
+    for (var i = 0; i < names.length; i++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [roleId, names[i], i],
+      );
+    }
+  });
+
+  void deleteRole(int roleId) => _transaction(() {
+    db
+      ..execute('DELETE FROM role_stages WHERE role_id = ?;', [roleId])
+      ..execute('DELETE FROM roles WHERE id = ?;', [roleId]);
+  });
+
+  /// Registers work by role: for each of the role's stages, the work's
+  /// stage of that name (added at the end of the work's list if missing)
+  /// gets a task on every cut of [partId] — or on each of [cutIds] for
+  /// cuts outside a part. Cuts that already have the stage are skipped.
+  /// Returns the new task ids.
+  List<int> applyRole(
+    int roleId, {
+    required int workId,
+    int? partId,
+    List<int> cutIds = const [],
+  }) => _transaction(() {
+    final names = [
+      for (final r in db.select(
+        'SELECT stage_name FROM role_stages WHERE role_id = ? ORDER BY position;',
+        [roleId],
+      ))
+        r['stage_name'] as String,
+    ];
+    final created = <int>[];
+    for (final name in names) {
+      final existing = stages(workId).where((s) => s.name == name);
+      final stage = existing.isEmpty
+          ? addStage(workId, name)
+          : existing.first.id;
+      if (partId != null) created.addAll(addTasksForPart(partId, stage));
+      for (final cut in cutIds) {
+        final has = db.select(
+          'SELECT 1 FROM tasks WHERE cut_id = ? AND stage_id = ? '
+          'AND archived_at IS NULL;',
+          [cut, stage],
+        );
+        if (has.isEmpty) created.add(addTask(stage, cutId: cut));
+      }
+    }
+    return created;
+  });
+
   /// Takes missing numbers out of an episode (archives those cuts, so
   /// they can be restored). Returns the numbers that were not there.
   List<String> removeCuts(int episodeId, Iterable<String> numbers) =>
@@ -256,37 +355,87 @@ class CatalogueStore {
     return [cutId, ...added.added];
   });
 
-  /// Joins cuts of one episode into one shared cut: the first in number
-  /// order stays (with its tasks and length) and is renamed `C012-014`;
-  /// the others are archived. Returns the kept cut's id.
-  int mergeCuts(List<int> cutIds) => _transaction(() {
-    if (cutIds.length < 2) throw ArgumentError('Merge needs two cuts.');
+  /// Marks cuts of one episode as one shared cut (겸용). Every cut keeps
+  /// its own row, length (per-second pay counts each) and tasks; the views
+  /// label them together as `C012-014`. A cut already in another shared
+  /// group leaves it. Returns the group's first cut (by number).
+  int linkSharedCuts(List<int> cutIds) => _transaction(() {
+    final ids = cutIds.toSet().toList();
+    if (ids.length < 2) throw ArgumentError('A shared cut needs two cuts.');
     final rows = db.select(
-      'SELECT id, episode_id, number FROM cuts WHERE id IN '
-      '(${List.filled(cutIds.length, '?').join(', ')}) '
+      'SELECT id, episode_id FROM cuts WHERE id IN '
+      '(${List.filled(ids.length, '?').join(', ')}) '
       'AND archived_at IS NULL ORDER BY sort_key, id;',
-      cutIds,
+      ids,
     );
-    if (rows.length != cutIds.toSet().length ||
+    if (rows.length != ids.length ||
         rows.map((r) => r['episode_id']).toSet().length != 1) {
-      throw ArgumentError('Merge live cuts of one episode only.');
+      throw ArgumentError('Link live cuts of one episode only.');
     }
-    final keep = rows.first['id'] as int;
+    for (final id in ids) {
+      _leaveSharedGroup(id);
+    }
+    final head = rows.first['id'] as int;
     for (final r in rows.skip(1)) {
-      db.execute('UPDATE cuts SET archived_at = ? WHERE id = ?;', [
-        _now(),
+      db.execute('UPDATE cuts SET shared_with = ? WHERE id = ?;', [
+        head,
         r['id'],
       ]);
     }
-    _rename(
-      keep,
-      sharedCutNumber(
-        rows.first['number'] as String,
-        rows.last['number'] as String,
-      ),
-    );
-    return keep;
+    return head;
   });
+
+  /// Each live shared group's label (`C012-014`), by its first cut.
+  Map<int, String> _sharedLabels() {
+    final byGroup = <int, List<String>>{};
+    for (final r in db.select('''
+SELECT number, COALESCE(shared_with, id) AS g FROM cuts
+WHERE archived_at IS NULL AND (shared_with IS NOT NULL
+  OR id IN (SELECT shared_with FROM cuts WHERE shared_with IS NOT NULL))
+ORDER BY sort_key, id;''')) {
+      (byGroup[r['g'] as int] ??= []).add(r['number'] as String);
+    }
+    return {
+      for (final e in byGroup.entries)
+        if (e.value.length > 1)
+          e.key: sharedCutNumber(e.value.first, e.value.last),
+    };
+  }
+
+  /// Takes a cut out of its shared group; a group left with one cut
+  /// dissolves.
+  void unlinkSharedCut(int cutId) =>
+      _transaction(() => _leaveSharedGroup(cutId));
+
+  void _leaveSharedGroup(int cutId) {
+    final head =
+        db.select(
+              'SELECT COALESCE(shared_with, id) AS h FROM cuts WHERE id = ?;',
+              [cutId],
+            ).first['h']
+            as int;
+    if (head == cutId) {
+      // The first cut leaves: the next one leads the rest.
+      final rest = [
+        for (final r in db.select(
+          'SELECT id FROM cuts WHERE shared_with = ? ORDER BY sort_key, id;',
+          [cutId],
+        ))
+          r['id'] as int,
+      ];
+      if (rest.isEmpty) return;
+      db
+        ..execute('UPDATE cuts SET shared_with = NULL WHERE id = ?;', [
+          rest.first,
+        ])
+        ..execute('UPDATE cuts SET shared_with = ? WHERE shared_with = ?;', [
+          rest.first,
+          cutId,
+        ]);
+    } else {
+      db.execute('UPDATE cuts SET shared_with = NULL WHERE id = ?;', [cutId]);
+    }
+  }
 
   /// Renames cuts in one go — swaps included (`C1`↔`C2`). Fails, changing
   /// nothing, if a new number is already used by another live cut.
@@ -955,6 +1104,10 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
        pl.start_at AS part_plan_start, pl.end_at AS part_plan_end,
        t.kickoff_at AS own_kickoff, k.kickoff_at AS part_kickoff,
+       CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
+         SELECT 1 FROM cuts m WHERE m.shared_with = c.id
+           AND m.archived_at IS NULL)
+       THEN COALESCE(c.shared_with, c.id) END AS shared_head,
        s.id AS stage_id, s.name AS stage_name,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        e.id AS episode_id, e.number AS episode_number,
@@ -1003,6 +1156,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     DateTime? utc(Object? ms) => ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
+    final sharedLabels = _sharedLabels();
     return [
       for (final r in rows)
         TaskRow(
@@ -1032,6 +1186,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           partPlanStartAt: utc(r['part_plan_start']),
           partPlanEndAt: utc(r['part_plan_end']),
           ownKickoffAt: utc(r['own_kickoff']),
+          sharedHeadCutId: r['shared_head'] as int?,
+          sharedLabel: sharedLabels[r['shared_head']],
           partKickoffAt: utc(r['part_kickoff']),
           pay: _pay(
             r['unit'] as String?,
@@ -1085,10 +1241,33 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       }
     }
     return (
-      layout: layoutLanes(spans, settings.parallelLanes),
+      layout: layoutLanes(
+        spans,
+        settings.parallelLanes,
+        pinned: {
+          for (final r in db.select('SELECT group_key, lane FROM lane_pins;'))
+            r['group_key'] as String: r['lane'] as int,
+        },
+      ),
       unplaced: unplaced,
     );
   }
+
+  /// Pins a calendar bar (by group key) to [lane], as after a drag
+  /// between lanes. The layout keeps it there unless it overlaps another
+  /// pinned bar or the lane is past the lane count — then it overflows.
+  void pinLane(String groupKey, int lane) => db.execute(
+    'INSERT INTO lane_pins (group_key, lane) VALUES (?, ?) '
+    'ON CONFLICT (group_key) DO UPDATE SET lane = excluded.lane;',
+    [groupKey, lane],
+  );
+
+  /// Lets one bar be placed automatically again.
+  void unpinLane(String groupKey) =>
+      db.execute('DELETE FROM lane_pins WHERE group_key = ?;', [groupKey]);
+
+  /// Lets every bar be placed automatically again.
+  void clearLanePins() => db.execute('DELETE FROM lane_pins;');
 
   /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
   /// display order, replacing any earlier order. Units not listed fall

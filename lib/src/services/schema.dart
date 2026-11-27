@@ -20,6 +20,7 @@ class Migration {
 /// production deadline, and a work's default rate unit. v7: days off.
 /// v8: the live_tasks view (archiving hides everything beneath). v9: the
 /// production kickoff date and the user's own order of schedule units.
+/// v10: role presets, pinned calendar lanes and shared-cut links.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -41,6 +42,7 @@ CREATE TABLE work_intervals (
   const Migration(7, _v7DaysOff),
   const Migration(8, _v8LiveTasks),
   const Migration(9, _v9KickoffAndOrder),
+  const Migration(10, _v10RolesPinsSharedCuts),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -394,5 +396,60 @@ CREATE TABLE group_order (
 );''',
   ]) {
     db.execute(sql);
+  }
+}
+
+void _v10RolesPinsSharedCuts(Database db) {
+  for (final sql in const [
+    // A role (원화, 작감 …) names the stages the user takes on; choosing it
+    // when registering work creates a task for each of them.
+    '''
+CREATE TABLE roles (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL
+);''',
+    '''
+CREATE TABLE role_stages (
+  role_id INTEGER NOT NULL REFERENCES roles(id),
+  stage_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (role_id, stage_name)
+);''',
+    // A calendar bar the user dragged to a lane, by group key.
+    '''
+CREATE TABLE lane_pins (
+  group_key TEXT PRIMARY KEY,
+  lane INTEGER NOT NULL CHECK (lane >= 0)
+);''',
+    // Cuts drawn as one shared cut (겸용) keep their own rows, lengths and
+    // tasks; they only point at the group's first cut.
+    'ALTER TABLE cuts ADD COLUMN shared_with INTEGER REFERENCES cuts(id);',
+    'CREATE INDEX cuts_shared ON cuts(shared_with);',
+  ]) {
+    db.execute(sql);
+  }
+  // Seeded with a literal copy so this step never changes once shipped.
+  const roles = [
+    ('원화', ['LO', '원화']),
+    ('작감', ['LO 작감 수정', '원화 작감 수정']),
+    ('총작감', ['LO 총작감 수정', '원화 총작감 수정']),
+    ('연출', ['콘티 체크', 'LO 연출 수정', '원화 연출 수정']),
+    ('콘티', ['콘티']),
+  ];
+  for (var i = 0; i < roles.length; i++) {
+    db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [
+      roles[i].$1,
+      i,
+    ]);
+    final id = db.lastInsertRowId;
+    final stages = roles[i].$2;
+    for (var j = 0; j < stages.length; j++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [id, stages[j], j],
+      );
+    }
   }
 }

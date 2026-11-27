@@ -102,8 +102,11 @@ void main() {
     final db = openAppDatabase(':memory:');
     addTearDown(db.close);
     final settings = CatalogueStore(db).settings;
-    expect(settings.laneNames, [null, null, null]);
+    expect(settings.parallelLanes, 2);
+    expect(settings.laneNames, [null, null]);
     settings.laneNames = ['메인', '', '서브', '여분'];
+    expect(settings.laneNames, ['메인', null]);
+    settings.parallelLanes = 3;
     expect(settings.laneNames, ['메인', null, '서브']);
     settings.parallelLanes = 4;
     expect(settings.laneNames, ['메인', null, '서브', '여분']);
@@ -124,5 +127,69 @@ void main() {
     expect(l.laneOf['b'], 1);
     expect(l.laneOf['c'], 1);
     expect(l.overflow, {'d'});
+  });
+
+  group('pins', () {
+    test('a pinned bar keeps its lane; the rest fill around it', () {
+      final l = layoutLanes(
+        [s('a', 1, 5), s('b', 2, 3), s('c', 4, 6)],
+        2,
+        pinned: {'b': 0},
+      );
+      // b holds lane 0 on 12/2–3; a cannot share it, so a takes lane 1;
+      // c (12/4–6) fits lane 0 after b.
+      expect(l.laneOf, {'b': 0, 'a': 1, 'c': 0});
+      expect(l.pinned, {'b'});
+      expect(l.overflow, isEmpty);
+    });
+
+    test('a gap left by a pin can be filled', () {
+      final l = layoutLanes(
+        [s('late', 10, 12), s('early', 1, 3)],
+        1,
+        pinned: {'late': 0},
+      );
+      expect(l.laneOf, {'late': 0, 'early': 0});
+    });
+
+    test('clashing pins and pins past the lane count overflow', () {
+      final l = layoutLanes(
+        [s('a', 1, 5), s('b', 3, 4), s('c', 1, 1)],
+        2,
+        pinned: {'a': 0, 'b': 0, 'c': 7},
+      );
+      expect(l.laneOf['a'], 0);
+      expect(l.overflow, {'b', 'c'});
+    });
+
+    test('the store saves pins by group key and can clear them', () {
+      final db = openAppDatabase(':memory:');
+      addTearDown(db.close);
+      final store = CatalogueStore(db, clock: () => DateTime(2026, 11, 27, 9));
+      final w = store.createWork('W');
+      final ep = store.addEpisode(w, '#1');
+      final lo = store.stages(w).firstWhere((s) => s.name == 'LO').id;
+      for (final label in ['A', 'B']) {
+        final p = store.addPart(ep, label);
+        store
+          ..addCut(ep, 'C$label', partId: p)
+          ..addTasksForPart(p, lo)
+          ..setPartDue(p, lo, DateTime(2026, 11, 30));
+      }
+      final keys = [for (final g in store.partGroups()) g.key];
+      expect(store.calendarLayout().layout.laneOf[keys[0]], 0);
+      store.pinLane(keys[0], 1);
+      var lanes = store.calendarLayout().layout.laneOf;
+      expect((lanes[keys[0]], lanes[keys[1]]), (1, 0));
+      store.unpinLane(keys[0]);
+      expect(store.calendarLayout().layout.laneOf[keys[0]], 0);
+      store
+        ..pinLane(keys[0], 1)
+        ..pinLane(keys[1], 1);
+      expect(store.calendarLayout().layout.overflow, hasLength(1));
+      store.clearLanePins();
+      lanes = store.calendarLayout().layout.laneOf;
+      expect(lanes.values.toSet(), {0, 1});
+    });
   });
 }

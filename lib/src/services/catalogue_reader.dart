@@ -70,6 +70,9 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.hasGroupOrder].
   Future<bool> hasGroupOrder();
 
+  /// See [CatalogueStore.roles].
+  Future<List<({int id, String name, List<String> stages})>> roles();
+
   /// See [CatalogueStore.archived].
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
   archived();
@@ -161,6 +164,10 @@ class SyncCatalogueReader implements CatalogueReader {
 
   @override
   Future<bool> hasGroupOrder() => _run(() => store.hasGroupOrder);
+
+  @override
+  Future<List<({int id, String name, List<String> stages})>> roles() =>
+      _run(store.roles);
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({
@@ -369,6 +376,10 @@ class BackgroundCatalogueReader implements CatalogueReader {
 
   @override
   Future<bool> hasGroupOrder() => _ask((s) => s.hasGroupOrder);
+
+  @override
+  Future<List<({int id, String name, List<String> stages})>> roles() =>
+      _ask((s) => s.roles());
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({

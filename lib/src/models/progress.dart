@@ -35,6 +35,8 @@ class TaskRow {
     this.partPlanEndAt,
     this.ownKickoffAt,
     this.partKickoffAt,
+    this.sharedHeadCutId,
+    this.sharedLabel,
     this.pay,
     this.worked = Duration.zero,
   });
@@ -79,6 +81,11 @@ class TaskRow {
   /// part's), and for the part × stage.
   final DateTime? ownKickoffAt;
   final DateTime? partKickoffAt;
+
+  /// For a cut in a shared (겸용) group: the group's first cut, and the
+  /// group's label (`C012-014`). Each cut keeps its own length and pay.
+  final int? sharedHeadCutId;
+  final String? sharedLabel;
 
   /// The production kickoff: the cut's own, else the part's.
   DateTime? get kickoffAt => ownKickoffAt ?? partKickoffAt;

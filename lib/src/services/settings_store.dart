@@ -83,8 +83,8 @@ class SettingsStore {
   }
 
   /// How many units the user works on in parallel — the calendar's lane
-  /// count. Default: 3 (provisional, pending the user's choice).
-  int get parallelLanes => int.tryParse(_get(_parallelLanes) ?? '') ?? 3;
+  /// count. Default: 2.
+  int get parallelLanes => int.tryParse(_get(_parallelLanes) ?? '') ?? 2;
 
   set parallelLanes(int lanes) {
     RangeError.checkValueInInterval(lanes, 1, 20, 'lanes');

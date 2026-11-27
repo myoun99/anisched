@@ -104,6 +104,24 @@ String formatCutNumbers(List<String> numbers) {
   return out.join(', ');
 }
 
+/// [count] cut numbers from [start] up, as the start-and-count input
+/// gives them: `cutNumberRun(start: 98, count: 3, width: 3)` →
+/// `C098, C099, C100`.
+List<String> cutNumberRun({
+  required int start,
+  required int count,
+  String prefix = 'C',
+  int width = 3,
+}) {
+  if (start < 0 || count < 0 || count > maxCutRange) {
+    throw RangeError('start $start, count $count');
+  }
+  return [
+    for (var n = start; n < start + count; n++)
+      '$prefix${n.toString().padLeft(width, '0')}',
+  ];
+}
+
 /// Thrown when typed cut numbers cannot all be read; [items] are the
 /// pieces that failed.
 class CutNumbersException implements Exception {

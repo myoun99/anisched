@@ -30,7 +30,11 @@ class LaneLayout {
     required this.laneOf,
     required this.lanes,
     required this.busyDays,
+    this.pinned = const {},
   });
+
+  /// Bars the user pinned to a lane.
+  final Set<String> pinned;
 
   /// The bars laid out, in placement order.
   final List<Span> spans;
@@ -76,33 +80,83 @@ class LaneLayout {
 }
 
 /// Lays [spans] out on lanes — the calendar's one placement rule (the
-/// views keep no copy): earliest start first (longer first, then key, on
-/// ties); each bar goes into the first lane whose last bar ends before the
-/// bar starts; if none of the [lanes] lanes has room, the bar overflows.
+/// views keep no copy):
+///
+/// 1. Bars in [pinned] (key → lane, from the user dragging them) go to
+///    their lane first. A pin past the lane count, or one that overlaps
+///    another pinned bar there, overflows.
+/// 2. The rest, earliest start first (longer first, then key, on ties),
+///    go into the first lane with room — no bar there overlapping it.
+///    Without pins this is "after the lane's last bar ends".
+/// 3. A bar with no room in any of the [lanes] lanes overflows.
+///
 /// Overflowing bars are still placed, on lanes past the limit, and show
-/// up in [LaneLayout.overflow]. This uses as few lanes as the busiest day
-/// needs.
-LaneLayout layoutLanes(List<Span> spans, int lanes) {
+/// up in [LaneLayout.overflow].
+LaneLayout layoutLanes(
+  List<Span> spans,
+  int lanes, {
+  Map<String, int> pinned = const {},
+}) {
   if (lanes < 1) throw ArgumentError.value(lanes, 'lanes');
-  final sorted = [...spans]
-    ..sort((a, b) {
-      final c = a.start.compareTo(b.start);
-      if (c != 0) return c;
-      final d = b.end.compareTo(a.end);
-      return d != 0 ? d : a.key.compareTo(b.key);
-    });
-  final laneEnds = <DateTime>[];
-  final laneOf = <String, int>{};
-  for (final s in sorted) {
-    var lane = laneEnds.indexWhere((end) => end.isBefore(s.start));
-    if (lane < 0) {
-      lane = laneEnds.length;
-      laneEnds.add(s.end);
-    } else {
-      laneEnds[lane] = s.end;
+  int byStart(Span a, Span b) {
+    final c = a.start.compareTo(b.start);
+    if (c != 0) return c;
+    final d = b.end.compareTo(a.end);
+    return d != 0 ? d : a.key.compareTo(b.key);
+  }
+
+  final rows = <List<Span>>[];
+  bool fits(int lane, Span s) {
+    while (rows.length <= lane) {
+      rows.add([]);
     }
+    return rows[lane].every(
+      (o) => o.end.isBefore(s.start) || o.start.isAfter(s.end),
+    );
+  }
+
+  final laneOf = <String, int>{};
+  void put(Span s, int lane) {
+    rows[lane].add(s);
     laneOf[s.key] = lane;
   }
+
+  void overflowPut(Span s) {
+    var lane = lanes;
+    while (!fits(lane, s)) {
+      lane++;
+    }
+    put(s, lane);
+  }
+
+  final pins = [
+    for (final s in spans)
+      if (pinned.containsKey(s.key)) s,
+  ]..sort(byStart);
+  for (final s in pins) {
+    final lane = pinned[s.key]!;
+    if (lane >= 0 && lane < lanes && fits(lane, s)) {
+      put(s, lane);
+    } else {
+      overflowPut(s);
+    }
+  }
+  final rest = [
+    for (final s in spans)
+      if (!pinned.containsKey(s.key)) s,
+  ]..sort(byStart);
+  for (final s in rest) {
+    var lane = 0;
+    while (lane < lanes && !fits(lane, s)) {
+      lane++;
+    }
+    if (lane < lanes) {
+      put(s, lane);
+    } else {
+      overflowPut(s);
+    }
+  }
+  final sorted = [...pins, ...rest];
   // Busy days by a sweep over start/end+1 events.
   final delta = <DateTime, int>{};
   for (final s in spans) {
@@ -129,6 +183,7 @@ LaneLayout layoutLanes(List<Span> spans, int lanes) {
     laneOf: laneOf,
     lanes: lanes,
     busyDays: busy,
+    pinned: {for (final s in pins) s.key},
   );
 }
 

@@ -74,12 +74,21 @@ void main() {
     expect(g.tasks.map((t) => t.unitLabel), contains('C012C'));
     expect(g.total, 8);
 
-    // C014–C016 are one shared cut.
+    // C014–C016 are one shared cut: linked, each keeping its own row.
     final ids = {for (final c in store.cuts(r.episodeId)) c.number: c.id};
-    final kept = store.mergeCuts([ids['C016']!, ids['C014']!, ids['C015']!]);
-    expect(kept, ids['C014']);
-    expect(numbers(r.episodeId).last, 'C014-016');
-    expect(store.partGroups().single.total, 6);
+    final head = store.linkSharedCuts([
+      ids['C016']!,
+      ids['C014']!,
+      ids['C015']!,
+    ]);
+    expect(head, ids['C014']);
+    expect(numbers(r.episodeId).last, 'C016');
+    final rows = store.partGroups().single.tasks;
+    expect(rows, hasLength(8));
+    expect({
+      for (final t in rows) t.unitLabel: t.sharedLabel,
+    }, containsPair('C015', 'C014-016'));
+    expect(rows.firstWhere((t) => t.unitLabel == 'C010').sharedLabel, isNull);
 
     // Swap two numbers in one go.
     store.renumberCuts({ids['C010']!: 'C011', ids['C011']!: 'C010'});
@@ -140,13 +149,79 @@ void main() {
     expect(sw.elapsedMilliseconds, lessThan(5000));
   });
 
-  test('archiving a merged-away cut can be undone', () {
+  test('shared cuts keep their own lengths and pay', () {
     final w = store.createWork('W');
-    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'A');
+    final genga = stage(w, '원화');
+    store
+      ..setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.perSecond, 1000))
+      ..setCutLength(r.cutIds[0], 2000)
+      ..setCutLength(r.cutIds[1], 3000)
+      ..setCutLength(r.cutIds[2], 4000)
+      ..addTasksForPart(r.partId!, genga)
+      ..linkSharedCuts([r.cutIds[1], r.cutIds[2]]);
+    final g = store.partGroups().single;
+    expect(g.pay, 2000 + 3000 + 4000);
+    expect(g.tasks.map((t) => t.sharedLabel), [null, 'C2-3', 'C2-3']);
+  });
+
+  test('leaving a shared group; the group re-forms or dissolves', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C4', partLabel: 'A');
+    store.addTasksForPart(r.partId!, stage(w, 'LO'));
     final ids = r.cutIds;
-    store.mergeCuts([ids[1], ids[2]]);
-    expect(numbers(r.episodeId), ['C1', 'C2-3']);
-    store.restore(ArchiveKind.cut, ids[2]);
-    expect(numbers(r.episodeId), ['C1', 'C2-3', 'C3']);
+    Map<String, String?> labels() => {
+      for (final t in store.partGroups().single.tasks)
+        t.unitLabel: t.sharedLabel,
+    };
+    store.linkSharedCuts([ids[0], ids[1], ids[2]]);
+    expect(labels()['C2'], 'C1-3');
+    // The first cut leaves: C2 leads C2–C3.
+    store.unlinkSharedCut(ids[0]);
+    expect(labels(), {'C1': null, 'C2': 'C2-3', 'C3': 'C2-3', 'C4': null});
+    // Re-linking a member moves it into the new group.
+    store.linkSharedCuts([ids[2], ids[3]]);
+    expect(labels(), {'C1': null, 'C2': null, 'C3': 'C3-4', 'C4': 'C3-4'});
+    store.unlinkSharedCut(ids[3]);
+    expect(labels().values.toSet(), {null});
+    expect(() => store.linkSharedCuts([ids[0]]), throwsArgumentError);
+  });
+
+  test('start + count input, grid removal', () {
+    expect(cutNumberRun(start: 98, count: 3), ['C098', 'C099', 'C100']);
+    expect(cutNumberRun(start: 1, count: 2, prefix: '', width: 1), ['1', '2']);
+    expect(() => cutNumberRun(start: 1, count: -1), throwsRangeError);
+    final w = store.createWork('W');
+    final ep = store.addEpisode(w, '#1');
+    final added = store.addCuts(ep, cutNumberRun(start: 100, count: 5)).added;
+    store.removeCutIds([added[1], added[3]]);
+    expect(numbers(ep), ['C100', 'C102', 'C104']);
+  });
+
+  test('roles: picking one creates its stages\' tasks', () {
+    expect(store.roles().map((r) => r.name), ['원화', '작감', '총작감', '연출', '콘티']);
+    expect(store.roles().first.stages, ['LO', '원화']);
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'B');
+    final genga = store.roles().first.id;
+    final made = store.applyRole(genga, workId: w, partId: r.partId);
+    expect(made, hasLength(6)); // 3 cuts × LO, 원화
+    expect(store.partGroups().map((g) => g.stageName).toSet(), {'LO', '원화'});
+    // Applying again adds nothing.
+    expect(store.applyRole(genga, workId: w, partId: r.partId), isEmpty);
+    // A role with a stage the work lacks adds that stage to the work.
+    final niwon = store.createRole('2원', ['2원']);
+    final solo = store.addCut(r.episodeId, 'C9');
+    expect(store.applyRole(niwon, workId: w, cutIds: [solo]), hasLength(1));
+    expect(store.stages(w).last.name, '2원');
+    // Edit and remove roles.
+    store
+      ..renameRole(niwon, '제2원화')
+      ..setRoleStages(niwon, ['2원', '2원', '동화']);
+    final edited = store.roles().last;
+    expect((edited.id, edited.name), (niwon, '제2원화'));
+    expect(edited.stages, ['2원', '동화']);
+    store.deleteRole(niwon);
+    expect(store.roles(), hasLength(5));
   });
 }

@@ -79,6 +79,10 @@ void main() {
     expect(await reader.archived(), store.archived());
     expect(await reader.hasGroupOrder(), store.hasGroupOrder);
     expect(
+      (await reader.roles()).map((r) => '${r.name}:${r.stages}'),
+      store.roles().map((r) => '${r.name}:${r.stages}'),
+    );
+    expect(
       (await reader.calendarLayout()).layout.laneOf,
       store.calendarLayout().layout.laneOf,
     );
