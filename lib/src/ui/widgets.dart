@@ -148,7 +148,6 @@ class DueText extends StatelessWidget {
     final l = dueLabel(dueAt, now, status, dayStartMinutes: dayStartMinutes);
     final (color, bold) = switch (l.tone) {
       DueTone.late => (c.retake, true),
-      DueTone.soon => (c.submitted, true),
       DueTone.quiet || DueTone.none => (c.muted, false),
     };
     return Text(
