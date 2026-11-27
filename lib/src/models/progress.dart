@@ -28,6 +28,10 @@ class TaskRow {
     this.receivedAt,
     this.ownDueAt,
     this.partDueAt,
+    this.ownPlanStartAt,
+    this.ownPlanEndAt,
+    this.partPlanStartAt,
+    this.partPlanEndAt,
     this.pay,
     this.worked = Duration.zero,
   });
@@ -60,22 +64,54 @@ class TaskRow {
   /// The part's deadline for this stage, if any.
   final DateTime? partDueAt;
 
+  /// The user's own plan for this cut, if set (overrides the part's).
+  final DateTime? ownPlanStartAt;
+  final DateTime? ownPlanEndAt;
+
+  /// The user's plan for the part × stage, if any.
+  final DateTime? partPlanStartAt;
+  final DateTime? partPlanEndAt;
+
   /// Pay including paid retakes, or null when it cannot be computed yet.
   final int? pay;
 
   /// Timer time recorded on this task.
   final Duration worked;
 
+  /// The deadline that applies: the task's own, else its part's.
   DateTime? get dueAt => ownDueAt ?? partDueAt;
+
+  /// True when [dueAt] is the part's deadline (the task set none).
+  bool get dueFromPart => ownDueAt == null && partDueAt != null;
+
+  /// When the user plans to start: the cut's own, else the part's.
+  DateTime? get planStartAt => ownPlanStartAt ?? partPlanStartAt;
+
+  /// When the user plans to finish: the cut's own, else the part's.
+  DateTime? get planEndAt => ownPlanEndAt ?? partPlanEndAt;
+
+  /// True when a cut in a part carries its own plan (either end).
+  bool get planOverridden =>
+      partId != null && (ownPlanStartAt != null || ownPlanEndAt != null);
+
+  /// Days between planned finish and deadline; negative = planned late.
+  int? get slackDays => _slack(planEndAt, dueAt);
 
   /// True when a cut in a part carries its own deadline.
   bool get dueOverridden => partId != null && ownDueAt != null;
 
+  /// The cut number, or the storyboard label for a storyboard task.
+  String get unitLabel => cutNumber ?? storyboardLabel ?? '';
+
   bool get isOpen => status.isOpen;
 
-  /// The rows that make one schedule unit share this key: a part × stage,
-  /// or the task alone (a storyboard, or a cut outside any part).
-  String get groupKey => partId == null ? 'task:$id' : 'part:$partId:$stageId';
+  /// The rows that make one schedule unit share this key: a part × stage;
+  /// the "no part" cuts of an episode × stage; or a storyboard task alone.
+  String get groupKey => storyboardId != null
+      ? 'storyboard:$id'
+      : partId == null
+      ? 'nopart:$episodeId:$stageId'
+      : 'part:$partId:$stageId';
 }
 
 extension TaskStatusRules on TaskStatus {
@@ -115,7 +151,23 @@ TaskStatus deriveStatus(Map<TaskStatus, int> counts) {
   return TaskStatus.inProgress;
 }
 
-/// A schedule unit: a part × stage with its cut tasks, or one solo task.
+/// What kind of schedule unit a [PartGroup] is.
+enum GroupKind {
+  /// A part × stage.
+  part,
+
+  /// An episode's cuts outside any part, for one stage.
+  noPart,
+
+  /// One storyboard task, a unit on its own.
+  storyboard,
+}
+
+/// The name the views use for a schedule unit.
+typedef PartStageRow = PartGroup;
+
+/// A schedule unit: a part × stage with its cut tasks, the part-less cuts
+/// of an episode × stage, or one storyboard task.
 class PartGroup {
   PartGroup(this.tasks) : assert(tasks.isNotEmpty);
 
@@ -124,8 +176,14 @@ class PartGroup {
 
   TaskRow get _first => tasks.first;
   String get key => _first.groupKey;
-  bool get solo => _first.partId == null;
+
+  GroupKind get kind => _first.storyboardId != null
+      ? GroupKind.storyboard
+      : _first.partId == null
+      ? GroupKind.noPart
+      : GroupKind.part;
   int get workId => _first.workId;
+  int get episodeId => _first.episodeId;
   String get workTitle => _first.workTitle;
   String get currency => _first.currency;
   String get episodeNumber => _first.episodeNumber;
@@ -134,9 +192,12 @@ class PartGroup {
   int? get partId => _first.partId;
   int? get plannedCutCount => _first.plannedCutCount;
 
-  /// Part label, or the storyboard label / cut number of a solo task.
-  String get label =>
-      _first.partLabel ?? _first.storyboardLabel ?? _first.cutNumber ?? '';
+  /// The part's label; null for [GroupKind.noPart] (the views say
+  /// "no part") and for a storyboard.
+  String? get partLabel => _first.partLabel;
+
+  /// The storyboard's label for [GroupKind.storyboard].
+  String? get storyboardLabel => _first.storyboardLabel;
 
   int get total => tasks.length;
 
@@ -153,18 +214,36 @@ class PartGroup {
 
   TaskStatus get status => deriveStatus(counts);
 
-  /// The part's deadline for the stage, or the solo task's deadline.
-  DateTime? get dueAt => solo ? _first.dueAt : _first.partDueAt;
+  /// The part's deadline for the stage; for a storyboard, its task's; for
+  /// part-less cuts, the earliest of their deadlines.
+  DateTime? get dueAt => switch (kind) {
+    GroupKind.part => _first.partDueAt,
+    GroupKind.storyboard => _first.dueAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.dueAt)),
+  };
+
+  /// The user's planned start: the part's; for a storyboard, its task's;
+  /// for part-less cuts, the earliest.
+  DateTime? get planStartAt => switch (kind) {
+    GroupKind.part => _first.partPlanStartAt,
+    GroupKind.storyboard => _first.planStartAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.planStartAt)),
+  };
+
+  /// The user's planned finish: the part's; for a storyboard, its task's;
+  /// for part-less cuts, the latest.
+  DateTime? get planEndAt => switch (kind) {
+    GroupKind.part => _first.partPlanEndAt,
+    GroupKind.storyboard => _first.planEndAt,
+    GroupKind.noPart => _latest(tasks.map((t) => t.planEndAt)),
+  };
+
+  /// Days of margin between the planned finish and the deadline;
+  /// negative = the plan runs past the deadline. Null if either is unset.
+  int? get slackDays => _slack(planEndAt, dueAt);
 
   /// When the earliest task arrived.
-  DateTime? get startAt {
-    DateTime? s;
-    for (final t in tasks) {
-      final r = t.receivedAt;
-      if (r != null && (s == null || r.isBefore(s))) s = r;
-    }
-    return s;
-  }
+  DateTime? get startAt => _earliest(tasks.map((t) => t.receivedAt));
 
   /// Sum of computable pay, in [currency].
   int get pay => tasks.fold(0, (a, t) => a + (t.pay ?? 0));
@@ -175,14 +254,46 @@ class PartGroup {
   Duration get worked => tasks.fold(Duration.zero, (a, t) => a + t.worked);
 }
 
-/// Rolls [rows] (already in display order) into groups, keeping the order
-/// in which each group first appears.
+int? _slack(DateTime? planEnd, DateTime? due) =>
+    planEnd == null || due == null ? null : daysBetween(planEnd, due);
+
+DateTime? _latest(Iterable<DateTime?> times) {
+  DateTime? l;
+  for (final t in times) {
+    if (t != null && (l == null || t.isAfter(l))) l = t;
+  }
+  return l;
+}
+
+DateTime? _earliest(Iterable<DateTime?> times) {
+  DateTime? e;
+  for (final t in times) {
+    if (t != null && (e == null || t.isBefore(e))) e = t;
+  }
+  return e;
+}
+
+/// Rolls [rows] (already in display order) into groups and sorts them by
+/// deadline, no deadline last; ties keep display order.
 List<PartGroup> groupRows(Iterable<TaskRow> rows) {
   final byKey = <String, List<TaskRow>>{};
   for (final r in rows) {
     (byKey[r.groupKey] ??= []).add(r);
   }
-  return [for (final list in byKey.values) PartGroup(list)];
+  final groups = [for (final list in byKey.values) PartGroup(list)];
+  final order = {for (var i = 0; i < groups.length; i++) groups[i]: i};
+  groups.sort((a, b) {
+    final da = a.dueAt;
+    final db = b.dueAt;
+    if (da != db) {
+      if (da == null) return 1;
+      if (db == null) return -1;
+      final c = da.compareTo(db);
+      if (c != 0) return c;
+    }
+    return order[a]!.compareTo(order[b]!);
+  });
+  return groups;
 }
 
 /// Whole calendar days from [from] to [to], by their local dates.
@@ -202,3 +313,95 @@ int dueInDays(DateTime due, DateTime now, int dayStartMinutes) => daysBetween(
   dayRange(now, dayStartMinutes).start,
   dayRange(due, dayStartMinutes).start,
 );
+
+/// Which end a pace counts down to.
+enum PaceEnd {
+  /// The user's planned finish, falling back to the deadline.
+  plan('plan'),
+
+  /// The production deadline.
+  due('due');
+
+  const PaceEnd(this.dbName);
+
+  final String dbName;
+
+  static PaceEnd fromDb(String s) => values.firstWhere((v) => v.dbName == s);
+}
+
+/// How fast a group must go: [remaining] open cuts over [workDays] working
+/// days, from today (or the planned start, if later) to the end day
+/// inclusive, skipping rest weekdays.
+class Pace {
+  const Pace({
+    required this.remaining,
+    required this.workDays,
+    required this.startsLater,
+    required this.end,
+    this.restToday = false,
+  });
+
+  /// Cuts not yet handed over (received, in progress, retake).
+  final int remaining;
+
+  /// Working days left, today and the end day included. 0 when the end
+  /// day has passed or every day left is a rest day.
+  final int workDays;
+
+  /// True when the planned start is after today.
+  final bool startsLater;
+
+  /// The end the pace counts to.
+  final DateTime end;
+
+  /// True when today is a rest weekday.
+  final bool restToday;
+
+  /// Cuts per working day, or null when no working day is left.
+  double? get perDay => workDays == 0 ? null : remaining / workDays;
+
+  /// True when cuts remain and no working day is left.
+  bool get behind => remaining > 0 && workDays == 0;
+
+  /// What today asks for: the per-day pace; 0 before the planned start or
+  /// on a rest day; everything left once no working day remains.
+  double get today =>
+      startsLater || restToday ? 0 : (perDay ?? remaining.toDouble());
+}
+
+/// The pace for [group] as of [now], or null when it has no end date.
+/// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday).
+Pace? paceFor(
+  PartGroup group,
+  DateTime now, {
+  int dayStartMinutes = 0,
+  Set<int> restWeekdays = const {},
+  PaceEnd endAt = PaceEnd.plan,
+}) {
+  final endTime = switch (endAt) {
+    PaceEnd.plan => group.planEndAt ?? group.dueAt,
+    PaceEnd.due => group.dueAt,
+  };
+  if (endTime == null) return null;
+  DateTime dateOf(DateTime t) {
+    final d = dayRange(t, dayStartMinutes).start;
+    return DateTime.utc(d.year, d.month, d.day);
+  }
+
+  final today = dateOf(now);
+  final planStart = group.planStartAt;
+  final startsLater = planStart != null && dateOf(planStart).isAfter(today);
+  final from = startsLater ? dateOf(planStart) : today;
+  final to = dateOf(endTime);
+  var workDays = 0;
+  for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+    if (!restWeekdays.contains(d.weekday)) workDays++;
+  }
+  return Pace(
+    remaining: group.tasks.where((t) => t.isOpen).length,
+    workDays: workDays,
+    startsLater: startsLater,
+    end: endTime,
+    restToday: restWeekdays.contains(today.weekday),
+  );
+}
