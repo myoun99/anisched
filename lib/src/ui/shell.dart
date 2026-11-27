@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/registration.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/lanes.dart';
@@ -15,6 +16,7 @@ import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'views/register_view.dart';
 import 'views/sheet_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
@@ -74,6 +76,7 @@ class _AppShellState extends State<AppShell> {
   ViewFilter _filter = const ViewFilter();
   Map<int, ({String title, int? clientId})> _works = const {};
   Map<int, String> _clients = const {};
+  List<({int id, String name, List<String> stages})> _roles = const [];
   final _selection = TaskSelection();
   int _refresh = 0;
 
@@ -104,13 +107,14 @@ class _AppShellState extends State<AppShell> {
     final reader = widget.reader;
     if (reader == null) return;
     final done = _filter.showDone;
-    final (groups, signals, paces, lanes, works, clients) = await (
+    final (groups, signals, paces, lanes, works, clients, roles) = await (
       reader.partGroups(includeDone: done),
       reader.signals(includeDone: done),
       reader.stagePaces(),
       reader.calendarLayout(basis: CalendarBasis.work),
       reader.works(),
       reader.clients(),
+      reader.roles(),
     ).wait;
     if (!mounted) return;
     setState(() {
@@ -118,6 +122,7 @@ class _AppShellState extends State<AppShell> {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
       _clients = {for (final c in clients) c.id: c.name};
+      _roles = roles;
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
@@ -266,7 +271,21 @@ class _AppShellState extends State<AppShell> {
         onClearPins: writable ? () => _write((s) => s.clearLanePins()) : null,
         onPlan: writable ? _plan : null,
       ),
-      AppView.register || AppView.settings => ViewSlot(view: v, layout: layout),
+      AppView.register => RegisterView(
+        now: now,
+        layout: layout,
+        works: {for (final e in _works.entries) e.key: e.value.title},
+        clients: _clients,
+        roles: _roles,
+        onRegister: writable
+            ? (draft) {
+                var n = 0;
+                _write((s) => n = register(s, draft).length);
+                return n;
+              }
+            : null,
+      ),
+      AppView.settings => ViewSlot(view: v, layout: layout),
     };
   }
 
