@@ -49,7 +49,7 @@ void main() {
           .every((g) => g.workId == work),
       isTrue,
     );
-    final byClient = ViewFilter(clientId: 7);
+    const byClient = ViewFilter(clientId: 7);
     expect(
       groups
           .where((g) => byClient.matches(g, now, {work: 7}))
