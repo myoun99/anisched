@@ -432,3 +432,114 @@ Pace? paceFor(
     restToday: off(today),
   );
 }
+
+/// One entry of the "today" list.
+class TodayEntry {
+  const TodayEntry({
+    required this.group,
+    required this.dueInDays,
+    required this.pace,
+    required this.beforePlan,
+    required this.planStarted,
+  });
+
+  final PartGroup group;
+
+  /// Days left to the deadline; negative = late; null = no deadline.
+  final int? dueInDays;
+
+  /// Cuts per day needed, or null without an end date.
+  final Pace? pace;
+
+  /// The planned start is after today: show dimmed ("starts 12/7").
+  final bool beforePlan;
+
+  /// The planned start has come (even if the planned end has passed).
+  final bool planStarted;
+}
+
+/// The "today" view: its entries, the late count and today's cut total.
+class TodayView {
+  const TodayView({
+    required this.entries,
+    required this.late,
+    required this.cutsToday,
+  });
+
+  static const empty = TodayView(entries: [], late: 0, cutsToday: 0);
+
+  final List<TodayEntry> entries;
+
+  /// Late open groups plus late open cuts with their own deadline.
+  final int late;
+
+  /// What every open group asks of today, summed.
+  final double cutsToday;
+}
+
+/// The user's usual speed for one stage name (LO, 원화 …): cuts handed over
+/// in the recent window divided by the working days in it.
+class UsualPace {
+  const UsualPace({
+    required this.stageName,
+    required this.cuts,
+    required this.workDays,
+  });
+
+  final String stageName;
+  final int cuts;
+  final int workDays;
+
+  /// Cuts per working day, or null with no working day in the window.
+  double? get perDay => workDays == 0 ? null : cuts / workDays;
+}
+
+/// How a needed pace compares with the usual one.
+enum PaceLevel {
+  /// No usual pace to compare with (no history yet).
+  unknown,
+
+  /// At or below the usual pace.
+  ok,
+
+  /// Above the usual pace (yellow).
+  tight,
+
+  /// Above 1.5 × the usual pace (red).
+  over,
+}
+
+/// Compares a [needed] cuts-per-day with the [usual] one: above usual is
+/// [PaceLevel.tight], above 1.5 × usual is [PaceLevel.over]. Behind
+/// (no working day left with cuts remaining) is always over.
+PaceLevel paceLevel(Pace pace, double? usual) {
+  if (pace.behind) return PaceLevel.over;
+  final needed = pace.perDay;
+  if (needed == null || pace.remaining == 0) return PaceLevel.ok;
+  if (usual == null || usual <= 0) return PaceLevel.unknown;
+  if (needed > usual * 1.5) return PaceLevel.over;
+  if (needed > usual) return PaceLevel.tight;
+  return PaceLevel.ok;
+}
+
+/// Working days in local `[from, to]` (both dates included), skipping
+/// [restWeekdays] and [daysOff].
+int workDaysBetween(
+  DateTime from,
+  DateTime to, {
+  Set<int> restWeekdays = const {},
+  Iterable<DaysOff> daysOff = const [],
+}) {
+  var n = 0;
+  for (
+    var d = DateTime.utc(from.year, from.month, from.day);
+    !d.isAfter(DateTime.utc(to.year, to.month, to.day));
+    d = d.add(const Duration(days: 1))
+  ) {
+    if (!restWeekdays.contains(d.weekday) &&
+        !daysOff.any((r) => r.contains(d))) {
+      n++;
+    }
+  }
+  return n;
+}

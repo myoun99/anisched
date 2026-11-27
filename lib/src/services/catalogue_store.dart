@@ -313,7 +313,11 @@ WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
   /// Every live task of live works with what the views show, in display
   /// order (work, episode, part, stage, cut). One query: rates, lengths,
   /// takes, paid retakes and timer time are resolved in SQL.
-  List<TaskRow> taskRows({int? workId}) {
+  ///
+  /// Unless [includeDone], a done task is left out when every task of its
+  /// group is done too — finished units drop off the views, while a done
+  /// cut still counts in a part that has open ones ("3/6").
+  List<TaskRow> taskRows({int? workId, bool includeDone = false}) {
     final now = _now();
     final rounding = settings.secondsRounding;
     final rows = db.select(
@@ -350,9 +354,16 @@ LEFT JOIN part_stage_plans pl
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
 WHERE t.archived_at IS NULL AND w.archived_at IS NULL
   AND (?2 IS NULL OR w.id = ?2)
+  AND (?3 = 1 OR t.status <> 'done' OR (t.storyboard_id IS NULL AND EXISTS (
+    SELECT 1 FROM cuts c2 JOIN tasks t2 ON t2.cut_id = c2.id
+    WHERE t2.stage_id = t.stage_id AND t2.status <> 'done'
+      AND t2.archived_at IS NULL AND c2.archived_at IS NULL
+      AND (c2.part_id = c.part_id
+        OR (c.part_id IS NULL AND c2.part_id IS NULL
+            AND c2.episode_id = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
-      [now, workId],
+      [now, workId, if (includeDone) 1 else 0],
     );
     DateTime? utc(Object? ms) => ms == null
         ? null
@@ -401,8 +412,9 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// or a storyboard task alone — with progress, status, pay and time,
   /// sorted by deadline (none last). Two queries in all, whatever the row
   /// count: the settings read and [taskRows].
-  List<PartGroup> partGroups({int? workId}) =>
-      groupRows(taskRows(workId: workId));
+  /// Finished units are left out unless [includeDone].
+  List<PartGroup> partGroups({int? workId, bool includeDone = false}) =>
+      groupRows(taskRows(workId: workId, includeDone: includeDone));
 
   /// The pace (cuts per working day) for [group] as of now, using the
   /// day start, rest weekdays and pace-end settings.
@@ -414,6 +426,43 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     daysOff: daysOff().map((d) => d.range),
     endAt: settings.paceEnd,
   );
+
+  /// The usual pace per stage name: cuts handed over (submitted, or done
+  /// without a submission) in the last [days] days up to today, divided
+  /// by the working days in that window. Stages of every work with the
+  /// same name pool together ("LO" in two works is one LO speed).
+  List<UsualPace> usualPaces({int days = 28}) {
+    final now = clock();
+    final today = dayRange(now, settings.dayStartMinutes);
+    final from = DateTime(
+      today.start.year,
+      today.start.month,
+      today.start.day - (days - 1),
+    ).add(Duration(minutes: settings.dayStartMinutes));
+    final workDays = workDaysBetween(
+      from,
+      today.start,
+      restWeekdays: settings.restWeekdays,
+      daysOff: daysOff(from: from).map((d) => d.range),
+    );
+    return [
+      for (final r in db.select(
+        '''
+SELECT s.name AS stage_name, COUNT(*) AS cuts
+FROM tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE t.archived_at IS NULL
+  AND COALESCE(t.submitted_at, t.done_at) >= ?
+  AND COALESCE(t.submitted_at, t.done_at) < ?
+GROUP BY s.name ORDER BY s.name;''',
+        [_ms(from), _ms(today.end)],
+      ))
+        UsualPace(
+          stageName: r['stage_name'] as String,
+          cuts: r['cuts'] as int,
+          workDays: workDays,
+        ),
+    ];
+  }
 
   /// Adds days off from [start] to [end] (one day when null), by their
   /// local calendar dates, and returns the id.
@@ -463,21 +512,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// late open cuts whose own deadline overrides their part's.
   /// `cutsToday` sums what every open group asks of today — not only the
   /// listed ones — so overlapping parts add up.
-  ({
-    List<
-      ({
-        PartGroup group,
-        int? dueInDays,
-        Pace? pace,
-        bool beforePlan,
-        bool planStarted,
-      })
-    >
-    entries,
-    int late,
-    double cutsToday,
-  })
-  today({int horizonDays = 4}) {
+  TodayView today({int horizonDays = 4}) {
     final now = clock();
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
@@ -489,16 +524,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     final groups = partGroups();
     var late = 0;
     var cutsToday = 0.0;
-    final entries =
-        <
-          ({
-            PartGroup group,
-            int? dueInDays,
-            Pace? pace,
-            bool beforePlan,
-            bool planStarted,
-          })
-        >[];
+    final entries = <TodayEntry>[];
     for (final g in groups) {
       final status = g.status;
       final days = left(g.dueAt);
@@ -525,13 +551,15 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       final planStarted = toStart != null && toStart <= 0;
       final beforePlan = toStart != null && toStart > 0;
       if (status.isOpen && (due || active || planStarted)) {
-        entries.add((
-          group: g,
-          dueInDays: days,
-          pace: pace,
-          beforePlan: beforePlan,
-          planStarted: planStarted,
-        ));
+        entries.add(
+          TodayEntry(
+            group: g,
+            dueInDays: days,
+            pace: pace,
+            beforePlan: beforePlan,
+            planStarted: planStarted,
+          ),
+        );
       }
     }
     entries.sort((a, b) {
@@ -544,7 +572,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       }
       return a.group.status.urgency.compareTo(b.group.status.urgency);
     });
-    return (entries: entries, late: late, cutsToday: cutsToday);
+    return TodayView(entries: entries, late: late, cutsToday: cutsToday);
   }
 
   static SecondsRounding _rounding(Object? work, SecondsRounding app) =>
