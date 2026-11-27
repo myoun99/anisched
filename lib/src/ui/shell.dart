@@ -483,6 +483,7 @@ class _SelectionRow extends StatelessWidget {
       ),
       child: SizedBox(
         height: 46,
+        width: double.infinity,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -630,14 +631,19 @@ class _ViewButton extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 40, minWidth: 64),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Center(
                 widthFactor: 1,
-                child: Text(
-                  view.label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: selected ? ink : c.muted,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    view.label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: selected ? ink : c.muted,
+                    ),
                   ),
                 ),
               ),

@@ -125,18 +125,28 @@ class _TimerBarState extends State<TimerBar> {
                 ),
               ),
               SizedBox(
-                width: 96,
+                width: 104,
                 height: 36,
                 child: r != null
                     ? FilledButton(
                         key: const Key('timer-stop'),
                         onPressed: widget.onStop,
-                        child: const Text('정지'),
+                        style: const ButtonStyle(
+                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                        ),
+                        child: const Text('정지', maxLines: 1, softWrap: false),
                       )
                     : OutlinedButton(
                         key: const Key('timer-resume'),
                         onPressed: t == null ? null : widget.onResume,
-                        child: const Text('다시 시작'),
+                        style: const ButtonStyle(
+                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                        ),
+                        child: const Text(
+                          '다시 시작',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
               ),
             ],
