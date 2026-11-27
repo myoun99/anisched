@@ -319,5 +319,81 @@ void main() {
       store.setTaskDue(a, null);
       expect(store.partGroups().single.dueAt, isNull);
     });
+
+    group('pace', () {
+      // now = Fri 2026-11-27 14:00.
+      test('open cuts over working days, today and the end day included', () {
+        final part = partWithCuts(
+          'B',
+          ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'],
+          lo,
+          2,
+        );
+        final ids = tasksOf(part, lo);
+        store
+          ..setStatus(ids[0], TaskStatus.submitted)
+          ..setStatus(ids[1], TaskStatus.done)
+          ..requestRetake(ids[0]); // back in hand
+        final p = store.paceOf(store.partGroups().single)!;
+        expect(p.remaining, 5); // all but the done one
+        expect(p.workDays, 3); // Fri, Sat, Sun
+        expect(p.perDay, closeTo(5 / 3, 1e-9));
+        expect(p.today, closeTo(5 / 3, 1e-9));
+      });
+
+      test('rest weekdays are skipped and ask nothing that day', () {
+        final part = partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 4); // Tue
+        store.settings.restWeekdays = {6, 7};
+        var p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 3); // Fri, Mon, Tue
+        now = DateTime(2026, 11, 28, 10); // Saturday
+        p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 2);
+        expect(p.today, 0);
+        expect(part, isPositive);
+      });
+
+      test('a later planned start delays the pace; plan end is the target', () {
+        final part = partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 20);
+        store.setPartPlan(
+          part,
+          lo,
+          start: DateTime(2026, 12, 7),
+          end: DateTime(2026, 12, 8),
+        );
+        var p = store.paceOf(store.partGroups().single)!;
+        expect(p.startsLater, isTrue);
+        expect(p.workDays, 2);
+        expect(p.perDay, 2);
+        expect(p.today, 0);
+        store.settings.paceEnd = PaceEnd.due; // to the deadline instead
+        p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 11); // 12/7 .. 12/17
+      });
+
+      test('past the end: no working day, behind, everything today', () {
+        partWithCuts('B', ['C1', 'C2'], lo, -1);
+        final p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 0);
+        expect(p.perDay, isNull);
+        expect(p.behind, isTrue);
+        expect(p.today, 2);
+      });
+
+      test('no end date, no pace', () {
+        store.addTask(lo, cutId: store.addCut(ep, 'C1'));
+        expect(store.paceOf(store.partGroups().single), isNull);
+      });
+
+      test('today sums every open group, even ones not listed', () {
+        partWithCuts('A', ['C1', 'C2', 'C3', 'C4'], lo, 1); // 4 over 2 days
+        partWithCuts('B', ['C5', 'C6', 'C7'], genga, 2); // 3 over 3 days
+        partWithCuts('C', ['C8', 'C9', 'C10', 'C11', 'C12'], lo, 9); // 5/10
+        final t = store.today();
+        expect(t.entries, hasLength(2)); // C is not due soon nor active
+        expect(t.entries.first.pace!.perDay, 2);
+        expect(t.cutsToday, closeTo(2 + 1 + 0.5, 1e-9));
+      });
+    });
   });
 }
