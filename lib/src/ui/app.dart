@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
-import '../services/catalogue_store.dart';
+import '../services/catalogue_reader.dart';
+import '../services/work_timer.dart';
 import 'shell.dart';
 import 'theme.dart';
 
 class AnischedApp extends StatelessWidget {
-  const AnischedApp({super.key, this.store});
+  const AnischedApp({super.key, this.reader, this.timer});
 
-  /// The user's catalogue; null shows empty views (widget tests).
-  final CatalogueStore? store;
+  /// Reads the user's catalogue; null shows empty views (widget tests).
+  final CatalogueReader? reader;
+
+  /// The work timer's store.
+  final WorkTimerStore? timer;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +22,7 @@ class AnischedApp extends StatelessWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       scrollBehavior: const AlwaysScrollbarBehavior(),
-      home: AppShell(store: store),
+      home: AppShell(reader: reader, timer: timer),
     );
   }
 }

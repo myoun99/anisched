@@ -16,20 +16,19 @@ void main() {
     final now = DateTime(2026, 11, 27, 15);
     DateTime on(int day) => DateTime(2026, 11, day, 23, 59);
 
-    test('counts whole local days', () {
+    test('counts whole local days from the production deadline', () {
       expect(dueLabel(on(30), now, w).text, 'D-3');
       expect(dueLabel(on(27), now, w).text, 'D-day');
-      expect(dueLabel(on(25), now, w).text, '+2');
+      expect(dueLabel(on(25), now, w).text, '2일 지남');
     });
 
-    test('open work turns urgent near and past the deadline', () {
-      expect(dueLabel(on(30), now, w).tone, DueTone.quiet);
-      expect(dueLabel(on(29), now, w).tone, DueTone.soon);
-      expect(dueLabel(on(27), now, r).tone, DueTone.late);
+    test('only a missed deadline on open work stands out', () {
+      expect(dueLabel(on(29), now, w).tone, DueTone.quiet);
+      expect(dueLabel(on(27), now, r).tone, DueTone.quiet);
       expect(dueLabel(on(25), now, t).tone, DueTone.late);
     });
 
-    test('handed-over work never looks urgent', () {
+    test('handed-over work never looks late', () {
       expect(dueLabel(on(25), now, s).tone, DueTone.quiet);
       expect(dueLabel(on(25), now, d), (text: '—', tone: DueTone.none));
       expect(dueLabel(null, now, w).text, '—');
@@ -37,7 +36,7 @@ void main() {
 
     test('a late day start keeps the small hours on the previous day', () {
       final late = DateTime(2026, 11, 28, 2);
-      expect(dueLabel(on(27), late, w).text, '+1');
+      expect(dueLabel(on(27), late, w).text, '1일 지남');
       expect(dueLabel(on(27), late, w, dayStartMinutes: 4 * 60).text, 'D-day');
     });
   });

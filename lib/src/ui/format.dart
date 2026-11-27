@@ -15,27 +15,30 @@ extension TaskStatusLabel on TaskStatus {
   };
 }
 
-/// How urgent a deadline looks.
-enum DueTone { none, quiet, soon, late }
+/// How a deadline label looks: only a missed deadline stands out.
+enum DueTone { none, quiet, late }
 
-/// The short D-day label for a deadline as of [now], e.g. 「D-3」,
-/// 「D-day」, 「+2」 (two days late). Handed-over work never looks urgent.
+/// The production deadline as one short label as of [now]: 「D-3」,
+/// 「D-day」, or 「2일 지남」 once it has passed. The user's own plan never
+/// changes this label. Handed-over work never looks late.
 ({String text, DueTone tone}) dueLabel(
   DateTime? dueAt,
   DateTime now,
   TaskStatus status, {
   int dayStartMinutes = 0,
-}) {
-  if (dueAt == null || status == TaskStatus.done) {
+}) => dueLabelFromDays(
+  dueAt == null ? null : dueInDays(dueAt, now, dayStartMinutes),
+  status,
+);
+
+/// [dueLabel] from days already counted (negative = late, null = none).
+({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
+  if (days == null || status == TaskStatus.done) {
     return (text: '—', tone: DueTone.none);
   }
-  final days = dueInDays(dueAt, now, dayStartMinutes);
-  final text = days < 0 ? '+${-days}' : (days == 0 ? 'D-day' : 'D-$days');
-  if (!status.isOpen) return (text: text, tone: DueTone.quiet);
-  final tone = days <= 0
-      ? DueTone.late
-      : (days <= 2 ? DueTone.soon : DueTone.quiet);
-  return (text: text, tone: tone);
+  final text = days < 0 ? '${-days}일 지남' : (days == 0 ? 'D-day' : 'D-$days');
+  final late = days < 0 && status.isOpen;
+  return (text: text, tone: late ? DueTone.late : DueTone.quiet);
 }
 
 /// Cut length as 「초+코마」 at 24 frames a second, e.g. 3+12.
