@@ -84,6 +84,7 @@ class _AppShellState extends State<AppShell> {
                             now: widget.clock(),
                             dayStartMinutes: _dayStart,
                             layout: layout,
+                            paceOf: widget.store?.paceOf,
                           )
                         else
                           ViewSlot(view: v, layout: layout),
