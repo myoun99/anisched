@@ -57,21 +57,30 @@
 측정(36,000 태스크, 문서 4.2MB): 내보내기 60ms · 검사 37ms(둘 다 isolate) · 행 교체 250ms(메인 isolate, 열기·다시 읽기 때만).
 실사용 규모는 훨씬 작다. 문제가 되면 행 교체를 별도 쓰기 연결의 isolate 로 옮긴다.
 
-## 네이티브 범위 (다음 단계)
+## 네이티브 (2단계, ⚠️iOS · macOS · Android 는 이 환경에서 컴파일 검증 불가)
 
-`DocumentFiles` 를 플랫폼별로 구현한다. Anicel(`lib/src/services/persistence/folder_grant.dart`,
-`provider_documents.dart`, `ios/Runner/AppDelegate.swift`, `macos/Runner/MainFlutterWindow.swift`,
-`android/.../MainActivity.kt`, 채널 `qa_storage`)에서 가져올 수 있는 것:
+채널 `anisched/documents` 하나, 모든 플랫폼이 같은 답 모양
+`{status: granted|cancelled|missing|unavailable, location?, name?, bookmark?, size?, modifiedMs?, message?}`.
+Dart 쪽은 `lib/src/platform/documents.dart` (`platform` 층: services 위, ui 아래 — 위젯 import 없음).
 
-| 플랫폼 | 고르기 | 다시 열기 | 읽기 | 쓰기 | stat |
-|---|---|---|---|---|---|
-| iOS | `UIDocumentPicker` 열기 / 내보내기(Save As) — Anicel `pickFiles` · `exportFile` | 보안 스코프 북마크 — `resolveBookmark`(stale 이면 새로 발급) | `readFileCoordinated` | `replaceFileCoordinated`(`.forReplacing`) | 새로: 코디네이터 안에서 size · modificationDate |
-| macOS | `NSOpenPanel` / `NSSavePanel` | 같은 북마크(앱 샌드박스) | 같음 | 같음. ⚠️샌드박스는 고른 파일 하나만 허용 → 옆에 temp 금지 | 같음 |
-| Android | SAF `ACTION_OPEN_DOCUMENT` / `ACTION_CREATE_DOCUMENT` + `takePersistableUriPermission` | 영구 권한이 OS 에 남음(북마크 없음) | `copyDocument`(스트림 → 파일) | `writeDocument`(`"wt"` 먼저, 안 되면 `"w"`) | `describeDocument` + `COLUMN_LAST_MODIFIED` 추가 |
-| Windows · Linux | 파일 대화상자 | 경로 그대로 | `PathDocumentFiles` | 옆 temp + rename(재시도) | `FileStat` |
+| 메서드 | 뜻 |
+|---|---|
+| `pick` | 열 문서 고르기 → 위치 · 이름 · 북마크 |
+| `saveAs {sourcePath, name}` | 다 쓴 staging 파일을 사용자가 고른 곳에 **놓고** 위치를 답함 (`DocumentSession.saveAsPlaced`) |
+| `reopen {location, bookmark}` | 재실행 후 권한 되살리기(Apple 북마크 → 새 북마크 / Android 영구 권한 확인) |
+| `stat {location}` | 크기 · 수정시각, 없으면 `missing` |
+| `readInto {location, destinationPath}` | 통째 복사해 오기 |
+| `replaceFrom {location, sourcePath}` | 통째 교체 |
 
-- Apple/Android 는 Runner 안의 메서드 채널(플러그인 아님)로 Anicel 코드를 옮겨 온다.
-- 데스크톱 파일 대화상자는 Anicel 처럼 `file_selector` 플러그인이 필요하다(⚠️관제 질문).
-- UI 담당 몫: `AppLifecycleListener` 에서 hide/pause → `flush()`, resume → `resume()`; `changes` 의 `content` 에 화면 전부 다시 읽기;
-  `lastSaveError` 표시; 최근 파일 · 다른 이름으로 저장 · 스냅샷 목록 화면.
+| 플랫폼 | 구현 (Anicel `qa_storage` 에서 옮김) |
+|---|---|
+| iOS (`ios/Runner/AppDelegate.swift`) | `UIDocumentPicker` 열기 · **내보내기(파일을 옮김 — iOS 엔 저장 패널이 없다)**, 보안 스코프 + `.minimalBookmark`, 코디네이터 읽기(`.withoutChanges`) · 쓰기(원본 `.forMoving` + 대상 `.forReplacing`) · 메타데이터(`.immediatelyAvailableMetadataOnly`) |
+| macOS (`macos/Runner/MainFlutterWindow.swift`) | `NSOpenPanel`/`NSSavePanel`(시트), 저장 패널은 **쓴 뒤에** `.withSecurityScope` 북마크 발급, 같은 코디네이터. 샌드박스가 옆 temp 를 막으면 제자리 쓰기로 물러남. 권한: `files.user-selected.read-write` · `files.bookmarks.app-scope` |
+| Android (`MainActivity.kt`) | `OPEN_DOCUMENT`/`CREATE_DOCUMENT` + `takePersistableUriPermission`, 스트림 복사(`.part` → rename), 쓰기 `"wt"`→`"w"` + `ftruncate`, stat = `SIZE` + `COLUMN_LAST_MODIFIED` |
+| Windows · Linux | `file_selector` 열기/저장 대화상자 + `PathDocumentFiles` |
+
+- 문서 형식 UTI `com.myoun.anisched.document`(확장자 `anisched`)를 iOS · macOS `Info.plist` 에 내보냄.
+- UI 담당 몫: `AppLifecycleListener` hide/pause → `flush()`, resume → `resume()`; `changes` 의 `content` 에 화면 전부 다시 읽기;
+  `lastSaveError` 표시; 열기 = `pickDocument()` → `openDocument`, 다른 이름으로 저장 = `saveAsPlaced(placeNewDocument, name: …)`;
+  최근 파일 · 스냅샷 목록 화면. 작업 DB 경로와 같은 폴더에 `DocumentSession.open(files: platformDocumentFiles())`.
 - 나중에: OS 가 건네는 `.anisched`(파일 앱/Finder 에서 열기 · 파일 연결) — Anicel `handed_files.dart` 참고.
