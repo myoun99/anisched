@@ -348,6 +348,7 @@ class _AppShellState extends State<AppShell> {
                 return id;
               }
             : null,
+        onEdit: writable ? _write : null,
         onRegister: writable
             ? (draft) {
                 var n = 0;

@@ -115,4 +115,39 @@ void main() {
     expect(numbers.length, 8);
     expect(numbers, contains('BANK1'));
   });
+
+  testWidgets('an episode\'s saved cuts can be taken out and renamed', (
+    t,
+  ) async {
+    final store = await pumpRegister(t, const Size(1440, 1400));
+    await t.tap(find.byKey(const Key('pick-work')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('별빛 정류장').last);
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pick-episode')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('#07').last);
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('reg-count')), '1');
+    await t.pump();
+    final saved = find.byKey(const Key('saved-C014'));
+    await t.ensureVisible(saved);
+    await t.tap(saved);
+    await t.pump();
+    await t.tap(find.byKey(const Key('saved-remove')));
+    await t.pump();
+    await t.pump();
+    final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
+    final ep = store.episodes(work.id).firstWhere((e) => e.number == '#07');
+    expect(store.cuts(ep.id).map((c) => c.number), isNot(contains('C014')));
+
+    await t.tap(find.byKey(const Key('saved-C012')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('saved-rename')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('name-input')), 'C012X');
+    await t.tap(find.byKey(const Key('name-ok')));
+    await t.pumpAndSettle();
+    expect(store.cuts(ep.id).map((c) => c.number), contains('C012X'));
+  });
 }
