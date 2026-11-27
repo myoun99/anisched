@@ -26,7 +26,12 @@ class SheetView extends StatefulWidget {
     this.selection,
     this.toolbar,
     this.onReorder,
+    this.onTaskTap,
   });
+
+  /// A cut tapped in the opened details (starts the timer, or picks it
+  /// while picking); null: taps pick.
+  final ValueChanged<TaskRow>? onTaskTap;
 
   /// Units to list. With [onReorder] they are shown as given (already
   /// filtered and in the user's order); without it this view filters by
@@ -171,7 +176,7 @@ class _SheetViewState extends State<SheetView> {
                         plan: widget.signals[p.key]?.plan,
                         usual: widget.paces[p.stageName],
                         isPicked: sel?.has,
-                        onTask: sel?.toggleTask,
+                        onTask: widget.onTaskTap ?? sel?.toggleTask,
                       ),
                   ],
                 );

@@ -15,6 +15,7 @@ import 'filter.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
+import 'timer_bar.dart';
 import 'widgets.dart';
 import 'views/register_view.dart';
 import 'views/settings_view.dart';
@@ -100,6 +101,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _timerTask = widget.timer?.running()?.taskId;
     unawaited(_loadGroups());
   }
 
@@ -129,6 +131,48 @@ class _AppShellState extends State<AppShell> {
       _paces = {for (final p in paces) p.stageName: p};
       _lanes = lanes.layout;
     });
+  }
+
+  /// The task the timer last ran on, for resume.
+  int? _timerTask;
+
+  Widget _timerBar() {
+    final timer = widget.timer;
+    final running = timer?.running();
+    final id = running?.taskId ?? _timerTask;
+    TaskRow? task;
+    PartGroup? group;
+    for (final g in _groups) {
+      for (final t in g.tasks) {
+        if (t.id == id) {
+          task = t;
+          group = g;
+        }
+      }
+    }
+    return TimerBar(
+      running: running,
+      task: task,
+      group: group,
+      clock: widget.clock,
+      onStop: timer == null
+          ? null
+          : () {
+              timer.stop();
+              setState(() {});
+            },
+      onResume: timer == null || id == null ? null : () => _startTimer(id),
+    );
+  }
+
+  /// Starts the timer on a task (stopping any other first).
+  void _startTimer(int taskId) {
+    final timer = widget.timer;
+    if (timer == null) return;
+    timer
+      ..stop()
+      ..start(taskId: taskId);
+    setState(() => _timerTask = taskId);
   }
 
   /// Runs one write on the store, then reloads every view.
@@ -250,6 +294,11 @@ class _AppShellState extends State<AppShell> {
         selection: _selection,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
+        onTaskTap: widget.timer == null
+            ? null
+            : (t) => _selection.isEmpty
+                  ? _startTimer(t.id)
+                  : _selection.toggleTask(t),
       ),
       AppView.timeline => TimelineView(
         parts: shown,
@@ -342,6 +391,7 @@ class _AppShellState extends State<AppShell> {
                     ],
                   ),
                 ),
+                _timerBar(),
               ],
             ),
           ),
