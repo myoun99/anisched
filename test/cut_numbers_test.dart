@@ -38,4 +38,37 @@ void main() {
     expect(p.errors, ['C9~C5', 'A1~B3', 'C1~C2~C3', 'C1~C5000']);
     expect(p.ok, isFalse);
   });
+
+  group('formatCutNumbers', () {
+    test('runs of three or more become ranges', () {
+      expect(formatCutNumbers(['C100', 'C101', 'C102', 'C103']), 'C100~C103');
+      expect(
+        formatCutNumbers(['C100', 'C101', 'C102', 'C103', 'C105']),
+        'C100~C103, C105',
+      );
+      expect(formatCutNumbers(['C100', 'C101']), 'C100, C101');
+      expect(formatCutNumbers([]), '');
+    });
+
+    test('padding, prefixes and odd numbers break runs', () {
+      expect(formatCutNumbers(['C098', 'C099', 'C100']), 'C098~C100');
+      expect(formatCutNumbers(['C9', 'C10', 'C11']), 'C9, C10, C11');
+      expect(formatCutNumbers(['A1', 'A2', 'B3']), 'A1, A2, B3');
+      expect(
+        formatCutNumbers(['C012-014', 'C015', 'C016', 'C017', 'C017A']),
+        'C012-014, C015~C017, C017A',
+      );
+    });
+
+    test('round trip: parsing the label gives the numbers back', () {
+      for (final numbers in [
+        ['C100', 'C101', 'C102', 'C103', 'C105'],
+        ['C098', 'C099', 'C100', 'C101'],
+        ['C012-014', 'C015', 'C016', 'C017', 'C017A', 'X'],
+        ['1', '2', '3', '10', '11', '12', '13'],
+      ]) {
+        expect(parseCutNumbers(formatCutNumbers(numbers)).numbers, numbers);
+      }
+    });
+  });
 }

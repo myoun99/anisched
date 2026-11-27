@@ -77,6 +77,7 @@ void main() {
     expect(await reader.weekHours(), store.weekHours());
     expect(await reader.dayIntervals(), store.dayIntervals());
     expect(await reader.archived(), store.archived());
+    expect(await reader.hasGroupOrder(), store.hasGroupOrder);
   });
 
   test('a read after a write sees the write', () async {

@@ -704,6 +704,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
        pl.start_at AS part_plan_start, pl.end_at AS part_plan_end,
+       t.kickoff_at AS own_kickoff, k.kickoff_at AS part_kickoff,
        s.id AS stage_id, s.name AS stage_name,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        e.id AS episode_id, e.number AS episode_number,
@@ -727,6 +728,8 @@ JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
 LEFT JOIN parts p ON p.id = c.part_id
 LEFT JOIN part_stage_dues d
   ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+LEFT JOIN part_stage_kickoffs k
+  ON k.part_id = c.part_id AND k.stage_id = t.stage_id
 LEFT JOIN part_stage_plans pl
   ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
@@ -778,6 +781,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           ownPlanEndAt: utc(r['own_plan_end']),
           partPlanStartAt: utc(r['part_plan_start']),
           partPlanEndAt: utc(r['part_plan_end']),
+          ownKickoffAt: utc(r['own_kickoff']),
+          partKickoffAt: utc(r['part_kickoff']),
           pay: _pay(
             r['unit'] as String?,
             r['amount'] as int?,
@@ -796,7 +801,35 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// count: the settings read and [taskRows].
   /// Finished units are left out unless [includeDone].
   List<PartGroup> partGroups({int? workId, bool includeDone = false}) =>
-      groupRows(taskRows(workId: workId, includeDone: includeDone));
+      groupRows(
+        taskRows(workId: workId, includeDone: includeDone),
+        manualOrder: {
+          for (final r in db.select(
+            'SELECT group_key, position FROM group_order;',
+          ))
+            r['group_key'] as String: r['position'] as int,
+        },
+      );
+
+  /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
+  /// display order, replacing any earlier order. Units not listed fall
+  /// after the listed ones, by deadline.
+  void setGroupOrder(List<String> groupKeys) => _transaction(() {
+    db.execute('DELETE FROM group_order;');
+    for (var i = 0; i < groupKeys.length; i++) {
+      db.execute(
+        'INSERT OR IGNORE INTO group_order (group_key, position) VALUES (?, ?);',
+        [groupKeys[i], i],
+      );
+    }
+  });
+
+  /// "Sort automatically": drops the drag order, back to deadline order.
+  void clearGroupOrder() => db.execute('DELETE FROM group_order;');
+
+  /// True when a drag order is saved.
+  bool get hasGroupOrder =>
+      db.select('SELECT 1 FROM group_order LIMIT 1;').isNotEmpty;
 
   /// The pace (cuts per working day) for [group] as of now, using the
   /// day start, rest weekdays and pace-end settings.
@@ -1069,6 +1102,49 @@ GROUP BY s.name;''',
     'UPDATE tasks SET due_at = ? WHERE id = ?;',
     [_ms(dueAt), taskId],
   );
+
+  /// Sets or clears (null) when production work began for a part × stage.
+  void setPartKickoff(int partId, int stageId, DateTime? kickoffAt) {
+    if (kickoffAt == null) {
+      db.execute(
+        'DELETE FROM part_stage_kickoffs WHERE part_id = ? AND stage_id = ?;',
+        [partId, stageId],
+      );
+      return;
+    }
+    db.execute(
+      'INSERT INTO part_stage_kickoffs (part_id, stage_id, kickoff_at) '
+      'VALUES (?, ?, ?) ON CONFLICT (part_id, stage_id) '
+      'DO UPDATE SET kickoff_at = excluded.kickoff_at;',
+      [partId, stageId, _ms(kickoffAt)],
+    );
+  }
+
+  /// Sets or clears one task's own kickoff (a cut's override).
+  void setTaskKickoff(int taskId, DateTime? kickoffAt) => db.execute(
+    'UPDATE tasks SET kickoff_at = ? WHERE id = ?;',
+    [_ms(kickoffAt), taskId],
+  );
+
+  /// Writes a part × stage's production schedule — kickoff and deadline —
+  /// in one transaction, as a timeline bar dropped after a drag. A null
+  /// clears that end.
+  void setPartSchedule(
+    int partId,
+    int stageId, {
+    required DateTime? kickoffAt,
+    required DateTime? dueAt,
+  }) => _transaction(() {
+    if (kickoffAt != null && dueAt != null && dueAt.isBefore(kickoffAt)) {
+      throw ArgumentError('A deadline cannot come before the kickoff.');
+    }
+    setPartKickoff(partId, stageId, kickoffAt);
+    if (dueAt == null) {
+      clearPartDue(partId, stageId);
+    } else {
+      setPartDue(partId, stageId, dueAt);
+    }
+  });
 
   /// Sets the user's own plan for a part × stage. Both null removes it.
   void setPartPlan(int partId, int stageId, {DateTime? start, DateTime? end}) {

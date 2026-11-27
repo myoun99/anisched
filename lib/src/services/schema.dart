@@ -18,7 +18,8 @@ class Migration {
 /// v4: editable stage presets that new works copy. v5: a work's own
 /// seconds rounding. v6: the user's own plan (start/end) beside the
 /// production deadline, and a work's default rate unit. v7: days off.
-/// v8: the live_tasks view (archiving hides everything beneath).
+/// v8: the live_tasks view (archiving hides everything beneath). v9: the
+/// production kickoff date and the user's own order of schedule units.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -39,6 +40,7 @@ CREATE TABLE work_intervals (
   const Migration(6, _v6PlansAndDefaultUnit),
   const Migration(7, _v7DaysOff),
   const Migration(8, _v8LiveTasks),
+  const Migration(9, _v9KickoffAndOrder),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -368,4 +370,29 @@ WHERE t.archived_at IS NULL AND w.archived_at IS NULL
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
   AND (p.id IS NULL OR p.archived_at IS NULL);''');
+}
+
+void _v9KickoffAndOrder(Database db) {
+  for (final sql in const [
+    // When production work really began for a part × stage (a drawing
+    // meeting, say): with the deadline, the production schedule. A cut
+    // task may carry its own.
+    '''
+CREATE TABLE part_stage_kickoffs (
+  part_id INTEGER NOT NULL REFERENCES parts(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  kickoff_at INTEGER NOT NULL,
+  PRIMARY KEY (part_id, stage_id)
+);''',
+    'ALTER TABLE tasks ADD COLUMN kickoff_at INTEGER;',
+    // The user's drag order of schedule units, by group key
+    // (part:<part>:<stage>, nopart:<episode>:<stage>, storyboard:<task>).
+    '''
+CREATE TABLE group_order (
+  group_key TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);''',
+  ]) {
+    db.execute(sql);
+  }
 }

@@ -61,6 +61,9 @@ abstract interface class CatalogueReader {
   );
   Future<List<({int id, String name, int? closingDay})>> clients();
 
+  /// See [CatalogueStore.hasGroupOrder].
+  Future<bool> hasGroupOrder();
+
   /// See [CatalogueStore.archived].
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
   archived();
@@ -149,6 +152,9 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
   archived() => _run(store.archived);
+
+  @override
+  Future<bool> hasGroupOrder() => _run(() => store.hasGroupOrder);
 
   @override
   Future<void> close() async => _closed = true;
@@ -349,6 +355,9 @@ class BackgroundCatalogueReader implements CatalogueReader {
   @override
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
   archived() => _ask((s) => s.archived());
+
+  @override
+  Future<bool> hasGroupOrder() => _ask((s) => s.hasGroupOrder);
 
   @override
   Future<void> close() async {

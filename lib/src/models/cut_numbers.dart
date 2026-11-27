@@ -69,3 +69,37 @@ List<String>? _range(String from, String to) {
       '$prefix${n.toString().padLeft(width, '0')}',
   ];
 }
+
+/// The reverse of [parseCutNumbers]: writes [numbers] (in the order given)
+/// compactly, joining runs of three or more consecutive numbers with the
+/// same prefix and width into a range — `C100~C103, C105`. Anything else
+/// is listed as is. Parsing the result gives the same numbers back.
+String formatCutNumbers(List<String> numbers) {
+  final out = <String>[];
+  var i = 0;
+  while (i < numbers.length) {
+    final a = _numbered.firstMatch(numbers[i]);
+    var j = i;
+    if (a != null) {
+      while (j + 1 < numbers.length) {
+        final b = _numbered.firstMatch(numbers[j + 1]);
+        final prev = _numbered.firstMatch(numbers[j])!;
+        if (b == null ||
+            b[1] != a[1] ||
+            b[2]!.length != a[2]!.length ||
+            int.parse(b[2]!) != int.parse(prev[2]!) + 1) {
+          break;
+        }
+        j++;
+      }
+    }
+    if (j - i >= 2) {
+      out.add('${numbers[i]}~${numbers[j]}');
+      i = j + 1;
+    } else {
+      out.add(numbers[i]);
+      i++;
+    }
+  }
+  return out.join(', ');
+}

@@ -741,5 +741,96 @@ void main() {
         expect(() => store.settings.recentPaceDays = 0, throwsRangeError);
       });
     });
+
+    group('kickoff and order', () {
+      test('kickoff: part default, cut override, shown with its source', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 10);
+        final ids = tasksOf(part, lo);
+        final kick = DateTime(2026, 11, 20);
+        store.setPartKickoff(part, lo, kick);
+        var g = store.partGroups().single;
+        expect(g.kickoffAt, kick.toUtc());
+        expect(g.tasks.every((t) => t.kickoffFromPart), isTrue);
+        final own = DateTime(2026, 11, 22);
+        store.setTaskKickoff(ids[1], own);
+        g = store.partGroups().single;
+        expect(g.tasks[1].kickoffAt, own.toUtc());
+        expect(g.tasks[1].kickoffFromPart, isFalse);
+        expect(g.tasks[0].kickoffAt, kick.toUtc());
+        store.setPartKickoff(part, lo, null);
+        expect(store.partGroups().single.kickoffAt, isNull);
+      });
+
+      test('the kickoff does not change the pace or the signals', () {
+        store.settings.restWeekdays = {};
+        final part = partWithCuts('B', ['C1', 'C2', 'C3'], lo, 2);
+        final before = store.signals().values.single;
+        store.setPartKickoff(part, lo, now.add(const Duration(days: 1)));
+        final after = store.signals().values.single;
+        expect(after.pace!.perDay, before.pace!.perDay);
+        expect(after.plan.runtimeType, before.plan.runtimeType);
+        expect(
+          (after.due as DueDaysLeft).days,
+          (before.due as DueDaysLeft).days,
+        );
+      });
+
+      test('a dropped bar writes kickoff and deadline together', () {
+        final part = partWithCuts('B', ['C1'], lo, 10);
+        final k = DateTime(2026, 12, 1);
+        final d = DateTime(2026, 12, 9);
+        store.setPartSchedule(part, lo, kickoffAt: k, dueAt: d);
+        var g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (k.toUtc(), d.toUtc()));
+        expect(
+          () => store.setPartSchedule(part, lo, kickoffAt: d, dueAt: k),
+          throwsArgumentError,
+        );
+        g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (k.toUtc(), d.toUtc()));
+        store.setPartSchedule(part, lo, kickoffAt: null, dueAt: null);
+        g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (null, null));
+      });
+
+      test('part-less units: earliest kickoff, a range label', () {
+        for (final c in ['C100', 'C101', 'C102', 'C103', 'C105']) {
+          store.addTask(lo, cutId: store.addCut(ep, c));
+        }
+        final g = store.partGroups().single;
+        expect(g.kind, GroupKind.noPart);
+        expect(g.cutsLabel, 'C100~C103, C105');
+        store.setTaskKickoff(g.tasks[2].id, DateTime(2026, 11, 3));
+        store.setTaskKickoff(g.tasks[0].id, DateTime(2026, 11, 5));
+        expect(
+          store.partGroups().single.kickoffAt,
+          DateTime(2026, 11, 3).toUtc(),
+        );
+      });
+
+      test('drag order wins; new units follow by deadline; auto clears', () {
+        partWithCuts('A', ['C1'], lo, 1);
+        partWithCuts('B', ['C2'], lo, 2);
+        partWithCuts('C', ['C3'], lo, 3);
+        List<String?> labels() =>
+            store.partGroups().map((g) => g.partLabel).toList();
+        expect(labels(), ['A', 'B', 'C']);
+        expect(store.hasGroupOrder, isFalse);
+
+        final keys = {for (final g in store.partGroups()) g.partLabel: g.key};
+        store.setGroupOrder([keys['C']!, keys['A']!, keys['B']!]);
+        expect(labels(), ['C', 'A', 'B']);
+        expect(store.hasGroupOrder, isTrue);
+
+        // A new unit, even with an earlier deadline, comes after them.
+        partWithCuts('D', ['C4'], lo, 0);
+        partWithCuts('E', ['C5'], lo, 5);
+        expect(labels(), ['C', 'A', 'B', 'D', 'E']);
+
+        store.clearGroupOrder();
+        expect(labels(), ['D', 'A', 'B', 'C', 'E']);
+        expect(store.hasGroupOrder, isFalse);
+      });
+    });
   });
 }

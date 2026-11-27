@@ -3,6 +3,7 @@
 library;
 
 import 'catalogue.dart';
+import 'cut_numbers.dart';
 
 /// One live task with everything the views show about it.
 class TaskRow {
@@ -32,6 +33,8 @@ class TaskRow {
     this.ownPlanEndAt,
     this.partPlanStartAt,
     this.partPlanEndAt,
+    this.ownKickoffAt,
+    this.partKickoffAt,
     this.pay,
     this.worked = Duration.zero,
   });
@@ -71,6 +74,17 @@ class TaskRow {
   /// The user's plan for the part × stage, if any.
   final DateTime? partPlanStartAt;
   final DateTime? partPlanEndAt;
+
+  /// When production work began for this cut, if set (overrides the
+  /// part's), and for the part × stage.
+  final DateTime? ownKickoffAt;
+  final DateTime? partKickoffAt;
+
+  /// The production kickoff: the cut's own, else the part's.
+  DateTime? get kickoffAt => ownKickoffAt ?? partKickoffAt;
+
+  /// True when [kickoffAt] is the part's (the task set none).
+  bool get kickoffFromPart => ownKickoffAt == null && partKickoffAt != null;
 
   /// Pay including paid retakes, or null when it cannot be computed yet.
   final int? pay;
@@ -224,6 +238,21 @@ class PartGroup {
 
   /// The user's planned start: the part's; for a storyboard, its task's;
   /// for part-less cuts, the earliest.
+  /// The production kickoff: the part's; for a storyboard, its task's;
+  /// for part-less cuts, the earliest.
+  DateTime? get kickoffAt => switch (kind) {
+    GroupKind.part => _first.partKickoffAt,
+    GroupKind.storyboard => _first.kickoffAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.kickoffAt)),
+  };
+
+  /// The cut numbers as ranges ("C100~C103, C105"): the label of a
+  /// part-less unit.
+  String get cutsLabel => formatCutNumbers([
+    for (final t in tasks)
+      if (t.cutNumber != null) t.cutNumber!,
+  ]);
+
   DateTime? get planStartAt => switch (kind) {
     GroupKind.part => _first.partPlanStartAt,
     GroupKind.storyboard => _first.planStartAt,
@@ -273,9 +302,13 @@ DateTime? _earliest(Iterable<DateTime?> times) {
   return e;
 }
 
-/// Rolls [rows] (already in display order) into groups and sorts them by
-/// deadline, no deadline last; ties keep display order.
-List<PartGroup> groupRows(Iterable<TaskRow> rows) {
+/// Rolls [rows] (already in display order) into groups and sorts them:
+/// groups in [manualOrder] (group key → position) first, in that order;
+/// the rest by deadline, no deadline last; ties keep display order.
+List<PartGroup> groupRows(
+  Iterable<TaskRow> rows, {
+  Map<String, int> manualOrder = const {},
+}) {
   final byKey = <String, List<TaskRow>>{};
   for (final r in rows) {
     (byKey[r.groupKey] ??= []).add(r);
@@ -283,6 +316,13 @@ List<PartGroup> groupRows(Iterable<TaskRow> rows) {
   final groups = [for (final list in byKey.values) PartGroup(list)];
   final order = {for (var i = 0; i < groups.length; i++) groups[i]: i};
   groups.sort((a, b) {
+    final ma = manualOrder[a.key];
+    final mb = manualOrder[b.key];
+    if (ma != null || mb != null) {
+      if (ma == null) return 1;
+      if (mb == null) return -1;
+      if (ma != mb) return ma.compareTo(mb);
+    }
     final da = a.dueAt;
     final db = b.dueAt;
     if (da != db) {
