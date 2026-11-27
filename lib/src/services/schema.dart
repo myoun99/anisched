@@ -15,7 +15,8 @@ class Migration {
 /// v1: timer intervals. v2: the work catalogue (clients, works, stages,
 /// episodes, cuts, storyboards, rates, tasks, retakes). v3: parts with
 /// per-stage deadlines, settings, and timer intervals linked to tasks.
-/// v4: editable stage presets that new works copy.
+/// v4: editable stage presets that new works copy. v5: a work's own
+/// seconds rounding.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -32,6 +33,7 @@ CREATE TABLE work_intervals (
   const Migration(2, _v2Catalogue),
   const Migration(3, _v3PartsAndSettings),
   const Migration(4, _v4StagePresets),
+  const Migration(5, _v5WorkRounding),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -292,4 +294,11 @@ CREATE INDEX stage_preset_items_preset
       [seed[i], i],
     );
   }
+}
+
+void _v5WorkRounding(Database db) {
+  // NULL follows the app-wide setting.
+  db.execute('''
+ALTER TABLE works ADD COLUMN seconds_rounding TEXT
+  CHECK (seconds_rounding IN ('exact', 'up', 'down', 'nearest'));''');
 }
