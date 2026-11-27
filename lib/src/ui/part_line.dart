@@ -340,7 +340,11 @@ class PartDetails extends StatelessWidget {
                                     (isPicked?.call(t) ?? false)
                                 ? c.selected
                                 : c.panel,
-                            border: Border.all(color: c.line),
+                            border: Border.all(
+                              color: t.sharedLabel != null
+                                  ? Theme.of(context).colorScheme.primary
+                                  : c.line,
+                            ),
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Padding(
@@ -363,6 +367,14 @@ class PartDetails extends StatelessWidget {
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
+                                        if (t.sharedLabel != null)
+                                          TextSpan(
+                                            text: ' ${t.sharedLabel}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: c.muted,
+                                            ),
+                                          ),
                                         if (t.take > 1)
                                           TextSpan(
                                             text: ' T${t.take}',

@@ -196,6 +196,7 @@ class SegmentButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 11),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             spacing: 6,
             children: [
               if (dot != null) Dot(dot!),

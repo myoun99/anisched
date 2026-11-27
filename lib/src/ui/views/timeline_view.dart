@@ -21,7 +21,12 @@ class TimelineView extends StatefulWidget {
     this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
     this.onSchedule,
     this.selection,
+    this.toolbar,
   });
+
+  /// Controls before the pager (the shell's sort and filter buttons);
+  /// null shows the row count.
+  final List<Widget>? toolbar;
 
   /// Units in display order.
   final List<PartGroup> parts;
@@ -65,7 +70,9 @@ class _TimelineViewState extends State<TimelineView> {
         children: [
           ViewToolbar(
             children: [
-              Text('${rows.length}건', style: TextStyle(color: c.muted)),
+              ...?widget.toolbar,
+              if (widget.toolbar == null)
+                Text('${rows.length}건', style: TextStyle(color: c.muted)),
               ChartPager(
                 onShift: (d) => setState(() => _shift += d),
                 onToday: () => setState(() => _shift = 0),
