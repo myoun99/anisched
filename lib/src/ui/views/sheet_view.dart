@@ -5,6 +5,7 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../theme.dart';
 import '../part_line.dart';
+import '../selection.dart';
 
 /// One line per part × stage: name, progress and one date signal. Everything
 /// else (dates, plan, pace, pay, time, cuts) opens under the line on demand.
@@ -21,6 +22,7 @@ class SheetView extends StatefulWidget {
     this.onShowDoneChanged,
     this.signals = const {},
     this.paces = const {},
+    this.selection,
   });
 
   final List<PartGroup> parts;
@@ -45,6 +47,9 @@ class SheetView extends StatefulWidget {
 
   /// Usual speeds by stage name (reader.stagePaces).
   final Map<String, StagePace> paces;
+
+  /// Tasks picked for an action, shared by every view.
+  final TaskSelection? selection;
 
   @override
   State<SheetView> createState() => _SheetViewState();
@@ -114,37 +119,49 @@ class _SheetViewState extends State<SheetView> {
           ),
           if (!narrow) const PartHeader(),
           Expanded(
-            child: ListView.builder(
-              key: const Key('sheet-rows'),
-              controller: _rows,
-              itemCount: parts.length,
-              itemBuilder: (context, i) {
-                final p = parts[i];
-                final open = _expanded.contains(p.key);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PartLine(
-                      group: p,
-                      now: widget.now,
-                      dayStartMinutes: widget.dayStartMinutes,
-                      expanded: open,
-                      selected: _selected == p.key,
-                      signals: widget.signals[p.key],
-                      onTap: () => _toggle(p),
-                    ),
-                    if (open)
-                      PartDetails(
+            child: ListenableBuilder(
+              listenable: widget.selection ?? const _Never(),
+              builder: (context, _) => ListView.builder(
+                key: const Key('sheet-rows'),
+                controller: _rows,
+                itemCount: parts.length,
+                itemBuilder: (context, i) {
+                  final p = parts[i];
+                  final sel = widget.selection;
+                  final open = _expanded.contains(p.key);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PartLine(
                         group: p,
-                        pace:
-                            widget.signals[p.key]?.pace ??
-                            widget.paceOf?.call(p),
-                        plan: widget.signals[p.key]?.plan,
-                        usual: widget.paces[p.stageName],
+                        now: widget.now,
+                        dayStartMinutes: widget.dayStartMinutes,
+                        expanded: open,
+                        selected: _selected == p.key,
+                        signals: widget.signals[p.key],
+                        picked: sel?.of(p) ?? Picked.none,
+                        onLongPress: sel == null
+                            ? null
+                            : () => sel.toggleGroup(p),
+                        onTap: () => sel != null && !sel.isEmpty
+                            ? sel.toggleGroup(p)
+                            : _toggle(p),
                       ),
-                  ],
-                );
-              },
+                      if (open)
+                        PartDetails(
+                          group: p,
+                          pace:
+                              widget.signals[p.key]?.pace ??
+                              widget.paceOf?.call(p),
+                          plan: widget.signals[p.key]?.plan,
+                          usual: widget.paces[p.stageName],
+                          isPicked: sel?.has,
+                          onTask: sel?.toggleTask,
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -241,4 +258,15 @@ class _Toolbar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A listenable that never fires, for views used without a selection.
+class _Never implements Listenable {
+  const _Never();
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }

@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/progress.dart';
+import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
+import '../services/catalogue_store.dart';
 import '../services/work_timer.dart';
+import 'selection.dart';
+import 'selection_bar.dart';
 import 'theme.dart';
 import 'views/sheet_view.dart';
 import 'views/today_view.dart';
@@ -31,6 +35,7 @@ class AppShell extends StatefulWidget {
     super.key,
     this.initialView = AppView.board,
     this.reader,
+    this.store,
     this.timer,
     this.clock = systemClock,
   });
@@ -40,6 +45,10 @@ class AppShell extends StatefulWidget {
   /// Reads the user's catalogue off the main isolate; null shows empty
   /// views.
   final CatalogueReader? reader;
+
+  /// Writes on the main isolate (status changes); null keeps the app
+  /// read-only.
+  final CatalogueStore? store;
 
   /// The work timer's store (writes on the main isolate).
   final WorkTimerStore? timer;
@@ -57,6 +66,24 @@ class _AppShellState extends State<AppShell> {
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
   bool _showDone = false;
+  final _selection = TaskSelection();
+  int _refresh = 0;
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
+
+  /// Moves every picked task to [status], then reloads the views.
+  void _apply(TaskStatus status) {
+    final store = widget.store;
+    if (store == null || _selection.isEmpty) return;
+    store.setStatusMany(_selection.ids, status);
+    _selection.clear();
+    setState(() => _refresh++);
+    unawaited(_loadGroups());
+  }
 
   @override
   void initState() {
@@ -106,7 +133,19 @@ class _AppShellState extends State<AppShell> {
             bottom: !narrow,
             child: Column(
               children: [
-                _TopBar(trailing: narrow ? null : switcher),
+                _TopBar(
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 16,
+                    children: [
+                      SelectionBar(
+                        selection: _selection,
+                        onApply: widget.store == null ? null : _apply,
+                      ),
+                      if (!narrow) switcher,
+                    ],
+                  ),
+                ),
                 Expanded(
                   child: IndexedStack(
                     index: _view.index,
@@ -121,6 +160,7 @@ class _AppShellState extends State<AppShell> {
                             showDone: _showDone,
                             signals: _signals,
                             paces: _paces,
+                            selection: _selection,
                             onShowDoneChanged: (on) {
                               setState(() => _showDone = on);
                               unawaited(_loadGroups());
@@ -132,6 +172,8 @@ class _AppShellState extends State<AppShell> {
                             timer: widget.timer,
                             clock: widget.clock,
                             layout: layout,
+                            selection: _selection,
+                            refresh: _refresh,
                           )
                         else
                           ViewSlot(view: v, layout: layout),
@@ -171,8 +213,18 @@ class _TopBar extends StatelessWidget {
                 'Anisched',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
-              const Spacer(),
-              ?trailing,
+              const SizedBox(width: 16),
+              if (trailing != null)
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      reverse: true,
+                      child: trailing,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

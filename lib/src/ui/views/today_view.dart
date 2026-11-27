@@ -9,6 +9,7 @@ import '../../services/catalogue_reader.dart';
 import '../../services/work_timer.dart';
 import '../format.dart';
 import '../part_line.dart';
+import '../selection.dart';
 import '../theme.dart';
 import '../timer_card.dart';
 
@@ -22,9 +23,17 @@ class TodayScreen extends StatefulWidget {
     required this.layout,
     this.timer,
     this.clock = systemClock,
+    this.selection,
+    this.refresh = 0,
   });
 
   final CatalogueReader reader;
+
+  /// Tasks picked for an action, shared by every view.
+  final TaskSelection? selection;
+
+  /// Bumped by the shell after a write; the view then reloads.
+  final int refresh;
   final ScreenLayout layout;
 
   /// Writes timer intervals; null leaves the timer read-only.
@@ -53,6 +62,12 @@ class _TodayScreenState extends State<TodayScreen> {
     _lastTask = widget.timer?.running()?.taskId;
     unawaited(_load());
     unawaited(_loadPaces());
+  }
+
+  @override
+  void didUpdateWidget(TodayScreen old) {
+    super.didUpdateWidget(old);
+    if (old.refresh != widget.refresh) unawaited(_load());
   }
 
   @override
@@ -156,18 +171,22 @@ class _TodayScreenState extends State<TodayScreen> {
         ),
       ],
     );
-    final list = _TodayList(
-      today: _today,
-      expanded: _expanded,
-      selected: _selected,
-      runningTask: running?.taskId,
-      controller: _scroll,
-      onToggle: (g) => setState(() {
-        _selected = g.key;
-        if (!_expanded.remove(g.key)) _expanded.add(g.key);
-      }),
-      onTask: widget.timer == null ? null : _startOn,
-      paces: _paces,
+    final list = ListenableBuilder(
+      listenable: widget.selection ?? Listenable.merge(const []),
+      builder: (context, _) => _TodayList(
+        today: _today,
+        expanded: _expanded,
+        selected: _selected,
+        runningTask: running?.taskId,
+        controller: _scroll,
+        onToggle: (g) => setState(() {
+          _selected = g.key;
+          if (!_expanded.remove(g.key)) _expanded.add(g.key);
+        }),
+        onTask: widget.timer == null ? null : _startOn,
+        paces: _paces,
+        selection: widget.selection,
+      ),
     );
     return ColoredBox(
       color: c.panelAlt,
@@ -209,9 +228,11 @@ class _TodayList extends StatelessWidget {
     required this.onToggle,
     required this.onTask,
     required this.paces,
+    this.selection,
   });
 
   final TodayView today;
+  final TaskSelection? selection;
   final Map<String, StagePace> paces;
   final Set<String> expanded;
   final String? selected;
@@ -231,10 +252,12 @@ class _TodayList extends StatelessWidget {
       for (final e in today.entries)
         if (e.beforePlan) e,
     ];
+    final sel = selection;
+    final picking = sel != null && !sel.isEmpty;
     final rows = <Widget>[
-      for (final e in started) ..._entry(e),
+      for (final e in started) ..._entry(e, sel, picking),
       if (later.isNotEmpty) _Section('시작 전', later.length),
-      for (final e in later) ..._entry(e),
+      for (final e in later) ..._entry(e, sel, picking),
     ];
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -285,7 +308,7 @@ class _TodayList extends StatelessWidget {
     );
   }
 
-  List<Widget> _entry(TodayEntry e) {
+  List<Widget> _entry(TodayEntry e, TaskSelection? sel, bool picking) {
     final g = e.group;
     final open = expanded.contains(g.key);
     return [
@@ -296,7 +319,9 @@ class _TodayList extends StatelessWidget {
         expanded: open,
         selected: selected == g.key,
         signals: GroupSignals(due: e.due, plan: e.plan, pace: e.pace),
-        onTap: () => onToggle(g),
+        picked: sel?.of(g) ?? Picked.none,
+        onLongPress: sel == null ? null : () => sel.toggleGroup(g),
+        onTap: () => picking ? sel!.toggleGroup(g) : onToggle(g),
       ),
       if (open)
         PartDetails(
@@ -305,7 +330,8 @@ class _TodayList extends StatelessWidget {
           plan: e.plan,
           usual: paces[g.stageName],
           highlighted: runningTask,
-          onTask: onTask,
+          isPicked: sel?.has,
+          onTask: picking ? sel!.toggleTask : onTask,
         ),
     ];
   }

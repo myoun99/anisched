@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
 import 'format.dart';
+import 'selection.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -61,6 +62,8 @@ class PartLine extends StatelessWidget {
     this.dimmed = false,
     this.signal,
     this.signals,
+    this.picked = Picked.none,
+    this.onLongPress,
   });
 
   final PartGroup group;
@@ -80,15 +83,27 @@ class PartLine extends StatelessWidget {
   /// slot and a plan that has not started dims the line.
   final GroupSignals? signals;
 
+  /// How much of the group is picked for an action (fill colour only).
+  final Picked picked;
+
+  /// Picks or drops the whole group.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
+    final fill = switch (picked) {
+      Picked.all => c.selected,
+      Picked.some => Color.lerp(c.panel, c.selected, 0.5)!,
+      Picked.none => selected ? c.hover : c.panel,
+    };
     final line = Material(
-      color: selected ? c.selected : c.panel,
+      color: fill,
       child: InkWell(
         key: Key('line-${g.key}'),
         onTap: onTap,
+        onLongPress: onLongPress,
         hoverColor: c.hover,
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -204,6 +219,7 @@ class PartDetails extends StatelessWidget {
     this.onTask,
     this.plan,
     this.usual,
+    this.isPicked,
   });
 
   final PartGroup group;
@@ -223,6 +239,9 @@ class PartDetails extends StatelessWidget {
 
   /// The stage's usual speeds (overall · recent).
   final StagePace? usual;
+
+  /// Whether a cut is picked for an action (filled like the highlight).
+  final bool Function(TaskRow task)? isPicked;
 
   @override
   Widget build(BuildContext context) {
@@ -311,7 +330,11 @@ class PartDetails extends StatelessWidget {
                         onTap: onTask == null ? null : () => onTask!(t),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: t.id == highlighted ? c.selected : c.panel,
+                            color:
+                                t.id == highlighted ||
+                                    (isPicked?.call(t) ?? false)
+                                ? c.selected
+                                : c.panel,
                             border: Border.all(color: c.line),
                             borderRadius: BorderRadius.circular(5),
                           ),
