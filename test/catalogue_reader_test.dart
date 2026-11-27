@@ -65,9 +65,10 @@ void main() {
     expect(today.cutsToday, store.today().cutsToday);
     expect(await reader.monthlyTotals(2026, 11), store.monthlyTotals(2026, 11));
     expect(
-      (await reader.usualPaces()).map((u) => u.stageName),
-      store.usualPaces().map((u) => u.stageName),
+      (await reader.stagePaces()).map((u) => u.stageName),
+      store.stagePaces().map((u) => u.stageName),
     );
+    expect((await reader.signals()).keys, store.signals().keys);
   });
 
   test('a read after a write sees the write', () async {
