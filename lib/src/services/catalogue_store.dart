@@ -759,24 +759,40 @@ ORDER BY sort_key, id;''',
       ),
   ];
 
-  /// An episode's live cuts in number order.
-  List<({int id, String number, int? lengthMs, int? partId})> cuts(
-    int episodeId,
-  ) => [
-    for (final r in db.select(
-      'SELECT c.id, c.number, c.length_ms, c.part_id FROM cuts c '
-      'LEFT JOIN parts p ON p.id = c.part_id '
-      'WHERE c.episode_id = ? AND c.archived_at IS NULL '
-      'AND (p.id IS NULL OR p.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
-      [episodeId],
-    ))
-      (
-        id: r['id'] as int,
-        number: r['number'] as String,
-        lengthMs: r['length_ms'] as int?,
-        partId: r['part_id'] as int?,
-      ),
-  ];
+  /// An episode's cuts in number order — live ones, plus archived ones
+  /// (taken-out numbers, to restore on the grid) with [includeArchived].
+  /// Cuts of an archived part are left out.
+  List<CutRow> cuts(int episodeId, {bool includeArchived = false}) {
+    final labels = _sharedLabels();
+    return [
+      for (final r in db.select(
+        'SELECT c.id, c.number, c.length_ms, c.part_id, c.shared_with, '
+        'c.archived_at IS NOT NULL AS archived FROM cuts c '
+        'LEFT JOIN parts p ON p.id = c.part_id '
+        'WHERE c.episode_id = ? AND (? OR c.archived_at IS NULL) '
+        'AND (p.id IS NULL OR p.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
+        [episodeId, if (includeArchived) 1 else 0],
+      ))
+        _cutRow(r, labels),
+    ];
+  }
+
+  static CutRow _cutRow(Row r, Map<int, String> labels) {
+    final id = r['id'] as int;
+    final archived = r['archived'] == 1;
+    final head = archived
+        ? null
+        : (r['shared_with'] as int?) ?? (labels.containsKey(id) ? id : null);
+    return (
+      id: id,
+      number: r['number'] as String,
+      lengthMs: r['length_ms'] as int?,
+      partId: r['part_id'] as int?,
+      sharedHeadCutId: head,
+      sharedLabel: head == null ? null : labels[head],
+      archived: archived,
+    );
+  }
 
   /// Timer time per working day for the week holding [weekOf] (today when
   /// null), starting on the week-start setting, days cut at the day-start

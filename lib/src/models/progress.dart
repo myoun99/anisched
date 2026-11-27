@@ -5,6 +5,19 @@ library;
 import 'catalogue.dart';
 import 'cut_numbers.dart';
 
+/// One cut of an episode, as the registration grid shows it. A cut in a
+/// shared (겸용) group carries the group's first cut and label; an
+/// archived cut (a missing number taken out) is [archived].
+typedef CutRow = ({
+  int id,
+  String number,
+  int? lengthMs,
+  int? partId,
+  int? sharedHeadCutId,
+  String? sharedLabel,
+  bool archived,
+});
+
 /// One live task with everything the views show about it.
 class TaskRow {
   const TaskRow({
