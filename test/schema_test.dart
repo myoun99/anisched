@@ -77,4 +77,18 @@ void main() {
     addTearDown(db.close);
     expect(db.userVersion, latestSchemaVersion);
   });
+
+  test('a v1 file upgrades to the latest and keeps its timer rows', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.sublist(0, 1));
+    db.execute('INSERT INTO work_intervals (started_at) VALUES (42);');
+    migrate(db);
+    expect(db.userVersion, latestSchemaVersion);
+    expect(db.select('SELECT started_at FROM work_intervals'), hasLength(1));
+    expect(
+      db.select("SELECT name FROM sqlite_master WHERE name = 'tasks'"),
+      hasLength(1),
+    );
+  });
 }
