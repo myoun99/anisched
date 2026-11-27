@@ -404,22 +404,40 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   List<PartGroup> partGroups({int? workId}) =>
       groupRows(taskRows(workId: workId));
 
+  /// The pace (cuts per working day) for [group] as of now, using the
+  /// day start, rest weekdays and pace-end settings.
+  Pace? paceOf(PartGroup group) => paceFor(
+    group,
+    clock(),
+    dayStartMinutes: settings.dayStartMinutes,
+    restWeekdays: settings.restWeekdays,
+    endAt: settings.paceEnd,
+  );
+
   /// The "today" list: open groups due within [horizonDays] working days
   /// (or late), plus any group in progress or in retake whatever its
   /// deadline. Sorted by days left (no deadline last), then urgency.
-  /// `late` counts late open groups plus late open cuts whose own
-  /// deadline overrides their part's.
-  ({List<({PartGroup group, int? dueInDays})> entries, int late}) today({
-    int horizonDays = 4,
-  }) {
+  /// Each entry carries its [Pace]. `late` counts late open groups plus
+  /// late open cuts whose own deadline overrides their part's.
+  /// `cutsToday` sums what every open group asks of today — not only the
+  /// listed ones — so overlapping parts add up.
+  ({
+    List<({PartGroup group, int? dueInDays, Pace? pace})> entries,
+    int late,
+    double cutsToday,
+  })
+  today({int horizonDays = 4}) {
     final now = clock();
     final dayStart = settings.dayStartMinutes;
+    final rest = settings.restWeekdays;
+    final paceEnd = settings.paceEnd;
     int? left(DateTime? due) =>
         due == null ? null : dueInDays(due, now, dayStart);
 
     final groups = partGroups();
     var late = 0;
-    final entries = <({PartGroup group, int? dueInDays})>[];
+    var cutsToday = 0.0;
+    final entries = <({PartGroup group, int? dueInDays, Pace? pace})>[];
     for (final g in groups) {
       final status = g.status;
       final days = left(g.dueAt);
@@ -430,11 +448,19 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           if (d != null && d < 0) late++;
         }
       }
+      final pace = paceFor(
+        g,
+        now,
+        dayStartMinutes: dayStart,
+        restWeekdays: rest,
+        endAt: paceEnd,
+      );
+      if (pace != null) cutsToday += pace.today;
       final due = days != null && days <= horizonDays;
       final active =
           status == TaskStatus.inProgress || status == TaskStatus.retake;
       if (status.isOpen && (due || active)) {
-        entries.add((group: g, dueInDays: days));
+        entries.add((group: g, dueInDays: days, pace: pace));
       }
     }
     entries.sort((a, b) {
@@ -447,7 +473,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       }
       return a.group.status.urgency.compareTo(b.group.status.urgency);
     });
-    return (entries: entries, late: late);
+    return (entries: entries, late: late, cutsToday: cutsToday);
   }
 
   static SecondsRounding _rounding(Object? work, SecondsRounding app) =>

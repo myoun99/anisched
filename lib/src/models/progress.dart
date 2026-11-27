@@ -313,3 +313,95 @@ int dueInDays(DateTime due, DateTime now, int dayStartMinutes) => daysBetween(
   dayRange(now, dayStartMinutes).start,
   dayRange(due, dayStartMinutes).start,
 );
+
+/// Which end a pace counts down to.
+enum PaceEnd {
+  /// The user's planned finish, falling back to the deadline.
+  plan('plan'),
+
+  /// The production deadline.
+  due('due');
+
+  const PaceEnd(this.dbName);
+
+  final String dbName;
+
+  static PaceEnd fromDb(String s) => values.firstWhere((v) => v.dbName == s);
+}
+
+/// How fast a group must go: [remaining] open cuts over [workDays] working
+/// days, from today (or the planned start, if later) to the end day
+/// inclusive, skipping rest weekdays.
+class Pace {
+  const Pace({
+    required this.remaining,
+    required this.workDays,
+    required this.startsLater,
+    required this.end,
+    this.restToday = false,
+  });
+
+  /// Cuts not yet handed over (received, in progress, retake).
+  final int remaining;
+
+  /// Working days left, today and the end day included. 0 when the end
+  /// day has passed or every day left is a rest day.
+  final int workDays;
+
+  /// True when the planned start is after today.
+  final bool startsLater;
+
+  /// The end the pace counts to.
+  final DateTime end;
+
+  /// True when today is a rest weekday.
+  final bool restToday;
+
+  /// Cuts per working day, or null when no working day is left.
+  double? get perDay => workDays == 0 ? null : remaining / workDays;
+
+  /// True when cuts remain and no working day is left.
+  bool get behind => remaining > 0 && workDays == 0;
+
+  /// What today asks for: the per-day pace; 0 before the planned start or
+  /// on a rest day; everything left once no working day remains.
+  double get today =>
+      startsLater || restToday ? 0 : (perDay ?? remaining.toDouble());
+}
+
+/// The pace for [group] as of [now], or null when it has no end date.
+/// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday).
+Pace? paceFor(
+  PartGroup group,
+  DateTime now, {
+  int dayStartMinutes = 0,
+  Set<int> restWeekdays = const {},
+  PaceEnd endAt = PaceEnd.plan,
+}) {
+  final endTime = switch (endAt) {
+    PaceEnd.plan => group.planEndAt ?? group.dueAt,
+    PaceEnd.due => group.dueAt,
+  };
+  if (endTime == null) return null;
+  DateTime dateOf(DateTime t) {
+    final d = dayRange(t, dayStartMinutes).start;
+    return DateTime.utc(d.year, d.month, d.day);
+  }
+
+  final today = dateOf(now);
+  final planStart = group.planStartAt;
+  final startsLater = planStart != null && dateOf(planStart).isAfter(today);
+  final from = startsLater ? dateOf(planStart) : today;
+  final to = dateOf(endTime);
+  var workDays = 0;
+  for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+    if (!restWeekdays.contains(d.weekday)) workDays++;
+  }
+  return Pace(
+    remaining: group.tasks.where((t) => t.isOpen).length,
+    workDays: workDays,
+    startsLater: startsLater,
+    end: endTime,
+    restToday: restWeekdays.contains(today.weekday),
+  );
+}

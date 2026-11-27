@@ -1,6 +1,7 @@
 import 'package:sqlite3/sqlite3.dart';
 
 import '../models/catalogue.dart';
+import '../models/progress.dart';
 
 /// User settings, one row per key in the `settings` table. Missing keys
 /// read as their defaults.
@@ -11,6 +12,8 @@ class SettingsStore {
 
   static const _secondsRounding = 'seconds_rounding';
   static const _dayStartMinutes = 'day_start_minutes';
+  static const _restWeekdays = 'rest_weekdays';
+  static const _paceEnd = 'pace_end';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -27,6 +30,29 @@ class SettingsStore {
     RangeError.checkValueInInterval(minutes, 0, 24 * 60 - 1, 'minutes');
     _set(_dayStartMinutes, '$minutes');
   }
+
+  /// Weekdays not worked (1 = Monday … 7 = Sunday), skipped when
+  /// counting days left. Default: none.
+  Set<int> get restWeekdays => {
+    for (final p in (_get(_restWeekdays) ?? '').split(','))
+      if (int.tryParse(p) case final d? when d >= 1 && d <= 7) d,
+  };
+
+  set restWeekdays(Set<int> days) {
+    for (final d in days) {
+      RangeError.checkValueInInterval(d, 1, 7, 'weekday');
+    }
+    _set(_restWeekdays, (days.toList()..sort()).join(','));
+  }
+
+  /// Which end the cuts-per-day pace counts to. Default: the plan's end,
+  /// falling back to the deadline.
+  PaceEnd get paceEnd {
+    final v = _get(_paceEnd);
+    return v == null ? PaceEnd.plan : PaceEnd.fromDb(v);
+  }
+
+  set paceEnd(PaceEnd end) => _set(_paceEnd, end.dbName);
 
   String? _get(String key) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);
