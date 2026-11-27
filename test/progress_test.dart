@@ -105,9 +105,9 @@ void main() {
       now = now.add(const Duration(minutes: 90));
 
       final g = store.partGroups().single;
-      expect(g.label, 'B파트');
+      expect(g.partLabel, 'B파트');
       expect(g.stageName, '원화');
-      expect(g.solo, isFalse);
+      expect(g.kind, GroupKind.part);
       expect(g.total, 4);
       expect(g.handed, 3);
       expect(g.status, TaskStatus.inProgress);
@@ -136,16 +136,46 @@ void main() {
       expect(g.unpriced, 1);
     });
 
-    test('storyboards and cuts outside a part are solo groups', () {
-      final conte = store.stages(work).first.id;
-      final sb = store.addStoryboard(ep, '콘티');
+    test(
+      'a storyboard is a unit alone; part-less cuts share a no-part unit',
+      () {
+        final conte = store.stages(work).first.id;
+        final sb = store.addStoryboard(ep, '콘티');
+        final due1 = now.add(const Duration(days: 3)).toUtc();
+        final due2 = now.add(const Duration(days: 1)).toUtc();
+        store
+          ..addTask(conte, storyboardId: sb)
+          ..addTask(lo, cutId: store.addCut(ep, 'C901'), dueAt: due1)
+          ..addTask(lo, cutId: store.addCut(ep, 'C900'), dueAt: due2)
+          ..addTask(genga, cutId: store.addCut(ep, 'C902'));
+        final groups = store.partGroups();
+        expect(groups.map((g) => g.kind), [
+          GroupKind.noPart, // LO, earliest cut due in 1 day
+          GroupKind.storyboard, // no deadline, earlier in display order
+          GroupKind.noPart, // 원화, no deadline
+        ]);
+        final loNoPart = groups.first;
+        expect(loNoPart.partLabel, isNull);
+        expect(loNoPart.stageName, 'LO');
+        expect(loNoPart.dueAt, due2);
+        expect(loNoPart.tasks.map((t) => t.unitLabel), ['C900', 'C901']);
+        expect(loNoPart.tasks.first.dueFromPart, isFalse);
+        expect(groups[1].storyboardLabel, '콘티');
+        expect(groups[1].tasks.single.unitLabel, '콘티');
+      },
+    );
+
+    test('groups come in deadline order, no deadline last', () {
+      partWithCuts('late', ['C1'], lo, 5);
+      store.addPart(ep, 'empty-no-tasks');
+      final noDue = store.addPart(ep, 'nodue');
       store
-        ..addTask(conte, storyboardId: sb)
-        ..addTask(lo, cutId: store.addCut(ep, 'C900'));
+        ..addCut(ep, 'C2', partId: noDue)
+        ..addTasksForPart(noDue, lo);
+      partWithCuts('early', ['C3'], genga, 1);
       final groups = store.partGroups();
-      expect(groups, hasLength(2));
-      expect(groups.every((g) => g.solo), isTrue);
-      expect(groups.map((g) => g.label).toSet(), {'콘티', 'C900'});
+      expect(groups.map((g) => g.partLabel), ['early', 'late', 'nodue']);
+      expect(groups.first.tasks.single.dueFromPart, isTrue);
     });
 
     test('a cut deadline override shows on the row, not the group', () {
@@ -181,7 +211,7 @@ void main() {
       store.requestRetake(tasksOf(retake, lo).single);
 
       final t = store.today();
-      expect(t.entries.map((e) => e.group.label), [
+      expect(t.entries.map((e) => e.group.partLabel), [
         'late',
         'retake',
         'soon',
