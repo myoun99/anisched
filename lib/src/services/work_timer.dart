@@ -1,0 +1,87 @@
+import 'package:sqlite3/sqlite3.dart';
+
+import '../core/clock.dart';
+import '../models/work_interval.dart';
+
+/// Thrown when starting a timer while another is already running.
+class TimerAlreadyRunningException implements Exception {
+  @override
+  String toString() => 'A work timer is already running.';
+}
+
+/// Persists timer intervals. Only the start and stop instants are written;
+/// elapsed time is computed from them, so the timer survives the app being
+/// killed and relaunched.
+///
+/// Provisional rule (pending the user's answer): at most one timer runs at
+/// a time.
+class WorkTimerStore {
+  WorkTimerStore(this._db, {this.clock = systemClock});
+
+  final Database _db;
+
+  /// Source of "now"; injectable for tests.
+  final Clock clock;
+
+  /// The running interval, if any.
+  WorkInterval? running() {
+    final rows = _db.select(
+      'SELECT id, started_at, stopped_at FROM work_intervals '
+      'WHERE stopped_at IS NULL ORDER BY started_at DESC LIMIT 1;',
+    );
+    return rows.isEmpty ? null : _fromRow(rows.first);
+  }
+
+  /// Starts a timer now. Throws if one is already running.
+  WorkInterval start() {
+    if (running() != null) throw TimerAlreadyRunningException();
+    final now = clock().toUtc();
+    _db.execute('INSERT INTO work_intervals (started_at) VALUES (?);', [
+      now.millisecondsSinceEpoch,
+    ]);
+    return WorkInterval(id: _db.lastInsertRowId, start: now);
+  }
+
+  /// Stops the running timer now and returns it, or null if none runs.
+  /// A clock that moved backwards stops the interval at its own start
+  /// (zero length) instead of before it.
+  WorkInterval? stop() {
+    final open = running();
+    if (open == null) return null;
+    var now = clock().toUtc();
+    if (now.isBefore(open.start)) now = open.start;
+    _db.execute('UPDATE work_intervals SET stopped_at = ? WHERE id = ?;', [
+      now.millisecondsSinceEpoch,
+      open.id,
+    ]);
+    return WorkInterval(id: open.id, start: open.start, stop: now);
+  }
+
+  /// Intervals that overlap `[from, to)`, oldest first, including a
+  /// running one.
+  List<WorkInterval> overlapping(DateTime from, DateTime to) {
+    final rows = _db.select(
+      'SELECT id, started_at, stopped_at FROM work_intervals '
+      'WHERE started_at < ? AND (stopped_at IS NULL OR stopped_at > ?) '
+      'ORDER BY started_at;',
+      [to.millisecondsSinceEpoch, from.millisecondsSinceEpoch],
+    );
+    return [for (final r in rows) _fromRow(r)];
+  }
+
+  /// Time worked inside `[from, to)` as of now.
+  Duration workedBetween(DateTime from, DateTime to) =>
+      totalElapsed(overlapping(from, to), clock().toUtc(), from: from, to: to);
+
+  static WorkInterval _fromRow(Row r) {
+    final stopped = r['stopped_at'] as int?;
+    return WorkInterval(
+      id: r['id'] as int,
+      start: _utc(r['started_at'] as int),
+      stop: stopped == null ? null : _utc(stopped),
+    );
+  }
+
+  static DateTime _utc(int ms) =>
+      DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+}
