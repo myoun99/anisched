@@ -615,5 +615,131 @@ void main() {
       expect(groups.map((g) => g.kind), [GroupKind.noPart]);
       expect(store.partGroups(includeDone: true), hasLength(3));
     });
+
+    group('signals', () {
+      setUp(() => store.settings.restWeekdays = {});
+
+      PartGroup only() => store.partGroups(includeDone: true).single;
+      DueSignal due() => dueSignal(only(), now: now);
+
+      test('the deadline signal looks at dueAt only', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 3);
+        expect((due() as DueDaysLeft).days, 3);
+        // A plan past the deadline does not touch the D signal.
+        store.setPartPlan(part, lo, end: now.add(const Duration(days: 9)));
+        expect((due() as DueDaysLeft).days, 3);
+        store.setPartDue(part, lo, now.subtract(const Duration(days: 2)));
+        expect((due() as DueLate).days, 2);
+        final ids = tasksOf(part, lo);
+        store.setStatusMany(ids, TaskStatus.submitted);
+        expect(due(), isA<DueSubmitted>());
+        store.setStatusMany(ids, TaskStatus.done);
+        expect(due(), isA<DueDone>());
+      });
+
+      test('no deadline, no D', () {
+        store.addTask(lo, cutId: store.addCut(ep, 'C1'));
+        expect(due(), isA<DueNone>());
+      });
+
+      test(
+        'plan signal priority: over > late start > hard > tight > not started',
+        () {
+          final part = partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 10);
+          PlanSignal plan({double? recent}) => planSignal(
+            only(),
+            now: now,
+            pace: store.paceOf(only()),
+            recentPerDay: recent,
+          );
+
+          // Not started yet, comfortable.
+          store.setPartPlan(
+            part,
+            lo,
+            start: now.add(const Duration(days: 2)),
+            end: now.add(const Duration(days: 5)), // 4 cuts / 4 days = 1
+          );
+          expect(plan(recent: 2), isA<PlanNotStarted>());
+          // Tight: needs 1/day, recent 0.8/day.
+          expect(plan(recent: 0.8), isA<PlanTight>());
+          // Hard: needs 1/day, recent 0.6/day (1.5× = 0.9).
+          expect(plan(recent: 0.6), isA<PlanHard>());
+          // Late start beats pace: the start has come, nothing begun.
+          store.setPartPlan(
+            part,
+            lo,
+            start: now.subtract(const Duration(days: 1)),
+            end: now.add(const Duration(days: 3)),
+          );
+          expect(plan(recent: 0.1), isA<PlanLateStart>());
+          // Over beats everything: planned finish after the deadline.
+          store.setPartPlan(
+            part,
+            lo,
+            start: now.subtract(const Duration(days: 1)),
+            end: now.add(const Duration(days: 12)),
+          );
+          expect(plan(recent: 0.1), isA<PlanOver>());
+          // Once started, a late start is no longer flagged.
+          store
+            ..setPartPlan(
+              part,
+              lo,
+              start: now,
+              end: now.add(const Duration(days: 3)),
+            )
+            ..setStatus(tasksOf(part, lo).first, TaskStatus.inProgress);
+          expect(plan(recent: 5), isA<PlanNone>());
+          // Out of the user's hands: nothing to say.
+          store.setStatusMany(tasksOf(part, lo), TaskStatus.submitted);
+          expect(plan(recent: 0.1), isA<PlanNone>());
+        },
+      );
+
+      test('today entries and signals() use the recent average per stage', () {
+        // Recent LO speed: 2 cuts handed in the last 28 days of 28 → 1/14.
+        for (final c in ['H1', 'H2']) {
+          final t = store.addTask(lo, cutId: store.addCut(ep, c));
+          CatalogueStore(
+            db,
+            clock: () => now.subtract(const Duration(days: 3)),
+          ).setStatus(t, TaskStatus.submitted);
+        }
+        partWithCuts('B', ['C1', 'C2'], lo, 1); // needs 1/day → hard
+        final entry = store.today().entries.single;
+        expect(entry.group.partLabel, 'B');
+        expect(entry.plan, isA<PlanHard>());
+        expect((entry.due as DueDaysLeft).days, 1);
+        final sig = store.signals()[entry.group.key]!;
+        expect(sig.plan, isA<PlanHard>());
+        expect(sig.pace!.perDay, 1);
+      });
+
+      test('recent and overall averages; the recent window is a setting', () {
+        void handed(String cut, int daysAgo) {
+          final t = store.addTask(lo, cutId: store.addCut(ep, cut));
+          CatalogueStore(
+            db,
+            clock: () => now.subtract(Duration(days: daysAgo)),
+          ).setStatus(t, TaskStatus.submitted);
+        }
+
+        handed('H1', 1);
+        handed('H2', 5);
+        handed('H3', 59); // first ever: 60 days counted to today
+        var lo_ = store.stagePaces().single;
+        expect(lo_.stageName, 'LO');
+        expect(lo_.recent.cuts, 2);
+        expect(lo_.recent.workDays, 28);
+        expect(lo_.overall.cuts, 3);
+        expect(lo_.overall.workDays, 60);
+        store.settings.recentPaceDays = 7;
+        lo_ = store.stagePaces().single;
+        expect(lo_.recent.workDays, 7);
+        expect(lo_.recent.cuts, 2);
+        expect(() => store.settings.recentPaceDays = 0, throwsRangeError);
+      });
+    });
   });
 }

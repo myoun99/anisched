@@ -431,7 +431,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// without a submission) in the last [days] days up to today, divided
   /// by the working days in that window. Stages of every work with the
   /// same name pool together ("LO" in two works is one LO speed).
-  List<UsualPace> usualPaces({int days = 28}) {
+  List<UsualPace> usualPaces({int? days}) {
+    days ??= settings.recentPaceDays;
     final now = clock();
     final today = dayRange(now, settings.dayStartMinutes);
     final from = DateTime(
@@ -462,6 +463,111 @@ GROUP BY s.name ORDER BY s.name;''',
           workDays: workDays,
         ),
     ];
+  }
+
+  /// Each stage name's recent average (the last
+  /// [SettingsStore.recentPaceDays] days) and overall average (from its
+  /// first handed-over cut to today), both in cuts per working day.
+  List<StagePace> stagePaces() {
+    final recent = {for (final u in usualPaces()) u.stageName: u};
+    final now = clock();
+    final today = dayRange(now, settings.dayStartMinutes);
+    final rest = settings.restWeekdays;
+    final off = [for (final d in daysOff()) d.range];
+    final overall = <String, UsualPace>{};
+    for (final r in db.select(
+      '''
+SELECT s.name AS stage_name, COUNT(*) AS cuts,
+       MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
+FROM tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE t.archived_at IS NULL
+  AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
+  AND COALESCE(t.submitted_at, t.done_at) < ?
+GROUP BY s.name;''',
+      [_ms(today.end)],
+    )) {
+      final first = dayRange(
+        DateTime.fromMillisecondsSinceEpoch(r['first_at'] as int),
+        settings.dayStartMinutes,
+      ).start;
+      final name = r['stage_name'] as String;
+      overall[name] = UsualPace(
+        stageName: name,
+        cuts: r['cuts'] as int,
+        workDays: workDaysBetween(
+          first,
+          today.start,
+          restWeekdays: rest,
+          daysOff: off,
+        ),
+      );
+    }
+    return [
+      for (final name in {...overall.keys, ...recent.keys}.toList()..sort())
+        StagePace(
+          stageName: name,
+          recent:
+              recent[name] ??
+              UsualPace(
+                stageName: name,
+                cuts: 0,
+                workDays: recent.values.firstOrNull?.workDays ?? 0,
+              ),
+          overall:
+              overall[name] ?? UsualPace(stageName: name, cuts: 0, workDays: 0),
+        ),
+    ];
+  }
+
+  /// Recent cuts per working day by stage name (null without working
+  /// days), the speed the plan signal compares against.
+  Map<String, double?> recentPerDay() => {
+    for (final u in usualPaces()) u.stageName: u.perDay,
+  };
+
+  /// The deadline and plan signals and needed pace of every group in
+  /// [partGroups], by group key.
+  Map<String, GroupSignals> signals({bool includeDone = false}) {
+    final now = clock();
+    final dayStart = settings.dayStartMinutes;
+    final rest = settings.restWeekdays;
+    final off = [for (final d in daysOff(from: now)) d.range];
+    final paceEnd = settings.paceEnd;
+    final recent = recentPerDay();
+    return {
+      for (final g in partGroups(includeDone: includeDone))
+        g.key: _signals(g, now, dayStart, rest, off, paceEnd, recent),
+    };
+  }
+
+  static GroupSignals _signals(
+    PartGroup g,
+    DateTime now,
+    int dayStart,
+    Set<int> rest,
+    List<DaysOff> off,
+    PaceEnd paceEnd,
+    Map<String, double?> recent,
+  ) {
+    final pace = paceFor(
+      g,
+      now,
+      dayStartMinutes: dayStart,
+      restWeekdays: rest,
+      daysOff: off,
+      endAt: paceEnd,
+    );
+    return GroupSignals(
+      due: dueSignal(g, now: now, dayStartMinutes: dayStart),
+      plan: planSignal(
+        g,
+        now: now,
+        dayStartMinutes: dayStart,
+        pace: pace,
+        recentPerDay: recent[g.stageName],
+      ),
+      pace: pace,
+    );
   }
 
   /// Adds days off from [start] to [end] (one day when null), by their
@@ -518,6 +624,7 @@ GROUP BY s.name ORDER BY s.name;''',
     final rest = settings.restWeekdays;
     final paceEnd = settings.paceEnd;
     final off = [for (final d in daysOff(from: now)) d.range];
+    final recent = recentPerDay();
     int? left(DateTime? due) =>
         due == null ? null : dueInDays(due, now, dayStart);
 
@@ -535,14 +642,8 @@ GROUP BY s.name ORDER BY s.name;''',
           if (d != null && d < 0) late++;
         }
       }
-      final pace = paceFor(
-        g,
-        now,
-        dayStartMinutes: dayStart,
-        restWeekdays: rest,
-        daysOff: off,
-        endAt: paceEnd,
-      );
+      final sig = _signals(g, now, dayStart, rest, off, paceEnd, recent);
+      final pace = sig.pace;
       if (pace != null) cutsToday += pace.today;
       final due = days != null && days <= horizonDays;
       final active =
@@ -558,6 +659,8 @@ GROUP BY s.name ORDER BY s.name;''',
             pace: pace,
             beforePlan: beforePlan,
             planStarted: planStarted,
+            due: sig.due,
+            plan: sig.plan,
           ),
         );
       }

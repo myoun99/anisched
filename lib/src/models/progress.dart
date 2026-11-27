@@ -441,9 +441,17 @@ class TodayEntry {
     required this.pace,
     required this.beforePlan,
     required this.planStarted,
+    this.due = const DueNone(),
+    this.plan = const PlanNone(),
   });
 
   final PartGroup group;
+
+  /// Deadline signal ([dueSignal]).
+  final DueSignal due;
+
+  /// Plan signal ([planSignal]) against the stage's recent average.
+  final PlanSignal plan;
 
   /// Days left to the deadline; negative = late; null = no deadline.
   final int? dueInDays;
@@ -542,4 +550,159 @@ int workDaysBetween(
     }
   }
   return n;
+}
+
+/// A stage's speeds: recent (the last weeks, a setting) and overall
+/// (since its first handed-over cut).
+class StagePace {
+  const StagePace({
+    required this.stageName,
+    required this.recent,
+    required this.overall,
+  });
+
+  final String stageName;
+  final UsualPace recent;
+  final UsualPace overall;
+}
+
+/// The deadline signal: only the production deadline counts here — never
+/// the user's plan or pace. D-n and days late always come from `dueAt`.
+sealed class DueSignal {
+  const DueSignal();
+}
+
+/// Every cut is done.
+final class DueDone extends DueSignal {
+  const DueDone();
+}
+
+/// Every cut is handed over, some still awaiting the check.
+final class DueSubmitted extends DueSignal {
+  const DueSubmitted();
+}
+
+/// No deadline set.
+final class DueNone extends DueSignal {
+  const DueNone();
+}
+
+/// Past the deadline by [days] (≥ 1).
+final class DueLate extends DueSignal {
+  const DueLate(this.days);
+
+  final int days;
+}
+
+/// [days] left to the deadline (0 = due today).
+final class DueDaysLeft extends DueSignal {
+  const DueDaysLeft(this.days);
+
+  final int days;
+}
+
+/// The deadline signal for [group] as of [now].
+DueSignal dueSignal(
+  PartGroup group, {
+  required DateTime now,
+  int dayStartMinutes = 0,
+}) {
+  switch (group.status) {
+    case TaskStatus.done:
+      return const DueDone();
+    case TaskStatus.submitted:
+      return const DueSubmitted();
+    case TaskStatus.received:
+    case TaskStatus.inProgress:
+    case TaskStatus.retake:
+      break;
+  }
+  final due = group.dueAt;
+  if (due == null) return const DueNone();
+  final days = dueInDays(due, now, dayStartMinutes);
+  return days < 0 ? DueLate(-days) : DueDaysLeft(days);
+}
+
+/// The plan signal: how the user's own plan and pace look. Separate from
+/// [DueSignal] by design.
+sealed class PlanSignal {
+  const PlanSignal();
+}
+
+/// Nothing to flag (or the unit is out of the user's hands).
+final class PlanNone extends PlanSignal {
+  const PlanNone();
+}
+
+/// The planned finish is after the deadline.
+final class PlanOver extends PlanSignal {
+  const PlanOver();
+}
+
+/// The planned start has come, but nothing has been started.
+final class PlanLateStart extends PlanSignal {
+  const PlanLateStart();
+}
+
+/// The needed pace is above 1.5 × the recent average (or no working day
+/// is left).
+final class PlanHard extends PlanSignal {
+  const PlanHard();
+}
+
+/// The needed pace is above the recent average.
+final class PlanTight extends PlanSignal {
+  const PlanTight();
+}
+
+/// The planned start is later than today.
+final class PlanNotStarted extends PlanSignal {
+  const PlanNotStarted(this.startAt);
+
+  final DateTime startAt;
+}
+
+/// The plan signal for [group] as of [now]. [pace] is the group's needed
+/// pace ([paceFor]); [recentPerDay] is the recent average for its stage.
+/// Priority: over > late start > hard > tight > not started.
+PlanSignal planSignal(
+  PartGroup group, {
+  required DateTime now,
+  int dayStartMinutes = 0,
+  Pace? pace,
+  double? recentPerDay,
+}) {
+  final status = group.status;
+  if (!status.isOpen) return const PlanNone();
+  final slack = group.slackDays;
+  if (slack != null && slack < 0) return const PlanOver();
+  final start = group.planStartAt;
+  final toStart = start == null ? null : dueInDays(start, now, dayStartMinutes);
+  if (toStart != null && toStart <= 0 && status == TaskStatus.received) {
+    return const PlanLateStart();
+  }
+  if (pace != null) {
+    switch (paceLevel(pace, recentPerDay)) {
+      case PaceLevel.over:
+        return const PlanHard();
+      case PaceLevel.tight:
+        return const PlanTight();
+      case PaceLevel.ok:
+      case PaceLevel.unknown:
+        break;
+    }
+  }
+  if (start != null && toStart != null && toStart > 0) {
+    return PlanNotStarted(start);
+  }
+  return const PlanNone();
+}
+
+/// Both signals and the needed pace for one group, as the views show them.
+class GroupSignals {
+  const GroupSignals({required this.due, required this.plan, this.pace});
+
+  final DueSignal due;
+  final PlanSignal plan;
+  final Pace? pace;
 }
