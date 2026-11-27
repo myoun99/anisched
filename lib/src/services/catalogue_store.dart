@@ -411,8 +411,48 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     clock(),
     dayStartMinutes: settings.dayStartMinutes,
     restWeekdays: settings.restWeekdays,
+    daysOff: daysOff().map((d) => d.range),
     endAt: settings.paceEnd,
   );
+
+  /// Adds days off from [start] to [end] (one day when null), by their
+  /// local calendar dates, and returns the id.
+  int addDaysOff(DateTime start, {DateTime? end, String? note}) {
+    final r = DaysOff(start, end);
+    db.execute(
+      'INSERT INTO days_off (start_date, end_date, note) VALUES (?, ?, ?);',
+      [_isoDate(r.start), _isoDate(r.end), note],
+    );
+    return db.lastInsertRowId;
+  }
+
+  void removeDaysOff(int id) =>
+      db.execute('DELETE FROM days_off WHERE id = ?;', [id]);
+
+  /// Days off ending on or after [from] (all when null), earliest first.
+  List<({int id, DaysOff range, String? note})> daysOff({DateTime? from}) => [
+    for (final r in db.select(
+      'SELECT id, start_date, end_date, note FROM days_off '
+      'WHERE ? IS NULL OR end_date >= ? ORDER BY start_date, id;',
+      [
+        if (from == null) null else _isoDate(from),
+        if (from == null) null else _isoDate(from),
+      ],
+    ))
+      (
+        id: r['id'] as int,
+        range: DaysOff(
+          DateTime.parse(r['start_date'] as String),
+          DateTime.parse(r['end_date'] as String),
+        ),
+        note: r['note'] as String?,
+      ),
+  ];
+
+  static String _isoDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   /// The "today" list: open groups that are due within [horizonDays] days
   /// (or late), in progress or in retake, or whose planned start has come.
@@ -442,6 +482,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
     final paceEnd = settings.paceEnd;
+    final off = [for (final d in daysOff(from: now)) d.range];
     int? left(DateTime? due) =>
         due == null ? null : dueInDays(due, now, dayStart);
 
@@ -473,6 +514,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
         now,
         dayStartMinutes: dayStart,
         restWeekdays: rest,
+        daysOff: off,
         endAt: paceEnd,
       );
       if (pace != null) cutsToday += pace.today;
