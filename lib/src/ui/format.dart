@@ -100,3 +100,35 @@ String groupCount(PartGroup g) =>
 
 /// A task's own name: its cut number or storyboard label.
 String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
+
+/// The deadline signal as one label; only [DueLate] stands out.
+({String text, bool late, bool quiet}) dueSignalLabel(DueSignal s) =>
+    switch (s) {
+      DueDone() => (text: '완료', late: false, quiet: true),
+      DueSubmitted() => (text: '제출', late: false, quiet: true),
+      DueNone() => (text: '—', late: false, quiet: true),
+      DueLate(:final days) => (text: '$days일 지남', late: true, quiet: false),
+      DueDaysLeft(:final days) => (
+        text: days == 0 ? 'D-day' : 'D-$days',
+        late: false,
+        quiet: false,
+      ),
+    };
+
+/// How loud a plan signal is: a red or yellow dot, or nothing.
+enum PlanTone { none, amber, red }
+
+PlanTone planTone(PlanSignal s) => switch (s) {
+  PlanOver() || PlanHard() => PlanTone.red,
+  PlanLateStart() || PlanTight() => PlanTone.amber,
+  PlanNotStarted() || PlanNone() => PlanTone.none,
+};
+
+/// Why the plan dot shows, for the opened details; null when it does not.
+String? planReason(PlanSignal s) => switch (s) {
+  PlanOver() => '계획 끝이 마감보다 늦음',
+  PlanHard() => '하루 할당이 최근 평균의 1.5배를 넘음',
+  PlanLateStart() => '계획 시작일이 지났는데 아직 시작 전',
+  PlanTight() => '하루 할당이 최근 평균보다 많음',
+  PlanNotStarted() || PlanNone() => null,
+};

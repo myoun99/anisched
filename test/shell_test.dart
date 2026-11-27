@@ -41,7 +41,7 @@ void main() {
 
   testWidgets('tapping a view button switches the view', (t) async {
     await pumpAt(t, const Size(1280, 800));
-    expect(currentView(t), AppView.board);
+    expect(currentView(t), AppView.list);
     for (final v in AppView.values.reversed) {
       await t.tap(find.byKey(Key('view-tab-${v.name}')));
       await t.pump();
@@ -51,11 +51,11 @@ void main() {
 
   testWidgets('the chosen view survives a rotation', (t) async {
     await pumpAt(t, const Size(1280, 800));
-    await t.tap(find.byKey(const Key('view-tab-sheet')));
+    await t.tap(find.byKey(const Key('view-tab-timeline')));
     await t.pump();
     t.view.physicalSize = const Size(412, 915);
     await t.pump();
     expect(find.byKey(const Key('view-switch-bottom')), findsOneWidget);
-    expect(currentView(t), AppView.sheet);
+    expect(currentView(t), AppView.timeline);
   });
 }

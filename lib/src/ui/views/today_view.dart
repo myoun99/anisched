@@ -9,9 +9,9 @@ import '../../services/catalogue_reader.dart';
 import '../../services/work_timer.dart';
 import '../format.dart';
 import '../part_line.dart';
+import '../selection.dart';
 import '../theme.dart';
 import '../timer_card.dart';
-import '../widgets.dart';
 
 /// Today: the timer, how many cuts today asks for, the work whose plan has
 /// started, then work not started yet (dimmed). Usual pace and this
@@ -23,9 +23,17 @@ class TodayScreen extends StatefulWidget {
     required this.layout,
     this.timer,
     this.clock = systemClock,
+    this.selection,
+    this.refresh = 0,
   });
 
   final CatalogueReader reader;
+
+  /// Tasks picked for an action, shared by every view.
+  final TaskSelection? selection;
+
+  /// Bumped by the shell after a write; the view then reloads.
+  final int refresh;
   final ScreenLayout layout;
 
   /// Writes timer intervals; null leaves the timer read-only.
@@ -38,7 +46,8 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   TodayView _today = TodayView.empty;
-  List<UsualPace>? _paces;
+  Map<String, StagePace> _paces = const {};
+  bool _pacesLoaded = false;
   MonthlyTotals? _month;
   final _expanded = <String>{};
   String? _selected;
@@ -52,6 +61,13 @@ class _TodayScreenState extends State<TodayScreen> {
     super.initState();
     _lastTask = widget.timer?.running()?.taskId;
     unawaited(_load());
+    unawaited(_loadPaces());
+  }
+
+  @override
+  void didUpdateWidget(TodayScreen old) {
+    super.didUpdateWidget(old);
+    if (old.refresh != widget.refresh) unawaited(_load());
   }
 
   @override
@@ -66,8 +82,13 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _loadPaces() async {
-    final p = [for (final s in await widget.reader.stagePaces()) s.recent];
-    if (mounted) setState(() => _paces = p);
+    final p = await widget.reader.stagePaces();
+    if (mounted) {
+      setState(() {
+        _paces = {for (final x in p) x.stageName: x};
+        _pacesLoaded = true;
+      });
+    }
   }
 
   Future<void> _loadMonth() async {
@@ -132,9 +153,9 @@ class _TodayScreenState extends State<TodayScreen> {
           open: _openPace,
           onTap: () {
             setState(() => _openPace = !_openPace);
-            if (_openPace && _paces == null) unawaited(_loadPaces());
+            if (_openPace && !_pacesLoaded) unawaited(_loadPaces());
           },
-          child: _PaceTable(paces: _paces),
+          child: _PaceTable(paces: _paces.values.toList()),
         ),
         _Fold(
           key: const Key('fold-month'),
@@ -150,17 +171,22 @@ class _TodayScreenState extends State<TodayScreen> {
         ),
       ],
     );
-    final list = _TodayList(
-      today: _today,
-      expanded: _expanded,
-      selected: _selected,
-      runningTask: running?.taskId,
-      controller: _scroll,
-      onToggle: (g) => setState(() {
-        _selected = g.key;
-        if (!_expanded.remove(g.key)) _expanded.add(g.key);
-      }),
-      onTask: widget.timer == null ? null : _startOn,
+    final list = ListenableBuilder(
+      listenable: widget.selection ?? Listenable.merge(const []),
+      builder: (context, _) => _TodayList(
+        today: _today,
+        expanded: _expanded,
+        selected: _selected,
+        runningTask: running?.taskId,
+        controller: _scroll,
+        onToggle: (g) => setState(() {
+          _selected = g.key;
+          if (!_expanded.remove(g.key)) _expanded.add(g.key);
+        }),
+        onTask: widget.timer == null ? null : _startOn,
+        paces: _paces,
+        selection: widget.selection,
+      ),
     );
     return ColoredBox(
       color: c.panelAlt,
@@ -201,9 +227,13 @@ class _TodayList extends StatelessWidget {
     required this.controller,
     required this.onToggle,
     required this.onTask,
+    required this.paces,
+    this.selection,
   });
 
   final TodayView today;
+  final TaskSelection? selection;
+  final Map<String, StagePace> paces;
   final Set<String> expanded;
   final String? selected;
   final int? runningTask;
@@ -222,10 +252,12 @@ class _TodayList extends StatelessWidget {
       for (final e in today.entries)
         if (e.beforePlan) e,
     ];
+    final sel = selection;
+    final picking = sel != null && !sel.isEmpty;
     final rows = <Widget>[
-      for (final e in started) ..._entry(e),
+      for (final e in started) ..._entry(e, sel, picking),
       if (later.isNotEmpty) _Section('시작 전', later.length),
-      for (final e in later) ..._entry(e),
+      for (final e in later) ..._entry(e, sel, picking),
     ];
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -276,7 +308,7 @@ class _TodayList extends StatelessWidget {
     );
   }
 
-  List<Widget> _entry(TodayEntry e) {
+  List<Widget> _entry(TodayEntry e, TaskSelection? sel, bool picking) {
     final g = e.group;
     final open = expanded.contains(g.key);
     return [
@@ -286,20 +318,20 @@ class _TodayList extends StatelessWidget {
         dayStartMinutes: 0,
         expanded: open,
         selected: selected == g.key,
-        dimmed: e.beforePlan,
-        signal: DueText.days(e.dueInDays, g.status),
-        onTap: () => onToggle(g),
+        signals: GroupSignals(due: e.due, plan: e.plan, pace: e.pace),
+        picked: sel?.of(g) ?? Picked.none,
+        onLongPress: sel == null ? null : () => sel.toggleGroup(g),
+        onTap: () => picking ? sel!.toggleGroup(g) : onToggle(g),
       ),
       if (open)
         PartDetails(
           group: g,
           pace: e.pace,
-          extra: [
-            if (e.beforePlan && g.planStartAt != null)
-              ('시작', formatDate(g.planStartAt)),
-          ],
+          plan: e.plan,
+          usual: paces[g.stageName],
           highlighted: runningTask,
-          onTask: onTask,
+          isPicked: sel?.has,
+          onTask: picking ? sel!.toggleTask : onTask,
         ),
     ];
   }
@@ -417,24 +449,25 @@ class _Fold extends StatelessWidget {
 class _PaceTable extends StatelessWidget {
   const _PaceTable({required this.paces});
 
-  final List<UsualPace>? paces;
+  final List<StagePace> paces;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final list = paces ?? const [];
+    String perDay(UsualPace p) =>
+        p.perDay == null ? '—' : p.perDay!.toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         spacing: 4,
         children: [
-          for (final p in list)
+          for (final p in paces)
             Row(
               children: [
                 Text(p.stageName),
                 const Spacer(),
                 Text(
-                  p.perDay == null ? '—' : '${p.perDay!.toStringAsFixed(1)}컷/일',
+                  '${perDay(p.overall)} · 최근 ${perDay(p.recent)}컷/일',
                   style: TextStyle(
                     color: c.muted,
                     fontFeatures: const [FontFeature.tabularFigures()],

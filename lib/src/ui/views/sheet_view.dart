@@ -5,6 +5,8 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../theme.dart';
 import '../part_line.dart';
+import '../selection.dart';
+import '../widgets.dart';
 
 /// One line per part × stage: name, progress and one date signal. Everything
 /// else (dates, plan, pace, pay, time, cuts) opens under the line on demand.
@@ -19,6 +21,9 @@ class SheetView extends StatefulWidget {
     this.paceOf,
     this.showDone,
     this.onShowDoneChanged,
+    this.signals = const {},
+    this.paces = const {},
+    this.selection,
   });
 
   final List<PartGroup> parts;
@@ -37,6 +42,15 @@ class SheetView extends StatefulWidget {
   /// then reloads [parts] with or without done work). Null keeps it here.
   final bool? showDone;
   final ValueChanged<bool>? onShowDoneChanged;
+
+  /// Deadline and plan signals by group key (reader.signals).
+  final Map<String, GroupSignals> signals;
+
+  /// Usual speeds by stage name (reader.stagePaces).
+  final Map<String, StagePace> paces;
+
+  /// Tasks picked for an action, shared by every view.
+  final TaskSelection? selection;
 
   @override
   State<SheetView> createState() => _SheetViewState();
@@ -93,10 +107,10 @@ class _SheetViewState extends State<SheetView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Toolbar(
+          ViewToolbar(
             children: [
               _workMenu(),
-              _MenuButton(
+              ToolbarButton(
                 key: const Key('toggle-done'),
                 label: _showDone ? '완료 보임' : '완료 숨김',
                 selected: _showDone,
@@ -106,29 +120,49 @@ class _SheetViewState extends State<SheetView> {
           ),
           if (!narrow) const PartHeader(),
           Expanded(
-            child: ListView.builder(
-              key: const Key('sheet-rows'),
-              controller: _rows,
-              itemCount: parts.length,
-              itemBuilder: (context, i) {
-                final p = parts[i];
-                final open = _expanded.contains(p.key);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PartLine(
-                      group: p,
-                      now: widget.now,
-                      dayStartMinutes: widget.dayStartMinutes,
-                      expanded: open,
-                      selected: _selected == p.key,
-                      onTap: () => _toggle(p),
-                    ),
-                    if (open)
-                      PartDetails(group: p, pace: widget.paceOf?.call(p)),
-                  ],
-                );
-              },
+            child: ListenableBuilder(
+              listenable: widget.selection ?? const _Never(),
+              builder: (context, _) => ListView.builder(
+                key: const Key('sheet-rows'),
+                controller: _rows,
+                itemCount: parts.length,
+                itemBuilder: (context, i) {
+                  final p = parts[i];
+                  final sel = widget.selection;
+                  final open = _expanded.contains(p.key);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PartLine(
+                        group: p,
+                        now: widget.now,
+                        dayStartMinutes: widget.dayStartMinutes,
+                        expanded: open,
+                        selected: _selected == p.key,
+                        signals: widget.signals[p.key],
+                        picked: sel?.of(p) ?? Picked.none,
+                        onLongPress: sel == null
+                            ? null
+                            : () => sel.toggleGroup(p),
+                        onTap: () => sel != null && !sel.isEmpty
+                            ? sel.toggleGroup(p)
+                            : _toggle(p),
+                      ),
+                      if (open)
+                        PartDetails(
+                          group: p,
+                          pace:
+                              widget.signals[p.key]?.pace ??
+                              widget.paceOf?.call(p),
+                          plan: widget.signals[p.key]?.plan,
+                          usual: widget.paces[p.stageName],
+                          isPicked: sel?.has,
+                          onTask: sel?.toggleTask,
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -149,7 +183,7 @@ class _SheetViewState extends State<SheetView> {
         for (final e in works.entries)
           PopupMenuItem(value: e.key, child: Text(e.value)),
       ],
-      child: _MenuButton(
+      child: ToolbarButton(
         label: _work == null ? '모든 작품' : works[_work]!,
         selected: _work != null,
         dropdown: true,
@@ -158,71 +192,13 @@ class _SheetViewState extends State<SheetView> {
   }
 }
 
-class _MenuButton extends StatelessWidget {
-  const _MenuButton({
-    super.key,
-    required this.label,
-    required this.selected,
-    this.onTap,
-    this.dropdown = false,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  /// Shows a drop-down arrow after the label.
-  final bool dropdown;
+/// A listenable that never fires, for views used without a selection.
+class _Never implements Listenable {
+  const _Never();
 
   @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final body = DecoratedBox(
-      decoration: BoxDecoration(
-        color: selected ? c.selected : c.panel,
-        border: Border.all(color: selected ? c.selected : c.line),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SizedBox(
-        height: 34,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label),
-              if (dropdown)
-                Icon(Icons.arrow_drop_down, size: 20, color: c.muted),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (onTap == null) return body;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: body,
-    );
-  }
-}
-
-class _Toolbar extends StatelessWidget {
-  const _Toolbar({required this.children});
-
-  final List<Widget> children;
+  void addListener(VoidCallback listener) {}
 
   @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.line)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Wrap(spacing: 8, runSpacing: 8, children: children),
-      ),
-    );
-  }
+  void removeListener(VoidCallback listener) {}
 }
