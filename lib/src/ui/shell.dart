@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/overview.dart';
+import '../controllers/sample_overview.dart';
 import '../core/size_class.dart';
 import 'theme.dart';
+import 'views/sheet_view.dart';
 
 /// The four ways of looking at the same work. All four stay in the app;
 /// the user switches between them.
@@ -19,9 +22,21 @@ enum AppView {
 /// App frame: a top bar, the current view, and the view switcher — in the
 /// top bar on medium and wide screens, along the bottom on narrow ones.
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, this.initialView = AppView.board});
+  const AppShell({
+    super.key,
+    this.initialView = AppView.board,
+    this.today,
+    this.parts,
+  });
 
   final AppView initialView;
+
+  /// The local date the views count deadlines from; defaults to now.
+  final DateTime? today;
+
+  /// The user's work by part × stage; defaults to example data until the
+  /// catalogue's read API lands.
+  final List<PartStage>? parts;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -29,6 +44,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
+  late final DateTime _today = widget.today ?? DateTime.now();
+  late final List<PartStage> _parts = widget.parts ?? sampleOverview(_today);
 
   void _select(AppView v) {
     if (v != _view) setState(() => _view = v);
@@ -61,7 +78,14 @@ class _AppShellState extends State<AppShell> {
                     sizing: StackFit.expand,
                     children: [
                       for (final v in AppView.values)
-                        ViewSlot(view: v, layout: layout),
+                        if (v == AppView.sheet)
+                          SheetView(
+                            parts: _parts,
+                            today: _today,
+                            layout: layout,
+                          )
+                        else
+                          ViewSlot(view: v, layout: layout),
                     ],
                   ),
                 ),
