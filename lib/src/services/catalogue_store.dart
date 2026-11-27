@@ -831,19 +831,35 @@ ORDER BY sort_key, id;''',
   }
 
   /// The statistics tab for the work days `[from, to)` (local dates),
-  /// bucketed by [bucket]. Day start, week start and lane count come from
-  /// the settings.
+  /// bucketed by [bucket], with [Stats.previous] = the same length just
+  /// before and [Stats.stagePaces]. Day start, week start and lane count
+  /// come from the settings.
   Stats stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
   }) {
+    from = DateTime(from.year, from.month, from.day);
+    to = DateTime(to.year, to.month, to.day);
+    final days = to.difference(from).inHours ~/ 24;
+    final current = _stats(from, to, bucket);
+    current.previous = _stats(
+      DateTime(from.year, from.month, from.day - days),
+      from,
+      bucket,
+    );
+    current.stagePaces = stagePaces();
+    return current;
+  }
+
+  Stats _stats(DateTime from, DateTime to, StatsBucket bucket) {
     DateTime? at(Object? ms) => ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
     final extra = {
       for (final r in db.select('''
-SELECT t.id, t.submitted_at, t.done_at, w.client_id, c.name AS client
+SELECT t.id, t.submitted_at, t.submitted_due_at, t.done_at, w.client_id,
+       c.name AS client
 FROM live_tasks t
 JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
@@ -866,6 +882,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
             submittedAt: at(x['submitted_at']),
             doneAt: at(x['done_at']),
             dueAt: t.dueAt,
+            submittedDueAt: at(x['submitted_due_at']),
             planStartAt: t.planStartAt,
             planEndAt: t.planEndAt,
             pay: t.pay,
@@ -1272,6 +1289,15 @@ UPDATE retakes SET submitted_at = ?
 WHERE task_id = ? AND submitted_at IS NULL
   AND take = (SELECT MAX(take) FROM retakes WHERE task_id = ?);''',
           [now, taskId, taskId],
+        );
+      }
+      if (submitted == 1) {
+        db.execute(
+          '''
+UPDATE tasks SET submitted_due_at =
+  (SELECT due_at FROM task_dues WHERE task_id = tasks.id)
+WHERE id = ? AND submitted_at IS NULL;''',
+          [taskId],
         );
       }
       db.execute(
