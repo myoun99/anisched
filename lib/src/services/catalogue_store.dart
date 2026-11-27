@@ -389,8 +389,10 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     ];
   }
 
-  /// Schedule units (part × stage, or a solo task) with progress, status,
-  /// pay and time, in display order.
+  /// Schedule units — part × stage, part-less cuts of an episode × stage,
+  /// or a storyboard task alone — with progress, status, pay and time,
+  /// sorted by deadline (none last). Two queries in all, whatever the row
+  /// count: the settings read and [taskRows].
   List<PartGroup> partGroups({int? workId}) =>
       groupRows(taskRows(workId: workId));
 

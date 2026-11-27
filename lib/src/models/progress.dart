@@ -66,16 +66,27 @@ class TaskRow {
   /// Timer time recorded on this task.
   final Duration worked;
 
+  /// The deadline that applies: the task's own, else its part's.
   DateTime? get dueAt => ownDueAt ?? partDueAt;
+
+  /// True when [dueAt] is the part's deadline (the task set none).
+  bool get dueFromPart => ownDueAt == null && partDueAt != null;
 
   /// True when a cut in a part carries its own deadline.
   bool get dueOverridden => partId != null && ownDueAt != null;
 
+  /// The cut number, or the storyboard label for a storyboard task.
+  String get unitLabel => cutNumber ?? storyboardLabel ?? '';
+
   bool get isOpen => status.isOpen;
 
-  /// The rows that make one schedule unit share this key: a part × stage,
-  /// or the task alone (a storyboard, or a cut outside any part).
-  String get groupKey => partId == null ? 'task:$id' : 'part:$partId:$stageId';
+  /// The rows that make one schedule unit share this key: a part × stage;
+  /// the "no part" cuts of an episode × stage; or a storyboard task alone.
+  String get groupKey => storyboardId != null
+      ? 'storyboard:$id'
+      : partId == null
+      ? 'nopart:$episodeId:$stageId'
+      : 'part:$partId:$stageId';
 }
 
 extension TaskStatusRules on TaskStatus {
@@ -115,7 +126,23 @@ TaskStatus deriveStatus(Map<TaskStatus, int> counts) {
   return TaskStatus.inProgress;
 }
 
-/// A schedule unit: a part × stage with its cut tasks, or one solo task.
+/// What kind of schedule unit a [PartGroup] is.
+enum GroupKind {
+  /// A part × stage.
+  part,
+
+  /// An episode's cuts outside any part, for one stage.
+  noPart,
+
+  /// One storyboard task, a unit on its own.
+  storyboard,
+}
+
+/// The name the views use for a schedule unit.
+typedef PartStageRow = PartGroup;
+
+/// A schedule unit: a part × stage with its cut tasks, the part-less cuts
+/// of an episode × stage, or one storyboard task.
 class PartGroup {
   PartGroup(this.tasks) : assert(tasks.isNotEmpty);
 
@@ -124,8 +151,14 @@ class PartGroup {
 
   TaskRow get _first => tasks.first;
   String get key => _first.groupKey;
-  bool get solo => _first.partId == null;
+
+  GroupKind get kind => _first.storyboardId != null
+      ? GroupKind.storyboard
+      : _first.partId == null
+      ? GroupKind.noPart
+      : GroupKind.part;
   int get workId => _first.workId;
+  int get episodeId => _first.episodeId;
   String get workTitle => _first.workTitle;
   String get currency => _first.currency;
   String get episodeNumber => _first.episodeNumber;
@@ -134,9 +167,12 @@ class PartGroup {
   int? get partId => _first.partId;
   int? get plannedCutCount => _first.plannedCutCount;
 
-  /// Part label, or the storyboard label / cut number of a solo task.
-  String get label =>
-      _first.partLabel ?? _first.storyboardLabel ?? _first.cutNumber ?? '';
+  /// The part's label; null for [GroupKind.noPart] (the views say
+  /// "no part") and for a storyboard.
+  String? get partLabel => _first.partLabel;
+
+  /// The storyboard's label for [GroupKind.storyboard].
+  String? get storyboardLabel => _first.storyboardLabel;
 
   int get total => tasks.length;
 
@@ -153,18 +189,16 @@ class PartGroup {
 
   TaskStatus get status => deriveStatus(counts);
 
-  /// The part's deadline for the stage, or the solo task's deadline.
-  DateTime? get dueAt => solo ? _first.dueAt : _first.partDueAt;
+  /// The part's deadline for the stage; for a storyboard, its task's; for
+  /// part-less cuts, the earliest of their deadlines.
+  DateTime? get dueAt => switch (kind) {
+    GroupKind.part => _first.partDueAt,
+    GroupKind.storyboard => _first.dueAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.dueAt)),
+  };
 
   /// When the earliest task arrived.
-  DateTime? get startAt {
-    DateTime? s;
-    for (final t in tasks) {
-      final r = t.receivedAt;
-      if (r != null && (s == null || r.isBefore(s))) s = r;
-    }
-    return s;
-  }
+  DateTime? get startAt => _earliest(tasks.map((t) => t.receivedAt));
 
   /// Sum of computable pay, in [currency].
   int get pay => tasks.fold(0, (a, t) => a + (t.pay ?? 0));
@@ -175,14 +209,35 @@ class PartGroup {
   Duration get worked => tasks.fold(Duration.zero, (a, t) => a + t.worked);
 }
 
-/// Rolls [rows] (already in display order) into groups, keeping the order
-/// in which each group first appears.
+DateTime? _earliest(Iterable<DateTime?> times) {
+  DateTime? e;
+  for (final t in times) {
+    if (t != null && (e == null || t.isBefore(e))) e = t;
+  }
+  return e;
+}
+
+/// Rolls [rows] (already in display order) into groups and sorts them by
+/// deadline, no deadline last; ties keep display order.
 List<PartGroup> groupRows(Iterable<TaskRow> rows) {
   final byKey = <String, List<TaskRow>>{};
   for (final r in rows) {
     (byKey[r.groupKey] ??= []).add(r);
   }
-  return [for (final list in byKey.values) PartGroup(list)];
+  final groups = [for (final list in byKey.values) PartGroup(list)];
+  final order = {for (var i = 0; i < groups.length; i++) groups[i]: i};
+  groups.sort((a, b) {
+    final da = a.dueAt;
+    final db = b.dueAt;
+    if (da != db) {
+      if (da == null) return 1;
+      if (db == null) return -1;
+      final c = da.compareTo(db);
+      if (c != 0) return c;
+    }
+    return order[a]!.compareTo(order[b]!);
+  });
+  return groups;
 }
 
 /// Whole calendar days from [from] to [to], by their local dates.
