@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'src/services/catalogue_reader.dart';
 import 'src/services/catalogue_store.dart';
 import 'src/services/database.dart';
+import 'src/platform/documents.dart';
+import 'src/services/document_session.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
 
@@ -18,17 +20,36 @@ Future<void> main() async {
   final db = openAppDatabase(path);
   // Views read on a background isolate; writes stay on this one.
   final reader = await BackgroundCatalogueReader.open(path, writer: db);
+  final session = await DocumentSession.open(
+    writer: db,
+    workingPath: path,
+    folder: dir.path,
+    files: platformDocumentFiles(),
+  );
+  final remote = ValueNotifier<RemoteCheck?>(null);
+  // Save when the app leaves the screen; on return, take another device's
+  // newer copy (or keep local work and snapshot theirs).
   AppLifecycleListener(
+    onHide: () => unawaited(session.flush()),
+    onPause: () => unawaited(session.flush()),
+    onResume: () async => remote.value = await session.resume(),
     onDetach: () {
-      unawaited(reader.close());
-      db.close();
+      unawaited(
+        session.flush().whenComplete(() async {
+          await reader.close();
+          db.close();
+        }),
+      );
     },
   );
+  unawaited(session.resume().then((r) => remote.value = r));
   runApp(
     AnischedApp(
       reader: reader,
       store: CatalogueStore(db),
       timer: WorkTimerStore(db),
+      session: session,
+      remote: remote,
     ),
   );
 }
