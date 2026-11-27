@@ -761,18 +761,48 @@ void main() {
         expect(store.partGroups().single.kickoffAt, isNull);
       });
 
-      test('the kickoff does not change the pace or the signals', () {
+      test('without a plan, the pace counts from the kickoff', () {
         store.settings.restWeekdays = {};
         final part = partWithCuts('B', ['C1', 'C2', 'C3'], lo, 2);
-        final before = store.signals().values.single;
+        // Kickoff defaulted to today: 3 cuts over today .. +2 days.
+        expect(store.paceOf(store.partGroups().single)!.perDay, 1);
+        // Kickoff tomorrow: 3 cuts over 2 days, nothing asked today.
         store.setPartKickoff(part, lo, now.add(const Duration(days: 1)));
-        final after = store.signals().values.single;
-        expect(after.pace!.perDay, before.pace!.perDay);
-        expect(after.plan.runtimeType, before.plan.runtimeType);
-        expect(
-          (after.due as DueDaysLeft).days,
-          (before.due as DueDaysLeft).days,
+        var pace = store.paceOf(store.partGroups().single)!;
+        expect(pace.perDay, 1.5);
+        expect(pace.startsLater, isTrue);
+        expect(pace.today, 0);
+        // A planned start wins over the kickoff; so does a planned end
+        // over the deadline.
+        store.setPartPlan(
+          part,
+          lo,
+          start: now,
+          end: now.add(const Duration(days: 5)),
         );
+        pace = store.paceOf(store.partGroups().single)!;
+        expect(pace.startsLater, isFalse);
+        expect(pace.workDays, 6);
+        // D stays on the deadline whatever the kickoff.
+        expect((store.signals().values.single.due as DueDaysLeft).days, 2);
+      });
+
+      test('the kickoff defaults to the day the work was entered', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 9);
+        final today = DateTime(now.year, now.month, now.day).toUtc();
+        var g = store.partGroups().single;
+        expect(g.kickoffAt, today);
+        expect(g.tasks.every((t) => t.kickoffFromPart), isTrue);
+        // A part that already has one keeps it.
+        final earlier = DateTime(2026, 11, 1);
+        store.setPartKickoff(part, genga, earlier);
+        store.addTasksForPart(part, genga);
+        g = store.partGroups().firstWhere((g) => g.stageId == genga);
+        expect(g.kickoffAt, earlier.toUtc());
+        // A cut outside any part gets its own.
+        final solo = store.addTask(lo, cutId: store.addCut(ep, 'C9'));
+        final row = store.taskRows().firstWhere((t) => t.id == solo);
+        expect((row.kickoffAt, row.kickoffFromPart), (today, false));
       });
 
       test('a dropped bar writes kickoff and deadline together', () {

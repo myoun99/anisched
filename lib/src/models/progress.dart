@@ -432,6 +432,9 @@ class DaysOff {
 }
 
 /// The pace for [group] as of [now], or null when it has no end date.
+/// Days count from the planned start (else the production kickoff) if
+/// later than today, to the planned end (else the deadline) — or always
+/// to the deadline with [PaceEnd.due].
 /// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday);
 /// [daysOff] adds specific days. Both are skipped when counting days.
 Pace? paceFor(
@@ -456,7 +459,8 @@ Pace? paceFor(
   }
 
   final today = dateOf(now);
-  final planStart = group.planStartAt;
+  // The user's own start; without one, when production work began.
+  final planStart = group.planStartAt ?? group.kickoffAt;
   final startsLater = planStart != null && dateOf(planStart).isAfter(today);
   final from = startsLater ? dateOf(planStart) : today;
   final to = dateOf(endTime);

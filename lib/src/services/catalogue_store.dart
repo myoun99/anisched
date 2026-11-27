@@ -560,7 +560,32 @@ ORDER BY 4 DESC, 1, 2;''');
         rate?.amount,
       ],
     );
-    return db.lastInsertRowId;
+    final id = db.lastInsertRowId;
+    _defaultKickoff(id);
+    return id;
+  }
+
+  /// A new task's production kickoff defaults to the day it was entered:
+  /// on its part × stage when the cut is in a part (unless the part
+  /// already has one), else on the task itself.
+  void _defaultKickoff(int taskId) {
+    final day = dayRange(clock(), settings.dayStartMinutes).start;
+    final at = _ms(DateTime(day.year, day.month, day.day));
+    db
+      ..execute(
+        '''
+INSERT OR IGNORE INTO part_stage_kickoffs (part_id, stage_id, kickoff_at)
+SELECT c.part_id, t.stage_id, ? FROM tasks t JOIN cuts c ON c.id = t.cut_id
+WHERE t.id = ? AND c.part_id IS NOT NULL;''',
+        [at, taskId],
+      )
+      ..execute(
+        '''
+UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM cuts c WHERE c.id = tasks.cut_id
+                  AND c.part_id IS NOT NULL);''',
+        [at, taskId],
+      );
   }
 
   void setStatus(int taskId, TaskStatus status) {
