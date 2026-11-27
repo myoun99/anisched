@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
+import 'due_button.dart';
 import 'format.dart';
 import 'selection.dart';
 import 'theme.dart';
@@ -64,7 +65,11 @@ class PartLine extends StatelessWidget {
     this.signals,
     this.picked = Picked.none,
     this.onLongPress,
+    this.onDue,
   });
+
+  /// Sets the unit's deadline (tap on the D label); null keeps it fixed.
+  final ValueChanged<DateTime>? onDue;
 
   final PartGroup group;
   final DateTime now;
@@ -169,26 +174,32 @@ class PartLine extends StatelessWidget {
                       ],
                     ),
                   ),
-                  SizedBox(
-                    width: _signalW,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child:
-                            signal ??
-                            (signals == null
-                                ? null
-                                : SignalLabel(
-                                    due: signals!.due,
-                                    plan: signals!.plan,
-                                  )) ??
-                            DueText(
-                              g.dueAt,
-                              g.status,
-                              now,
-                              dayStartMinutes: dayStartMinutes,
-                            ),
+                  DueButton(
+                    key: Key('due-${g.key}'),
+                    due: g.dueAt,
+                    onPicked: onDue,
+                    child: SizedBox(
+                      width: _signalW,
+                      height: 40,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child:
+                              signal ??
+                              (signals == null
+                                  ? null
+                                  : SignalLabel(
+                                      due: signals!.due,
+                                      plan: signals!.plan,
+                                    )) ??
+                              DueText(
+                                g.dueAt,
+                                g.status,
+                                now,
+                                dayStartMinutes: dayStartMinutes,
+                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -220,6 +231,8 @@ class PartDetails extends StatelessWidget {
     this.plan,
     this.usual,
     this.isPicked,
+    this.onDue,
+    this.onTaskDue,
   });
 
   final PartGroup group;
@@ -242,6 +255,12 @@ class PartDetails extends StatelessWidget {
 
   /// Whether a cut is picked for an action (filled like the highlight).
   final bool Function(TaskRow task)? isPicked;
+
+  /// Sets the unit's deadline (tap on the 마감 fact).
+  final ValueChanged<DateTime>? onDue;
+
+  /// Sets one cut's own deadline (long press on its chip).
+  final void Function(TaskRow task, DateTime due)? onTaskDue;
 
   @override
   Widget build(BuildContext context) {
@@ -294,15 +313,28 @@ class PartDetails extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   for (final (k, v) in facts)
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '$k  ',
-                            style: TextStyle(fontSize: 12, color: c.muted),
-                          ),
-                          TextSpan(text: v),
-                        ],
+                    DueButton(
+                      key: k == '마감' ? Key('details-due-${g.key}') : null,
+                      due: g.dueAt,
+                      onPicked: k == '마감' ? onDue : null,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '$k  ',
+                              style: TextStyle(fontSize: 12, color: c.muted),
+                            ),
+                            TextSpan(
+                              text: v,
+                              style: k == '마감' && onDue != null
+                                  ? TextStyle(
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: c.faint,
+                                    )
+                                  : null,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -334,6 +366,13 @@ class PartDetails extends StatelessWidget {
                         task: t,
                         highlighted: t.id == highlighted,
                         onTap: onTask == null ? null : () => onTask!(t),
+                        onLongPress: onTaskDue == null
+                            ? null
+                            : () => DueButton(
+                                due: t.dueAt,
+                                onPicked: (d) => onTaskDue!(t, d),
+                                child: const SizedBox(),
+                              ).pick(context),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color:
@@ -422,6 +461,7 @@ class _CutChip extends StatelessWidget {
     required this.highlighted,
     required this.child,
     this.onTap,
+    this.onLongPress,
   });
 
   final TaskRow task;
@@ -429,13 +469,17 @@ class _CutChip extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
 
+  /// Long press: the cut's own deadline.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
-    if (onTap == null) return child;
+    if (onTap == null && onLongPress == null) return child;
     return InkWell(
       key: Key('cut-${task.id}'),
       borderRadius: BorderRadius.circular(5),
       onTap: onTap,
+      onLongPress: onLongPress,
       child: child,
     );
   }

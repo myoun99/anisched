@@ -308,6 +308,22 @@ class _AppShellState extends State<AppShell> {
         }
       });
 
+  /// A deadline picked (D label, details or timeline): the part's for a
+  /// part, each task's for loose cuts and storyboards.
+  void _setDue(PartGroup g, DateTime due) => _write((store) {
+    if (g.kind == GroupKind.part) {
+      store.setPartDue(g.partId!, g.stageId, due);
+    } else {
+      for (final t in g.tasks) {
+        store.setTaskDue(t.id, due);
+      }
+    }
+  });
+
+  /// One cut's own deadline.
+  void _setTaskDue(TaskRow t, DateTime due) =>
+      _write((store) => store.setTaskDue(t.id, due));
+
   /// A work bar's end dragged: the user's own start and end.
   void _plan(PartGroup g, DateTime start, DateTime end) => _write((store) {
     final a = _startOf(start);
@@ -344,6 +360,8 @@ class _AppShellState extends State<AppShell> {
         selection: _selection,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
+        onDue: writable ? _setDue : null,
+        onTaskDue: writable ? _setTaskDue : null,
         onTaskTap: widget.timer == null
             ? null
             : (t) => _selection.isEmpty
@@ -354,6 +372,7 @@ class _AppShellState extends State<AppShell> {
         parts: shown,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
+        onDue: writable ? _setDue : null,
         now: now,
         layout: layout,
         restWeekdays: rest,
