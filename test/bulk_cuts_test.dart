@@ -261,4 +261,37 @@ void main() {
       throwsRangeError,
     );
   });
+
+  test('a shared pair is two cuts everywhere: count, progress, pace, pay', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C2', partLabel: 'B');
+    final lo = stage(w, 'LO');
+    store
+      ..settings.restWeekdays = {}
+      ..setEpisodeRate(r.episodeId, lo, const Rate(RateUnit.fixed, 2500))
+      ..addTasksForPart(r.partId!, lo)
+      ..setPartDue(r.partId!, lo, DateTime(2026, 11, 28))
+      ..linkSharedCuts(r.cutIds);
+
+    // Registration does not shrink the count.
+    expect(store.cuts(r.episodeId), hasLength(2));
+    expect(store.parts(r.episodeId).single.cutCount, 2);
+    var g = store.partGroups().single;
+    expect(g.total, 2);
+    expect(g.tasks.map((t) => t.sharedLabel), ['C1-2', 'C1-2']);
+    // Per-cut rate twice.
+    expect(g.pay, 5000);
+    // Two cuts over today and tomorrow.
+    expect(store.paceOf(g)!.remaining, 2);
+    expect(store.paceOf(g)!.perDay, 1);
+
+    // Progress counts each: one handed is 1/2.
+    store.setStatus(g.tasks.first.id, TaskStatus.submitted);
+    g = store.partGroups().single;
+    expect((g.handed, g.total), (1, 2));
+
+    // Monthly totals pay both.
+    store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.done);
+    expect(store.monthlyTotals(2026, 11)['JPY']!.total, 5000);
+  });
 }
