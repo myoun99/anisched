@@ -170,6 +170,48 @@ void main() {
       expect(row['submitted_at'], t0.millisecondsSinceEpoch);
     });
 
+    test('several tasks change status in one go', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final lo = stageId(w, 'LO');
+      final ids = [
+        for (final c in ['C1', 'C2', 'C3'])
+          store.addTask(lo, cutId: store.addCut(ep, c)),
+      ];
+      store.setStatusMany(ids.take(2), TaskStatus.submitted);
+      final rows = db.select(
+        'SELECT status, submitted_at FROM tasks ORDER BY id',
+      );
+      expect(rows.map((r) => r['status']), [
+        'submitted',
+        'submitted',
+        'received',
+      ]);
+      expect(rows.first['submitted_at'], t0.millisecondsSinceEpoch);
+    });
+
+    test('a failed bulk change leaves every task as it was', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final lo = stageId(w, 'LO');
+      final id = store.addTask(lo, cutId: store.addCut(ep, 'C1'));
+      db.execute('''
+CREATE TRIGGER no_done BEFORE UPDATE OF status ON tasks
+WHEN NEW.status = 'done' AND NEW.id <> $id
+BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
+      final other = store.addTask(lo, cutId: store.addCut(ep, 'C2'));
+      expect(
+        () => store.setStatusMany([id, other], TaskStatus.done),
+        throwsA(isA<SqliteException>()),
+      );
+      expect(
+        db.select('SELECT status FROM tasks WHERE id = ?', [
+          id,
+        ]).first['status'],
+        'received',
+      );
+    });
+
     test('a failed createWork leaves no half-made work', () {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));
@@ -189,6 +231,51 @@ void main() {
       store.settings.secondsRounding = SecondsRounding.down;
       expect(store.payFor(task), 30000);
       expect(CatalogueStore(db).settings.secondsRounding, SecondsRounding.down);
+    });
+
+    test('a work can override the app rounding', () {
+      final w = store.createWork('작품A');
+      final other = store.createWork('작품B');
+      int perSecondTask(int work) {
+        final ep = store.addEpisode(work, '#01');
+        final genga = stageId(work, '원화');
+        store.setEpisodeRate(ep, genga, const Rate(RateUnit.perSecond, 10000));
+        return store.addTask(
+          genga,
+          cutId: store.addCut(ep, 'C001', lengthMs: 3500),
+        );
+      }
+
+      final a = perSecondTask(w);
+      final b = perSecondTask(other);
+      store.setWorkRounding(w, SecondsRounding.exact);
+      expect(store.payFor(a), 35000);
+      expect(store.payFor(b), 40000); // app default: nearest
+      store.settings.secondsRounding = SecondsRounding.down;
+      expect(store.payFor(a), 35000); // the work's own wins
+      expect(store.payFor(b), 30000);
+      final byTask = {for (final r in store.taskRows()) r.id: r.pay};
+      expect(byTask, {a: 35000, b: 30000});
+      store.setWorkRounding(w, null);
+      expect(store.payFor(a), 30000);
+    });
+
+    test('a cut can carry its own rate inside a part', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final lo = stageId(w, 'LO');
+      store.setEpisodeRate(ep, lo, const Rate(RateUnit.fixed, 2500));
+      final part = store.addPart(ep, 'B');
+      store
+        ..addCut(ep, 'C1', partId: part)
+        ..addCut(ep, 'C2', partId: part);
+      final ids = store.addTasksForPart(part, lo);
+      store.setTaskRate(ids[1], const Rate(RateUnit.fixed, 4000));
+      expect(store.payFor(ids[0]), 2500);
+      expect(store.payFor(ids[1]), 4000);
+      expect(store.partGroups().single.pay, 6500);
+      store.setTaskRate(ids[1], null);
+      expect(store.payFor(ids[1]), 2500);
     });
 
     test('day start is a setting, midnight by default', () {
@@ -211,6 +298,39 @@ void main() {
       final after = store.createWork('작품B');
       expect(store.stages(after).map((s) => s.name), ['LO', 'LO 작감 수정', '원화']);
       expect(store.stages(before).map((s) => s.name), defaultStageNames);
+    });
+
+    test('several presets; a work is made from the chosen one', () {
+      final sakkan = store.createPreset('작감용', ['LO 작감 수정', '원화 작감 수정']);
+      expect(store.presets().map((p) => p.name), ['기본', '작감용']);
+      expect(store.presets().first.isDefault, isTrue);
+      final w = store.createWork('작품B', presetId: sakkan);
+      expect(store.stages(w).map((s) => s.name), ['LO 작감 수정', '원화 작감 수정']);
+      expect(
+        store.stages(store.createWork('작품C')).map((s) => s.name),
+        defaultStageNames,
+      );
+    });
+
+    test('the default can move; it cannot be deleted', () {
+      final basic = store.defaultPresetId();
+      final other = store.createPreset('A사', ['LO', '원화']);
+      expect(() => store.deletePreset(basic), throwsStateError);
+      store.setDefaultPreset(other);
+      expect(store.defaultPresetId(), other);
+      expect(store.presets().where((p) => p.isDefault), hasLength(1));
+      final w = store.createWork('작품D');
+      store
+        ..deletePreset(basic)
+        ..renamePreset(other, 'A사 기본');
+      expect(store.presets().map((p) => p.name), ['A사 기본']);
+      expect(store.stages(w).map((s) => s.name), ['LO', '원화']);
+    });
+
+    test('moving the default to a missing preset changes nothing', () {
+      final basic = store.defaultPresetId();
+      expect(() => store.setDefaultPreset(9999), throwsArgumentError);
+      expect(store.defaultPresetId(), basic);
     });
 
     test('there is only one default preset', () {

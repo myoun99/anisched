@@ -247,16 +247,16 @@ WHERE t.id = ?;''',
   int? payFor(int taskId) {
     final rate = rateFor(taskId);
     if (rate == null) return null;
-    final lengthMs =
-        db.select(
-              'SELECT c.length_ms FROM tasks t '
-              'LEFT JOIN cuts c ON c.id = t.cut_id WHERE t.id = ?;',
-              [taskId],
-            ).first['length_ms']
-            as int?;
+    final row = db.select(
+      'SELECT c.length_ms, w.seconds_rounding FROM tasks t '
+      'LEFT JOIN cuts c ON c.id = t.cut_id '
+      'JOIN work_stages s ON s.id = t.stage_id '
+      'JOIN works w ON w.id = s.work_id WHERE t.id = ?;',
+      [taskId],
+    ).first;
     final base = rate.payFor(
-      lengthMs: lengthMs,
-      rounding: settings.secondsRounding,
+      lengthMs: row['length_ms'] as int?,
+      rounding: _rounding(row['seconds_rounding'], settings.secondsRounding),
     );
     if (base == null) return null;
     final extra =
@@ -321,7 +321,7 @@ WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
 SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
        s.id AS stage_id, s.name AS stage_name,
-       w.id AS work_id, w.title, w.currency,
+       w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        e.id AS episode_id, e.number AS episode_number,
        c.id AS cut_id, c.number AS cut_number, c.length_ms,
        sb.id AS storyboard_id, sb.label AS storyboard_label,
@@ -382,7 +382,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
             r['amount'] as int?,
             r['length_ms'] as int?,
             r['extra'] as int,
-            rounding,
+            _rounding(r['seconds_rounding'], rounding),
           ),
           worked: Duration(milliseconds: r['worked_ms'] as int),
         ),
@@ -441,6 +441,87 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     });
     return (entries: entries, late: late);
   }
+
+  static SecondsRounding _rounding(Object? work, SecondsRounding app) =>
+      work == null ? app : SecondsRounding.fromDb(work as String);
+
+  /// Gives one task (one stage of one cut) its own rate; null goes back to
+  /// the episode's rate for the stage.
+  void setTaskRate(int taskId, Rate? rate) => db.execute(
+    'UPDATE tasks SET rate_unit = ?, rate_amount = ? WHERE id = ?;',
+    [rate?.unit.dbName, rate?.amount, taskId],
+  );
+
+  /// Sets the work's own seconds rounding; null follows the app setting.
+  void setWorkRounding(int workId, SecondsRounding? rounding) => db.execute(
+    'UPDATE works SET seconds_rounding = ? WHERE id = ?;',
+    [rounding?.dbName, workId],
+  );
+
+  /// Moves every task in [taskIds] to [status] in one transaction, with
+  /// the same timestamps a single [setStatus] would set.
+  void setStatusMany(Iterable<int> taskIds, TaskStatus status) =>
+      _transaction(() {
+        for (final id in taskIds) {
+          setStatus(id, status);
+        }
+      });
+
+  /// Stage presets as (id, name, isDefault), default first, then by name.
+  List<({int id, String name, bool isDefault})> presets() => [
+    for (final r in db.select(
+      'SELECT id, name, is_default FROM stage_presets '
+      'ORDER BY is_default DESC, name, id;',
+    ))
+      (
+        id: r['id'] as int,
+        name: r['name'] as String,
+        isDefault: r['is_default'] == 1,
+      ),
+  ];
+
+  /// Adds a preset with [stages] in order, and returns its id.
+  int createPreset(String name, List<String> stages) => _transaction(() {
+    db.execute('INSERT INTO stage_presets (name) VALUES (?);', [name]);
+    final id = db.lastInsertRowId;
+    setPresetStages(id, stages);
+    return id;
+  });
+
+  void renamePreset(int presetId, String name) => db.execute(
+    'UPDATE stage_presets SET name = ? WHERE id = ?;',
+    [name, presetId],
+  );
+
+  /// Makes [presetId] the one preset new works use when none is chosen.
+  void setDefaultPreset(int presetId) => _transaction(() {
+    db
+      ..execute('UPDATE stage_presets SET is_default = 0 WHERE is_default = 1;')
+      ..execute('UPDATE stage_presets SET is_default = 1 WHERE id = ?;', [
+        presetId,
+      ]);
+    if (db.updatedRows != 1) {
+      throw ArgumentError.value(presetId, 'presetId', 'no such preset');
+    }
+  });
+
+  /// Deletes a preset. Works made from it keep their stages. The default
+  /// preset cannot be deleted; make another the default first.
+  void deletePreset(int presetId) => _transaction(() {
+    final rows = db.select(
+      'SELECT is_default FROM stage_presets WHERE id = ?;',
+      [presetId],
+    );
+    if (rows.isEmpty) return;
+    if (rows.first['is_default'] == 1) {
+      throw StateError('The default stage preset cannot be deleted.');
+    }
+    db
+      ..execute('DELETE FROM stage_preset_items WHERE preset_id = ?;', [
+        presetId,
+      ])
+      ..execute('DELETE FROM stage_presets WHERE id = ?;', [presetId]);
+  });
 
   static int? _pay(
     String? unit,
