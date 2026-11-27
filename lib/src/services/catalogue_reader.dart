@@ -7,6 +7,8 @@ import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/lanes.dart';
 import '../models/progress.dart';
+import '../models/stats.dart';
+import '../models/work_interval.dart';
 import 'catalogue_store.dart';
 
 /// One stretch of timer time within a day.
@@ -48,6 +50,19 @@ abstract interface class CatalogueReader {
 
   /// See [CatalogueStore.dayIntervals].
   Future<List<DayInterval>> dayIntervals({DateTime? day});
+
+  /// See [CatalogueStore.workedOn].
+  Future<Map<int, Duration>> workedOn(List<int> taskIds);
+
+  /// See [CatalogueStore.runningTimer].
+  Future<WorkInterval?> runningTimer();
+
+  /// See [CatalogueStore.stats].
+  Future<Stats> stats({
+    required DateTime from,
+    required DateTime to,
+    StatsBucket bucket = StatsBucket.week,
+  });
 
   /// Pickers for the input screens: see [CatalogueStore.works],
   /// [CatalogueStore.episodes], [CatalogueStore.parts],
@@ -149,6 +164,20 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<List<DayInterval>> dayIntervals({DateTime? day}) =>
       _run(() => store.dayIntervals(day: day));
+
+  @override
+  Future<Map<int, Duration>> workedOn(List<int> taskIds) =>
+      _run(() => store.workedOn(taskIds));
+
+  @override
+  Future<WorkInterval?> runningTimer() => _run(store.runningTimer);
+
+  @override
+  Future<Stats> stats({
+    required DateTime from,
+    required DateTime to,
+    StatsBucket bucket = StatsBucket.week,
+  }) => _run(() => store.stats(from: from, to: to, bucket: bucket));
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
@@ -380,6 +409,20 @@ class BackgroundCatalogueReader implements CatalogueReader {
   @override
   Future<List<DayInterval>> dayIntervals({DateTime? day}) =>
       _ask((s) => s.dayIntervals(day: day));
+
+  @override
+  Future<Map<int, Duration>> workedOn(List<int> taskIds) =>
+      _ask((s) => s.workedOn(taskIds));
+
+  @override
+  Future<WorkInterval?> runningTimer() => _ask((s) => s.runningTimer());
+
+  @override
+  Future<Stats> stats({
+    required DateTime from,
+    required DateTime to,
+    StatsBucket bucket = StatsBucket.week,
+  }) => _ask((s) => s.stats(from: from, to: to, bucket: bucket));
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
