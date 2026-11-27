@@ -84,7 +84,8 @@ class Rate {
   };
 }
 
-/// Stages a new work starts with; the user edits them per work.
+/// The factory stage list, as first seeded into the default stage preset.
+/// The user edits the preset; new works copy the preset, not this list.
 const List<String> defaultStageNames = [
   '콘티',
   '콘티 체크',

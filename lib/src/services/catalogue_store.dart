@@ -17,11 +17,13 @@ class CatalogueStore {
   /// Source of "now"; injectable for tests.
   final Clock clock;
 
-  /// Creates a work with [defaultStageNames] as its editable stage list.
+  /// Creates a work whose editable stage list is a copy of [presetId]
+  /// (the default preset when null). Later preset edits do not touch it.
   int createWork(
     String title, {
     String currency = 'JPY',
     int? clientId,
+    int? presetId,
   }) => _transaction(() {
     db.execute(
       'INSERT INTO works (client_id, title, currency, created_at) '
@@ -29,13 +31,44 @@ class CatalogueStore {
       [clientId, title, currency, _now()],
     );
     final workId = db.lastInsertRowId;
-    for (var i = 0; i < defaultStageNames.length; i++) {
+    db.execute(
+      'INSERT INTO work_stages (work_id, name, position) '
+      'SELECT ?, name, position FROM stage_preset_items '
+      'WHERE preset_id = ? ORDER BY position;',
+      [workId, presetId ?? defaultPresetId()],
+    );
+    return workId;
+  });
+
+  /// The id of the default stage preset.
+  int defaultPresetId() =>
+      db
+              .select('SELECT id FROM stage_presets WHERE is_default = 1;')
+              .first['id']
+          as int;
+
+  /// The preset's stage names in order.
+  List<String> presetStages(int presetId) => [
+    for (final r in db.select(
+      'SELECT name FROM stage_preset_items WHERE preset_id = ? '
+      'ORDER BY position, id;',
+      [presetId],
+    ))
+      r['name'] as String,
+  ];
+
+  /// Replaces the preset's stages with [names], in order.
+  void setPresetStages(int presetId, List<String> names) => _transaction(() {
+    db.execute('DELETE FROM stage_preset_items WHERE preset_id = ?;', [
+      presetId,
+    ]);
+    for (var i = 0; i < names.length; i++) {
       db.execute(
-        'INSERT INTO work_stages (work_id, name, position) VALUES (?, ?, ?);',
-        [workId, defaultStageNames[i], i],
+        'INSERT INTO stage_preset_items (preset_id, name, position) '
+        'VALUES (?, ?, ?);',
+        [presetId, names[i], i],
       );
     }
-    return workId;
   });
 
   /// The work's live stages in order, as (id, name).

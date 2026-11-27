@@ -199,6 +199,30 @@ void main() {
     });
   });
 
+  group('stage presets', () {
+    test('the default preset starts as the factory list', () {
+      expect(store.presetStages(store.defaultPresetId()), defaultStageNames);
+    });
+
+    test('new works copy the edited preset; old works keep theirs', () {
+      final before = store.createWork('작품A');
+      final preset = store.defaultPresetId();
+      store.setPresetStages(preset, ['LO', 'LO 작감 수정', '원화']);
+      final after = store.createWork('작품B');
+      expect(store.stages(after).map((s) => s.name), ['LO', 'LO 작감 수정', '원화']);
+      expect(store.stages(before).map((s) => s.name), defaultStageNames);
+    });
+
+    test('there is only one default preset', () {
+      expect(
+        () => db.execute(
+          "INSERT INTO stage_presets (name, is_default) VALUES ('X', 1)",
+        ),
+        throwsA(isA<SqliteException>()),
+      );
+    });
+  });
+
   group('parts', () {
     test('cut tasks follow the part deadline unless they set their own', () {
       final w = store.createWork('작품A');

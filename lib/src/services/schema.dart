@@ -15,6 +15,7 @@ class Migration {
 /// v1: timer intervals. v2: the work catalogue (clients, works, stages,
 /// episodes, cuts, storyboards, rates, tasks, retakes). v3: parts with
 /// per-stage deadlines, settings, and timer intervals linked to tasks.
+/// v4: editable stage presets that new works copy.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -30,6 +31,7 @@ CREATE TABLE work_intervals (
   }),
   const Migration(2, _v2Catalogue),
   const Migration(3, _v3PartsAndSettings),
+  const Migration(4, _v4StagePresets),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -239,5 +241,55 @@ LEFT JOIN part_stage_dues d
     'CREATE INDEX work_intervals_task ON work_intervals(task_id);',
   ]) {
     db.execute(sql);
+  }
+}
+
+void _v4StagePresets(Database db) {
+  for (final sql in const [
+    // A named, editable list of stages. A new work copies one; editing a
+    // preset never changes existing works. Exactly one is the default.
+    '''
+CREATE TABLE stage_presets (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1))
+);''',
+    '''
+CREATE UNIQUE INDEX stage_presets_one_default ON stage_presets(is_default)
+  WHERE is_default = 1;''',
+    '''
+CREATE TABLE stage_preset_items (
+  id INTEGER PRIMARY KEY,
+  preset_id INTEGER NOT NULL REFERENCES stage_presets(id),
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL
+);''',
+    '''
+CREATE INDEX stage_preset_items_preset
+  ON stage_preset_items(preset_id, position);''',
+    "INSERT INTO stage_presets (id, name, is_default) VALUES (1, '기본', 1);",
+  ]) {
+    db.execute(sql);
+  }
+  // Seeded with a literal copy so this step never changes once shipped,
+  // whatever later happens to the factory list in the models.
+  const seed = [
+    '콘티',
+    '콘티 체크',
+    'LO',
+    'LO 연출 수정',
+    'LO 작감 수정',
+    'LO 총작감 수정',
+    '원화',
+    '원화 연출 수정',
+    '원화 작감 수정',
+    '원화 총작감 수정',
+  ];
+  for (var i = 0; i < seed.length; i++) {
+    db.execute(
+      'INSERT INTO stage_preset_items (preset_id, name, position) '
+      'VALUES (1, ?, ?);',
+      [seed[i], i],
+    );
   }
 }
