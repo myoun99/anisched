@@ -690,7 +690,6 @@ class _RegisterViewState extends State<RegisterView> {
   int? _clashSaved;
 
   Widget _savedBar(BuildContext context) {
-    final c = AppColors.of(context);
     final picked = [
       for (final x in _saved)
         if (_pickedSaved.contains(x.id)) x,
