@@ -1,0 +1,116 @@
+# This file configures the analyzer, which statically analyzes Dart code to
+# check for errors, warnings, and lints.
+#
+# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
+# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
+# invoked from the command line by running `flutter analyze`.
+
+# The following line activates a set of recommended lints for Flutter apps,
+# packages, and plugins designed to encourage good coding practices.
+# ⛔DO NOT DELETE THIS BLOCK AS NOISE. `flutter pub get` WROTE IT, on the
+# 3.44.2 → 3.47.4 upgrade (2026-09-16): the tool stamps it the first time
+# pub get runs under 3.47 in a checkout, alongside pubspec.lock,
+# package_config.json and .flutter-plugins-dependencies (measured — all four
+# carry the same mtime second). 3.47 generates Dart under the platform
+# folders for build hooks and native assets, and without these excludes
+# `flutter analyze` — the merge gate — descends into generated code nobody
+# wrote. It is committed rather than left dirty so every worktree does not
+# show a spurious modification the moment it resolves packages.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  # Round 2 of the audit (2026-09-03) measured every well-known lint outside
+  # the Flutter set and turned on the ones that guard a decision rather than
+  # a style: each rule below was either already clean or was fixed first,
+  # so `flutter analyze` — already the merge gate — graduates it.
+  #
+  # Left off on purpose:
+  # - directives_ordering, cascade_invocations,
+  #   prefer_expression_function_bodies, sort_constructors_first,
+  #   prefer_int_literals, avoid_escaping_inner_quotes,
+  #   avoid_redundant_argument_values: style churn across thousands of
+  #   lines, no decision guarded.
+  # - prefer_foreach: the opposite of this codebase's loop style.
+  # - avoid_slow_async_io, avoid_classes_with_only_static_members: design
+  #   choices made elsewhere (the AppX namespaces are deliberate).
+  # - use_setters_to_change_properties: the flagged methods are callbacks
+  #   (a setter cannot be passed as one).
+  # - matching_super_parameters: it fights use_super_parameters on
+  #   ValueNotifier's `_value`.
+  # - unnecessary_statements: its five sites are the native lane's
+  #   late-field warm-ups, which are statements on purpose.
+  # - avoid_positional_boolean_parameters: most sites are single-bool
+  #   callbacks in the Flutter shape (`void Function(bool)`), which the rule
+  #   cannot tell from an API taking a flag.
+  # - parameter_assignments: the sites normalise their argument
+  #   (`key = _canonicalize(key)`), a deliberate idiom.
+  # - no_adjacent_strings_in_list: the sites are intentional multi-line
+  #   strings inside lists; splitting them with `+` would violate
+  #   prefer_adjacent_string_concatenation from the core set.
+  rules:
+    - avoid_annotating_with_dynamic
+    - avoid_bool_literals_in_conditional_expressions
+    - avoid_catches_without_on_clauses
+    - avoid_dynamic_calls
+    - avoid_field_initializers_in_const_classes
+    - avoid_implementing_value_types
+    - avoid_multiple_declarations_per_line
+    - avoid_setters_without_getters
+    - avoid_unused_constructor_parameters
+    - avoid_void_async
+    - cast_nullable_to_non_nullable
+    - combinators_ordering
+    - dangling_library_doc_comments
+    - deprecated_consistency
+    - discarded_futures
+    - eol_at_end_of_file
+    - implicit_call_tearoffs
+    - join_return_with_assignment
+    - leading_newlines_in_multiline_strings
+    - library_annotations
+    - no_default_cases
+    - no_runtimeType_toString
+    - no_self_assignments
+    - omit_local_variable_types
+    - only_throw_errors
+    - prefer_asserts_in_initializer_lists
+    - prefer_const_constructors
+    - prefer_const_constructors_in_immutables
+    - prefer_const_declarations
+    - prefer_final_in_for_each
+    - prefer_final_locals
+    - prefer_if_elements_to_conditional_expressions
+    - prefer_mixin
+    - prefer_null_aware_method_calls
+    - prefer_single_quotes
+    - sized_box_shrink_expand
+    - sort_unnamed_constructors_first
+    - tighten_type_of_initializing_formals
+    - type_annotate_public_apis
+    - unawaited_futures
+    - unnecessary_breaks
+    - unnecessary_lambdas
+    - unnecessary_null_aware_operator_on_extension_on_nullable
+    - unnecessary_null_checks
+    - unnecessary_parenthesis
+    - unnecessary_raw_strings
+    - unnecessary_to_list_in_spreads
+    - use_colored_box
+    - use_decorated_box
+    - use_enums
+    - use_late_for_private_fields_and_variables
+    - use_named_constants
+    - use_string_buffers
+    - use_super_parameters
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options
