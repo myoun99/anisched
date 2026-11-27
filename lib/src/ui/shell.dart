@@ -303,6 +303,7 @@ class _AppShellState extends State<AppShell> {
       AppView.timeline => TimelineView(
         parts: shown,
         toolbar: toolbar,
+        onReorder: writable ? _reorder : null,
         now: now,
         layout: layout,
         restWeekdays: rest,
@@ -347,6 +348,7 @@ class _AppShellState extends State<AppShell> {
                 return id;
               }
             : null,
+        onEdit: writable ? _write : null,
         onRegister: writable
             ? (draft) {
                 var n = 0;

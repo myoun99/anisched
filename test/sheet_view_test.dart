@@ -107,6 +107,23 @@ void main() {
     );
     await t.tap(line);
     await t.pump();
-    expect(find.text('계획 끝이 마감보다 늦음'), findsOneWidget);
+    expect(find.text('실 작업 끝이 마감보다 늦음'), findsOneWidget);
+  });
+
+  testWidgets('opened details show the production and work dates', (t) async {
+    final gs = await pumpSheet(t, const Size(1280, 800));
+    final g = part(gs, '별빛 정류장', 'C', 'LO');
+    await t.tap(find.byKey(Key('line-${g.key}')));
+    await t.pump();
+    final d = find.byKey(Key('details-${g.key}'));
+    for (final k in ['제작', '실 작업']) {
+      expect(
+        find.descendant(
+          of: d,
+          matching: find.textContaining(k, findRichText: true),
+        ),
+        findsWidgets,
+      );
+    }
   });
 }
