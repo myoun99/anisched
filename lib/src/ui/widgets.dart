@@ -178,7 +178,11 @@ class SegmentButton extends StatelessWidget {
     this.count,
     this.icon,
     this.tooltip,
+    this.compact = false,
   });
+
+  /// Narrow side padding, for rows of many short segments.
+  final bool compact;
 
   final String label;
   final bool selected;
@@ -201,7 +205,7 @@ class SegmentButton extends StatelessWidget {
         onTap: onTap,
         hoverColor: c.hover,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,

@@ -149,6 +149,7 @@ class _SettingsViewState extends State<SettingsView> {
                 for (final l in LanguageChoice.values)
                   SegmentButton(
                     key: Key('lang-${l.name}'),
+                    compact: true,
                     icon: l == LanguageChoice.device
                         ? Icons.smartphone_outlined
                         : null,
@@ -175,6 +176,7 @@ class _SettingsViewState extends State<SettingsView> {
               for (var d = 1; d <= 7; d++)
                 SegmentButton(
                   key: Key('rest-$d'),
+                  compact: true,
                   label: weekdays[d - 1],
                   selected: rest.contains(d),
                   onTap: () => _set(
@@ -492,8 +494,8 @@ class _SettingsViewState extends State<SettingsView> {
   static String _langLabel(LanguageChoice l) => switch (l) {
     LanguageChoice.device => '',
     LanguageChoice.en => 'EN',
-    LanguageChoice.ja => '日本語',
-    LanguageChoice.ko => '한국어',
+    LanguageChoice.ja => '日本',
+    LanguageChoice.ko => '한국',
     LanguageChoice.fr => 'FR',
     LanguageChoice.zhHans => '中文',
   };

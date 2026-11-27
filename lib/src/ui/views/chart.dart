@@ -392,31 +392,52 @@ class ChartHeader extends StatelessWidget {
                     ),
                   ),
               for (var i = 0; i < window.days; i++)
-                Positioned(
-                  left: i * dw,
-                  width: dw,
-                  top: 22,
-                  child: Text(
-                    '${window.dayAt(i).day}',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: i == t
-                          ? Theme.of(context).colorScheme.error
-                          : restWeekdays.contains(window.dayAt(i).weekday)
-                          ? c.faint
-                          : c.muted,
-                      fontWeight: i == t ? FontWeight.w700 : null,
+                if (_labelled(i, dw, t))
+                  Positioned(
+                    left: i * dw,
+                    width: dw >= 16 ? dw : 22,
+                    top: 22,
+                    child: Text(
+                      '${window.dayAt(i).day}',
+                      textAlign: dw >= 16 ? TextAlign.center : TextAlign.start,
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: i == t
+                            ? Theme.of(context).colorScheme.error
+                            : restWeekdays.contains(window.dayAt(i).weekday)
+                            ? c.faint
+                            : c.muted,
+                        fontWeight: i == t ? FontWeight.w700 : null,
+                      ),
                     ),
                   ),
-                ),
             ],
           );
         },
       ),
     );
+  }
+}
+
+extension on ChartHeader {
+  /// Narrow days keep a number only on Mondays (and today), so the
+  /// numbers never run together when zoomed out.
+  bool _labelled(int i, double dw, int today) {
+    if (dw >= 16) return true;
+    final d = window.dayAt(i);
+    if (i == today) return true;
+    if ((i - today).abs() < (dw >= 8 ? 2 : 4)) return false;
+    return d.weekday == DateTime.monday &&
+        (dw >= 8 ||
+            (DateTime.utc(
+                      d.year,
+                      d.month,
+                      d.day,
+                    ).difference(DateTime.utc(2024)).inDays ~/
+                    7)
+                .isEven);
   }
 }
 
