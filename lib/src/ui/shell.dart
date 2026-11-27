@@ -409,6 +409,11 @@ class _AppShellState extends State<AppShell> {
           constraints.maxHeight,
         );
         final narrow = layout.size == SizeClass.narrow;
+        final wide = layout.size == SizeClass.wide;
+        final selectionBar = SelectionBar(
+          selection: _selection,
+          onApply: widget.store == null ? null : _apply,
+        );
         final switcher = ViewSwitcher(
           key: Key(narrow ? 'view-switch-bottom' : 'view-switch-top'),
           current: _view,
@@ -436,15 +441,12 @@ class _AppShellState extends State<AppShell> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     spacing: 16,
-                    children: [
-                      SelectionBar(
-                        selection: _selection,
-                        onApply: widget.store == null ? null : _apply,
-                      ),
-                      if (!narrow) switcher,
-                    ],
+                    children: [if (wide) selectionBar, if (!narrow) switcher],
                   ),
                 ),
+                // Below wide screens the picked-task actions get a row of
+                // their own, always there, so nothing shifts or overlaps.
+                if (!wide) _SelectionRow(child: selectionBar),
                 Expanded(
                   child: IndexedStack(
                     index: _view.index,
@@ -461,6 +463,32 @@ class _AppShellState extends State<AppShell> {
           bottomNavigationBar: narrow ? _BottomBar(child: switcher) : null,
         );
       },
+    );
+  }
+}
+
+class _SelectionRow extends StatelessWidget {
+  const _SelectionRow({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      key: const Key('selection-row'),
+      decoration: BoxDecoration(
+        color: c.panel,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: SizedBox(
+        height: 46,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: child,
+        ),
+      ),
     );
   }
 }

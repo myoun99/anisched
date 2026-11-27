@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../instant.dart';
+
 import '../../core/size_class.dart';
 import '../../models/catalogue.dart';
 import '../../models/progress.dart';
@@ -243,6 +245,7 @@ class _SheetViewState extends State<SheetView> {
     return PopupMenuButton<int?>(
       key: const Key('work-menu'),
       tooltip: '',
+      popUpAnimationStyle: instant,
       onSelected: (w) => setState(() => _work = w),
       itemBuilder: (_) => [
         const PopupMenuItem(child: Text('모든 작품')),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'instant.dart';
+
 import '../models/catalogue.dart';
 import '../models/progress.dart';
 import 'widgets.dart';
@@ -147,6 +149,7 @@ class FilterButton extends StatelessWidget {
     return PopupMenuButton<_Choice>(
       key: const Key('filter-button'),
       tooltip: '',
+      popUpAnimationStyle: instant,
       onSelected: (c) => onChanged(switch (c) {
         _Range(:final range) => filter.copyWith(range: range),
         _Client(:final id) => filter.copyWith(clientId: () => id),
