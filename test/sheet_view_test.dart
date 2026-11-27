@@ -18,7 +18,7 @@ Future<void> pumpSheet(WidgetTester tester, Size size) async {
       scrollBehavior: const AlwaysScrollbarBehavior(),
       home: Scaffold(
         body: SheetView(
-          parts: sampleCatalogue(now).partGroups(),
+          parts: sampleCatalogue(now).partGroups(includeDone: true),
           now: now,
           layout: ScreenLayout.of(size.width, size.height),
         ),
@@ -77,7 +77,7 @@ void main() {
 
 /// The group key of 별빛 정류장's part [label] × [stage] in the sample.
 String partKey(String label, String stage) => sampleCatalogue(now)
-    .partGroups()
+    .partGroups(includeDone: true)
     .firstWhere(
       (g) =>
           g.workTitle == '별빛 정류장' &&
