@@ -6,6 +6,8 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
+import '../../services/document_session.dart';
+import '../../services/recovery_snapshots.dart';
 import '../format.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -22,7 +24,11 @@ class SettingsView extends StatefulWidget {
     this.paces = const {},
     this.refresh = 0,
     this.onChanged,
+    this.session,
   });
+
+  /// The document session, for its recovery snapshots; null hides them.
+  final DocumentSession? session;
 
   final DateTime now;
 
@@ -221,6 +227,33 @@ class _SettingsViewState extends State<SettingsView> {
                     ],
                   ),
               ]),
+              if (widget.session case final doc?)
+                _section('복구', [
+                  for (final snap in doc.snapshots.list().take(20))
+                    _Line(
+                      children: [
+                        Text(
+                          '${formatDate(snap.takenAt)} '
+                          '${snap.takenAt.toLocal().hour}:'
+                          '${snap.takenAt.toLocal().minute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          snap.reason == SnapshotReason.overwritten
+                              ? '덮어쓴 판'
+                              : '바꾸기 전',
+                          style: TextStyle(color: c.muted),
+                        ),
+                        const Spacer(),
+                        ToolbarButton(
+                          label: '되살리기',
+                          selected: false,
+                          onTap: () =>
+                              unawaited(doc.restoreSnapshot(snap.path)),
+                        ),
+                      ],
+                    ),
+                ]),
               _section('이번 달 완료', [
                 for (final e in _totals.entries)
                   _Line(

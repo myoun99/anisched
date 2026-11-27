@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/registration.dart';
@@ -10,7 +11,9 @@ import '../models/progress.dart';
 import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
+import '../services/document_session.dart';
 import '../services/work_timer.dart';
+import 'document_menu.dart';
 import 'filter.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
@@ -47,6 +50,9 @@ class AppShell extends StatefulWidget {
     this.store,
     this.timer,
     this.clock = systemClock,
+    this.session,
+    this.picker = const PathPromptPicker(),
+    this.remote,
   });
 
   final AppView initialView;
@@ -65,6 +71,14 @@ class AppShell extends StatefulWidget {
   /// Source of "now" for deadlines; injectable for tests.
   final Clock clock;
 
+  /// The document this app edits (autosave, open, save as); null hides
+  /// the file menu.
+  final DocumentSession? session;
+  final DocumentPicker picker;
+
+  /// The last resume check, for the save-state icon.
+  final ValueListenable<RemoteCheck?>? remote;
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -82,10 +96,23 @@ class _AppShellState extends State<AppShell> {
   final _selection = TaskSelection();
   int _refresh = 0;
 
+  StreamSubscription<DocumentChange>? _doc;
+
   @override
   void dispose() {
+    unawaited(_doc?.cancel());
     _selection.dispose();
     super.dispose();
+  }
+
+  void _onDocument(DocumentChange change) {
+    if (!mounted) return;
+    if (change == DocumentChange.content) {
+      setState(() => _refresh++);
+      unawaited(_loadGroups());
+    } else {
+      setState(() {});
+    }
   }
 
   /// Moves every picked task to [status], then reloads the views.
@@ -102,6 +129,7 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _timerTask = widget.timer?.running()?.taskId;
+    _doc = widget.session?.changes.listen(_onDocument);
     unawaited(_loadGroups());
   }
 
@@ -359,6 +387,7 @@ class _AppShellState extends State<AppShell> {
       ),
       AppView.settings => SettingsView(
         now: now,
+        session: widget.session,
         store: widget.store,
         reader: widget.reader,
         paces: _paces,
@@ -392,6 +421,18 @@ class _AppShellState extends State<AppShell> {
             child: Column(
               children: [
                 _TopBar(
+                  title: widget.session == null
+                      ? null
+                      : ValueListenableBuilder<RemoteCheck?>(
+                          valueListenable:
+                              widget.remote ??
+                              ValueNotifier<RemoteCheck?>(null),
+                          builder: (context, remote, _) => DocumentMenu(
+                            session: widget.session!,
+                            picker: widget.picker,
+                            remote: remote,
+                          ),
+                        ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     spacing: 16,
@@ -425,8 +466,10 @@ class _AppShellState extends State<AppShell> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({this.trailing});
+  const _TopBar({this.title, this.trailing});
 
+  /// The document's name and file menu, after the app name.
+  final Widget? title;
   final Widget? trailing;
 
   @override
@@ -447,7 +490,9 @@ class _TopBar extends StatelessWidget {
                 'Anisched',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
+              ?title,
+              const SizedBox(width: 12),
               if (trailing != null)
                 Expanded(
                   child: Align(
