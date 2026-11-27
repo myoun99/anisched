@@ -17,7 +17,7 @@ class Migration {
 /// per-stage deadlines, settings, and timer intervals linked to tasks.
 /// v4: editable stage presets that new works copy. v5: a work's own
 /// seconds rounding. v6: the user's own plan (start/end) beside the
-/// production deadline, and a work's default rate unit.
+/// production deadline, and a work's default rate unit. v7: days off.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -36,6 +36,7 @@ CREATE TABLE work_intervals (
   const Migration(4, _v4StagePresets),
   const Migration(5, _v5WorkRounding),
   const Migration(6, _v6PlansAndDefaultUnit),
+  const Migration(7, _v7DaysOff),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -329,4 +330,19 @@ CREATE TABLE part_stage_plans (
   ]) {
     db.execute(sql);
   }
+}
+
+void _v7DaysOff(Database db) {
+  // Calendar days the user does not work (a trip, a holiday), as local
+  // ISO dates — whole days, not instants, so they never shift with the
+  // time zone. A single day has start = end.
+  db.execute('''
+CREATE TABLE days_off (
+  id INTEGER PRIMARY KEY,
+  start_date TEXT NOT NULL CHECK (start_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  end_date TEXT NOT NULL CHECK (end_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  note TEXT,
+  CHECK (end_date >= start_date)
+);''');
+  db.execute('CREATE INDEX days_off_end ON days_off(end_date);');
 }

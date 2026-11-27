@@ -32,11 +32,16 @@ class SettingsStore {
   }
 
   /// Weekdays not worked (1 = Monday … 7 = Sunday), skipped when
-  /// counting days left. Default: none.
-  Set<int> get restWeekdays => {
-    for (final p in (_get(_restWeekdays) ?? '').split(','))
-      if (int.tryParse(p) case final d? when d >= 1 && d <= 7) d,
-  };
+  /// counting days left. Default: Saturday and Sunday. An empty set is
+  /// stored as such and means "every day is a working day".
+  Set<int> get restWeekdays {
+    final v = _get(_restWeekdays);
+    if (v == null) return {DateTime.saturday, DateTime.sunday};
+    return {
+      for (final p in v.split(','))
+        if (int.tryParse(p) case final d? when d >= 1 && d <= 7) d,
+    };
+  }
 
   set restWeekdays(Set<int> days) {
     for (final d in days) {

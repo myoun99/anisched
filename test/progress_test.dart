@@ -321,7 +321,111 @@ void main() {
     });
 
     group('pace', () {
-      // now = Fri 2026-11-27 14:00.
+      // now = Fri 2026-11-27 14:00. These cases count every day unless
+      // they say otherwise; the default weekend is tested on its own.
+      setUp(() => store.settings.restWeekdays = {});
+
+      test('the default rest days are Saturday and Sunday', () {
+        expect(
+          CatalogueStore(db).settings.restWeekdays,
+          isEmpty, // set in setUp
+        );
+        db.execute("DELETE FROM settings WHERE key = 'rest_weekdays'");
+        expect(store.settings.restWeekdays, {6, 7});
+        final part = partWithCuts('B', ['C1', 'C2', 'C3'], lo, 4); // Tue
+        final p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 3); // Fri, Mon, Tue
+        expect(p.perDay, 1);
+        expect(part, isPositive);
+      });
+
+      test('a trip removes its days; a single day off works too', () {
+        partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 9); // Sun 12/6
+        store.addDaysOff(DateTime(2026, 11, 30), end: DateTime(2026, 12, 2));
+        store.addDaysOff(DateTime(2026, 12, 4), note: '병원');
+        final p = store.paceOf(store.partGroups().single)!;
+        // 11/27..12/6 is 10 days; minus 11/30, 12/1, 12/2 and 12/4.
+        expect(p.workDays, 6);
+        expect(store.daysOff().map((d) => d.note), [null, '병원']);
+      });
+
+      test(
+        'today off asks nothing today; the rest spreads over the others',
+        () {
+          partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 3); // Mon 11/30
+          store.addDaysOff(DateTime(2026, 11, 27));
+          final t = store.today();
+          expect(t.entries.single.pace!.workDays, 3); // Sat, Sun, Mon
+          expect(t.entries.single.pace!.today, 0);
+          expect(t.cutsToday, 0);
+        },
+      );
+
+      test('a planned start on a day off begins on the next working day', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 20);
+        store
+          ..setPartPlan(
+            part,
+            lo,
+            start: DateTime(2026, 12, 5), // Saturday
+            end: DateTime(2026, 12, 8), // Tuesday
+          )
+          ..settings.restWeekdays = {6, 7};
+        final p = store.paceOf(store.partGroups().single)!;
+        expect(p.startsLater, isTrue);
+        expect(p.workDays, 2); // Mon, Tue
+        expect(p.perDay, 1);
+        expect(p.today, 0);
+      });
+
+      test('an end that falls on a day off counts only working days', () {
+        partWithCuts('B', ['C1', 'C2'], lo, 1); // Sat 11/28
+        store.settings.restWeekdays = {6, 7};
+        final p = store.paceOf(store.partGroups().single)!;
+        expect(p.workDays, 1); // today only
+        expect(p.today, 2);
+      });
+
+      test(
+        'only days off left before the end: behind, nothing asked today',
+        () {
+          final part = partWithCuts('B', ['C1'], lo, 20);
+          store
+            ..setPartPlan(
+              part,
+              lo,
+              start: DateTime(2026, 12, 12),
+              end: DateTime(2026, 12, 13),
+            )
+            ..settings.restWeekdays = {6, 7};
+          final p = store.paceOf(store.partGroups().single)!;
+          expect(p.workDays, 0);
+          expect(p.behind, isTrue);
+          expect(p.today, 0); // the plan has not started
+        },
+      );
+
+      test('days off must not end before they start', () {
+        expect(
+          () =>
+              store.addDaysOff(DateTime(2026, 12, 3), end: DateTime(2026, 12)),
+          throwsArgumentError,
+        );
+        final id = store.addDaysOff(DateTime(2026, 12, 24));
+        store.removeDaysOff(id);
+        expect(store.daysOff(), isEmpty);
+      });
+
+      test('past days off are skipped when listing from a date', () {
+        store
+          ..addDaysOff(DateTime(2026, 11, 1), end: DateTime(2026, 11, 3))
+          ..addDaysOff(DateTime(2026, 11, 26), end: DateTime(2026, 11, 28))
+          ..addDaysOff(DateTime(2026, 12, 25));
+        expect(store.daysOff(from: now).map((d) => d.range.start.day), [
+          26,
+          25,
+        ]);
+      });
       test('open cuts over working days, today and the end day included', () {
         final part = partWithCuts(
           'B',
