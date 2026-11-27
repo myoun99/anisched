@@ -2,7 +2,10 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/cut_numbers.dart';
+import '../models/lanes.dart';
 import '../models/progress.dart';
+import '../models/work_interval.dart';
 import 'settings_store.dart';
 
 /// Writes to the work catalogue that carry a rule beyond a plain INSERT:
@@ -100,6 +103,818 @@ class CatalogueStore {
     return db.lastInsertRowId;
   }
 
+  /// Adds many cuts to an episode in one transaction — for example the
+  /// numbers from [parseCutNumbers]. Numbers already live in the episode
+  /// are skipped and reported, not duplicated.
+  ({List<int> added, List<String> skipped}) addCuts(
+    int episodeId,
+    Iterable<String> numbers, {
+    int? partId,
+    int? lengthMs,
+  }) => _transaction(() {
+    final existing = {
+      for (final r in db.select(
+        'SELECT number FROM cuts WHERE episode_id = ? AND archived_at IS NULL;',
+        [episodeId],
+      ))
+        r['number'] as String,
+    };
+    final added = <int>[];
+    final skipped = <String>[];
+    final insert = db.prepare(
+      'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
+      'VALUES (?, ?, ?, ?, ?);',
+    );
+    try {
+      for (final n in numbers) {
+        if (!existing.add(n)) {
+          skipped.add(n);
+          continue;
+        }
+        insert.execute([episodeId, n, naturalSortKey(n), lengthMs, partId]);
+        added.add(db.lastInsertRowId);
+      }
+    } finally {
+      insert.close();
+    }
+    return (added: added, skipped: skipped);
+  });
+
+  /// Adds an episode and its cuts from what the user typed (see
+  /// [parseCutNumbers]), optionally in a new part, in one transaction.
+  /// Unreadable input changes nothing and throws [CutNumbersException].
+  ({int episodeId, int? partId, List<int> cutIds}) addEpisodeWithCuts(
+    int workId,
+    String episodeNumber,
+    String cuts, {
+    String? partLabel,
+    int? lengthMs,
+  }) {
+    final parsed = parseCutNumbers(cuts);
+    if (!parsed.ok) throw CutNumbersException(parsed.errors);
+    return _transaction(() {
+      final ep = addEpisode(workId, episodeNumber);
+      final part = partLabel == null
+          ? null
+          : addPart(ep, partLabel, plannedCutCount: parsed.numbers.length);
+      final added = addCuts(
+        ep,
+        parsed.numbers,
+        partId: part,
+        lengthMs: lengthMs,
+      ).added;
+      return (episodeId: ep, partId: part, cutIds: added);
+    });
+  }
+
+  /// A work, its first episode and its cuts in one go — see [createWork]
+  /// and [addEpisodeWithCuts].
+  ({int workId, int episodeId, int? partId, List<int> cutIds})
+  createWorkWithCuts(
+    String title,
+    String episodeNumber,
+    String cuts, {
+    String currency = 'JPY',
+    int? clientId,
+    int? presetId,
+    String? partLabel,
+  }) {
+    final parsed = parseCutNumbers(cuts);
+    if (!parsed.ok) throw CutNumbersException(parsed.errors);
+    return _transaction(() {
+      final w = createWork(
+        title,
+        currency: currency,
+        clientId: clientId,
+        presetId: presetId,
+      );
+      final r = addEpisodeWithCuts(
+        w,
+        episodeNumber,
+        cuts,
+        partLabel: partLabel,
+      );
+      return (
+        workId: w,
+        episodeId: r.episodeId,
+        partId: r.partId,
+        cutIds: r.cutIds,
+      );
+    });
+  }
+
+  /// Archives the given cuts (missing numbers picked on the grid); they
+  /// can be restored.
+  void removeCutIds(Iterable<int> cutIds) => _transaction(() {
+    for (final id in cutIds) {
+      archive(ArchiveKind.cut, id);
+    }
+  });
+
+  /// Role presets in order, each with the stage names it takes on.
+  List<({int id, String name, List<String> stages})> roles() {
+    final stages = <int, List<String>>{};
+    for (final r in db.select(
+      'SELECT role_id, stage_name FROM role_stages ORDER BY role_id, position;',
+    )) {
+      (stages[r['role_id'] as int] ??= []).add(r['stage_name'] as String);
+    }
+    return [
+      for (final r in db.select(
+        'SELECT id, name FROM roles ORDER BY position, id;',
+      ))
+        (
+          id: r['id'] as int,
+          name: r['name'] as String,
+          stages: stages[r['id'] as int] ?? const [],
+        ),
+    ];
+  }
+
+  /// Adds a role at the end and returns its id.
+  int createRole(String name, List<String> stageNames) => _transaction(() {
+    db.execute(
+      'INSERT INTO roles (name, position) '
+      'VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM roles));',
+      [name],
+    );
+    final id = db.lastInsertRowId;
+    setRoleStages(id, stageNames);
+    return id;
+  });
+
+  void renameRole(int roleId, String name) =>
+      db.execute('UPDATE roles SET name = ? WHERE id = ?;', [name, roleId]);
+
+  /// Replaces a role's stage names, in order.
+  void setRoleStages(int roleId, List<String> stageNames) => _transaction(() {
+    db.execute('DELETE FROM role_stages WHERE role_id = ?;', [roleId]);
+    final names = stageNames.toSet().toList();
+    for (var i = 0; i < names.length; i++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [roleId, names[i], i],
+      );
+    }
+  });
+
+  void deleteRole(int roleId) => _transaction(() {
+    db
+      ..execute('DELETE FROM role_stages WHERE role_id = ?;', [roleId])
+      ..execute('DELETE FROM roles WHERE id = ?;', [roleId]);
+  });
+
+  /// Registers work by stage — the checkboxes on the registration
+  /// screen: each of [stageIds] gets a task on every cut of [partId], or
+  /// on each of [cutIds] for cuts outside a part. Cut × stage pairs that
+  /// already have a task are skipped. Returns the new task ids.
+  List<int> addTasksForStages(
+    List<int> stageIds, {
+    int? partId,
+    List<int> cutIds = const [],
+  }) => _transaction(() {
+    final created = <int>[];
+    for (final stage in stageIds) {
+      if (partId != null) created.addAll(addTasksForPart(partId, stage));
+      for (final cut in cutIds) {
+        final has = db.select(
+          'SELECT 1 FROM tasks WHERE cut_id = ? AND stage_id = ? '
+          'AND archived_at IS NULL;',
+          [cut, stage],
+        );
+        if (has.isEmpty) created.add(addTask(stage, cutId: cut));
+      }
+    }
+    return created;
+  });
+
+  /// The work's stage ids for a role — the shortcut that ticks the
+  /// role's checkboxes. A stage name the work lacks is added at the end
+  /// of its list.
+  List<int> roleStageIds(int roleId, int workId) => _transaction(() {
+    final names = [
+      for (final r in db.select(
+        'SELECT stage_name FROM role_stages WHERE role_id = ? ORDER BY position;',
+        [roleId],
+      ))
+        r['stage_name'] as String,
+    ];
+    return [
+      for (final name in names)
+        stages(workId).where((s) => s.name == name).firstOrNull?.id ??
+            addStage(workId, name),
+    ];
+  });
+
+  /// Registers work by role: [roleStageIds] then [addTasksForStages].
+  List<int> applyRole(
+    int roleId, {
+    required int workId,
+    int? partId,
+    List<int> cutIds = const [],
+  }) => _transaction(
+    () => addTasksForStages(
+      roleStageIds(roleId, workId),
+      partId: partId,
+      cutIds: cutIds,
+    ),
+  );
+
+  /// How the work writes cut numbers (default `C` and 3 digits).
+  ({String prefix, int digits}) workCutFormat(int workId) {
+    final r = db.select(
+      'SELECT cut_prefix, cut_digits FROM works WHERE id = ?;',
+      [workId],
+    ).first;
+    return (prefix: r['cut_prefix'] as String, digits: r['cut_digits'] as int);
+  }
+
+  void setWorkCutFormat(
+    int workId, {
+    required String prefix,
+    required int digits,
+  }) {
+    RangeError.checkValueInInterval(digits, 1, 8, 'digits');
+    db.execute(
+      'UPDATE works SET cut_prefix = ?, cut_digits = ? WHERE id = ?;',
+      [prefix, digits, workId],
+    );
+  }
+
+  /// The number the user typed, in the work's format: 1 → `C001`.
+  String cutNumberFor(int workId, int number) {
+    final f = workCutFormat(workId);
+    return cutNumberRun(
+      start: number,
+      count: 1,
+      prefix: f.prefix,
+      width: f.digits,
+    ).single;
+  }
+
+  /// Adds [count] cuts from [start] up to an episode in its work's
+  /// format (see [addCuts]).
+  ({List<int> added, List<String> skipped}) addCutRun(
+    int episodeId, {
+    required int start,
+    required int count,
+    int? partId,
+    int? lengthMs,
+  }) {
+    final workId =
+        db.select('SELECT work_id FROM episodes WHERE id = ?;', [
+              episodeId,
+            ]).first['work_id']
+            as int;
+    final f = workCutFormat(workId);
+    return addCuts(
+      episodeId,
+      cutNumberRun(
+        start: start,
+        count: count,
+        prefix: f.prefix,
+        width: f.digits,
+      ),
+      partId: partId,
+      lengthMs: lengthMs,
+    );
+  }
+
+  /// Takes missing numbers out of an episode (archives those cuts, so
+  /// they can be restored). Returns the numbers that were not there.
+  List<String> removeCuts(int episodeId, Iterable<String> numbers) =>
+      _transaction(() {
+        final missing = <String>[];
+        for (final n in numbers) {
+          db.execute(
+            'UPDATE cuts SET archived_at = ? WHERE episode_id = ? '
+            'AND number = ? AND archived_at IS NULL;',
+            [_now(), episodeId, n],
+          );
+          if (db.updatedRows == 0) missing.add(n);
+        }
+        return missing;
+      });
+
+  /// Splits a cut into lettered cuts: `C012` with `['A', 'B', 'C']`
+  /// becomes `C012A` (the same cut, keeping its tasks) plus new `C012B`
+  /// and `C012C` in the same part with the same length and a task for
+  /// each stage the original has. Returns every resulting cut id.
+  List<int> splitCut(int cutId, List<String> suffixes) => _transaction(() {
+    if (suffixes.isEmpty) throw ArgumentError('No suffixes to split into.');
+    final c = db.select(
+      'SELECT episode_id, number, length_ms, part_id FROM cuts WHERE id = ?;',
+      [cutId],
+    ).first;
+    final number = c['number'] as String;
+    final episode = c['episode_id'] as int;
+    _rename(cutId, '$number${suffixes.first}');
+    final added = addCuts(
+      episode,
+      [for (final s in suffixes.skip(1)) '$number$s'],
+      partId: c['part_id'] as int?,
+      lengthMs: c['length_ms'] as int?,
+    );
+    if (added.skipped.isNotEmpty) {
+      throw StateError('Cut numbers already in use: ${added.skipped}.');
+    }
+    final stages = [
+      for (final r in db.select(
+        'SELECT stage_id FROM tasks WHERE cut_id = ? AND archived_at IS NULL;',
+        [cutId],
+      ))
+        r['stage_id'] as int,
+    ];
+    for (final id in added.added) {
+      for (final s in stages) {
+        addTask(s, cutId: id);
+      }
+    }
+    return [cutId, ...added.added];
+  });
+
+  /// Marks cuts of one episode as one shared cut (겸용). Every cut keeps
+  /// its own row, length (per-second pay counts each) and tasks; the views
+  /// label them together as `C012-014`. A cut already in another shared
+  /// group leaves it. Returns the group's first cut (by number).
+  int linkSharedCuts(List<int> cutIds) => _transaction(() {
+    final ids = cutIds.toSet().toList();
+    if (ids.length < 2) throw ArgumentError('A shared cut needs two cuts.');
+    final rows = db.select(
+      'SELECT id, episode_id FROM cuts WHERE id IN '
+      '(${List.filled(ids.length, '?').join(', ')}) '
+      'AND archived_at IS NULL ORDER BY sort_key, id;',
+      ids,
+    );
+    if (rows.length != ids.length ||
+        rows.map((r) => r['episode_id']).toSet().length != 1) {
+      throw ArgumentError('Link live cuts of one episode only.');
+    }
+    for (final id in ids) {
+      _leaveSharedGroup(id);
+    }
+    final head = rows.first['id'] as int;
+    for (final r in rows.skip(1)) {
+      db.execute('UPDATE cuts SET shared_with = ? WHERE id = ?;', [
+        head,
+        r['id'],
+      ]);
+    }
+    return head;
+  });
+
+  /// Each live shared group's label (`C012-014`), by its first cut.
+  Map<int, String> _sharedLabels() {
+    final byGroup = <int, List<String>>{};
+    for (final r in db.select('''
+SELECT number, COALESCE(shared_with, id) AS g FROM cuts
+WHERE archived_at IS NULL AND (shared_with IS NOT NULL
+  OR id IN (SELECT shared_with FROM cuts WHERE shared_with IS NOT NULL))
+ORDER BY sort_key, id;''')) {
+      (byGroup[r['g'] as int] ??= []).add(r['number'] as String);
+    }
+    return {
+      for (final e in byGroup.entries)
+        if (e.value.length > 1)
+          e.key: sharedCutNumber(e.value.first, e.value.last),
+    };
+  }
+
+  /// Takes a cut out of its shared group; a group left with one cut
+  /// dissolves.
+  void unlinkSharedCut(int cutId) =>
+      _transaction(() => _leaveSharedGroup(cutId));
+
+  void _leaveSharedGroup(int cutId) {
+    final head =
+        db.select(
+              'SELECT COALESCE(shared_with, id) AS h FROM cuts WHERE id = ?;',
+              [cutId],
+            ).first['h']
+            as int;
+    if (head == cutId) {
+      // The first cut leaves: the next one leads the rest.
+      final rest = [
+        for (final r in db.select(
+          'SELECT id FROM cuts WHERE shared_with = ? ORDER BY sort_key, id;',
+          [cutId],
+        ))
+          r['id'] as int,
+      ];
+      if (rest.isEmpty) return;
+      db
+        ..execute('UPDATE cuts SET shared_with = NULL WHERE id = ?;', [
+          rest.first,
+        ])
+        ..execute('UPDATE cuts SET shared_with = ? WHERE shared_with = ?;', [
+          rest.first,
+          cutId,
+        ]);
+    } else {
+      db.execute('UPDATE cuts SET shared_with = NULL WHERE id = ?;', [cutId]);
+    }
+  }
+
+  /// Renames cuts in one go — swaps included (`C1`↔`C2`). Fails, changing
+  /// nothing, if a new number is already used by another live cut.
+  void renumberCuts(Map<int, String> newNumbers) => _transaction(() {
+    for (final id in newNumbers.keys) {
+      db.execute('UPDATE cuts SET number = ? WHERE id = ?;', [
+        '\$renumber\$$id',
+        id,
+      ]);
+    }
+    try {
+      newNumbers.forEach(_rename);
+    } on SqliteException {
+      throw StateError('A new cut number is already in use.');
+    }
+  });
+
+  void _rename(int cutId, String number) => db.execute(
+    'UPDATE cuts SET number = ?, sort_key = ? WHERE id = ?;',
+    [number, naturalSortKey(number), cutId],
+  );
+
+  void renameClient(int clientId, String name) =>
+      db.execute('UPDATE clients SET name = ? WHERE id = ?;', [name, clientId]);
+
+  /// Sets a client's closing day; null closes at month end.
+  void setClientClosingDay(int clientId, int? day) => db.execute(
+    'UPDATE clients SET closing_day = ? WHERE id = ?;',
+    [day, clientId],
+  );
+
+  void renameWork(int workId, String title) =>
+      db.execute('UPDATE works SET title = ? WHERE id = ?;', [title, workId]);
+
+  void setWorkClient(int workId, int? clientId) => db.execute(
+    'UPDATE works SET client_id = ? WHERE id = ?;',
+    [clientId, workId],
+  );
+
+  void setWorkCurrency(int workId, String currency) => db.execute(
+    'UPDATE works SET currency = ? WHERE id = ?;',
+    [currency, workId],
+  );
+
+  /// Renames an episode (its number keeps sorting naturally) and sets or
+  /// clears its title.
+  void renameEpisode(int episodeId, String number, {String? title}) =>
+      db.execute(
+        'UPDATE episodes SET number = ?, sort_key = ?, title = ? WHERE id = ?;',
+        [number, naturalSortKey(number), title, episodeId],
+      );
+
+  /// Puts cuts in a part (or takes them out with null). The part must be
+  /// in the cuts' episode.
+  void setCutsPart(Iterable<int> cutIds, int? partId) => _transaction(() {
+    for (final id in cutIds) {
+      db.execute(
+        'UPDATE cuts SET part_id = ?1 WHERE id = ?2 AND (?1 IS NULL OR '
+        'episode_id = (SELECT episode_id FROM parts WHERE id = ?1));',
+        [partId, id],
+      );
+      if (db.updatedRows != 1) {
+        throw ArgumentError('Cut $id is not in the part\'s episode.');
+      }
+    }
+  });
+
+  /// Sets or clears a cut's length (for per-second rates).
+  void setCutLength(int cutId, int? lengthMs) => db.execute(
+    'UPDATE cuts SET length_ms = ? WHERE id = ?;',
+    [lengthMs, cutId],
+  );
+
+  void renamePart(int partId, String label) => db.execute(
+    'UPDATE parts SET label = ?, sort_key = ? WHERE id = ?;',
+    [label, naturalSortKey(label), partId],
+  );
+
+  /// Sets or clears how many cuts the part is expected to have.
+  void setPlannedCutCount(int partId, int? count) => db.execute(
+    'UPDATE parts SET planned_cut_count = ? WHERE id = ?;',
+    [count, partId],
+  );
+
+  /// Removes the part's deadline for a stage; its cuts keep their own.
+  void clearPartDue(int partId, int stageId) => db.execute(
+    'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
+    [partId, stageId],
+  );
+
+  /// Adds a client; [closingDay] null closes at month end.
+  int addClient(String name, {int? closingDay}) {
+    db.execute('INSERT INTO clients (name, closing_day) VALUES (?, ?);', [
+      name,
+      closingDay,
+    ]);
+    return db.lastInsertRowId;
+  }
+
+  List<({int id, String name, int? closingDay})> clients() => [
+    for (final r in db.select(
+      'SELECT id, name, closing_day FROM clients WHERE archived_at IS NULL '
+      'ORDER BY name, id;',
+    ))
+      (
+        id: r['id'] as int,
+        name: r['name'] as String,
+        closingDay: r['closing_day'] as int?,
+      ),
+  ];
+
+  /// Live works, newest first.
+  List<({int id, String title, String currency, int? clientId})> works() => [
+    for (final r in db.select(
+      'SELECT id, title, currency, client_id FROM works '
+      'WHERE archived_at IS NULL ORDER BY created_at DESC, id DESC;',
+    ))
+      (
+        id: r['id'] as int,
+        title: r['title'] as String,
+        currency: r['currency'] as String,
+        clientId: r['client_id'] as int?,
+      ),
+  ];
+
+  /// A work's live episodes in number order.
+  List<({int id, String number, String? title})> episodes(int workId) => [
+    for (final r in db.select(
+      'SELECT id, number, title FROM episodes '
+      'WHERE work_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
+      [workId],
+    ))
+      (
+        id: r['id'] as int,
+        number: r['number'] as String,
+        title: r['title'] as String?,
+      ),
+  ];
+
+  /// An episode's live parts in label order, with their live cut counts.
+  List<({int id, String label, int? plannedCutCount, int cutCount})> parts(
+    int episodeId,
+  ) => [
+    for (final r in db.select(
+      'SELECT p.id, p.label, p.planned_cut_count, '
+      '(SELECT COUNT(*) FROM cuts c WHERE c.part_id = p.id '
+      'AND c.archived_at IS NULL) AS cut_count '
+      'FROM parts p WHERE p.episode_id = ? AND p.archived_at IS NULL '
+      'ORDER BY p.sort_key, p.id;',
+      [episodeId],
+    ))
+      (
+        id: r['id'] as int,
+        label: r['label'] as String,
+        plannedCutCount: r['planned_cut_count'] as int?,
+        cutCount: r['cut_count'] as int,
+      ),
+  ];
+
+  /// An episode's live cuts in number order.
+  List<({int id, String number, int? lengthMs, int? partId})> cuts(
+    int episodeId,
+  ) => [
+    for (final r in db.select(
+      'SELECT c.id, c.number, c.length_ms, c.part_id FROM cuts c '
+      'LEFT JOIN parts p ON p.id = c.part_id '
+      'WHERE c.episode_id = ? AND c.archived_at IS NULL '
+      'AND (p.id IS NULL OR p.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
+      [episodeId],
+    ))
+      (
+        id: r['id'] as int,
+        number: r['number'] as String,
+        lengthMs: r['length_ms'] as int?,
+        partId: r['part_id'] as int?,
+      ),
+  ];
+
+  /// Timer time per working day for the week holding [weekOf] (today when
+  /// null), starting on the week-start setting, days cut at the day-start
+  /// setting. A running timer counts up to now.
+  List<({DateTime day, Duration worked})> weekHours({DateTime? weekOf}) {
+    final now = clock();
+    final dayStart = settings.dayStartMinutes;
+    final anchor = dayRange(weekOf ?? now, dayStart).start;
+    final back = (anchor.weekday - settings.weekStart) % 7;
+    final first = DateTime(anchor.year, anchor.month, anchor.day - back);
+    final days = [
+      for (var i = 0; i < 7; i++)
+        DateTime(first.year, first.month, first.day + i),
+    ];
+    DateTime startOf(DateTime d) => d.add(Duration(minutes: dayStart));
+    final from = startOf(days.first);
+    final to = startOf(
+      DateTime(days.last.year, days.last.month, days.last.day + 1),
+    );
+    final spans = _intervals(from, to);
+    return [
+      for (final d in days)
+        (
+          day: d,
+          worked: totalElapsed(
+            spans,
+            now.toUtc(),
+            from: startOf(d).toUtc(),
+            to: startOf(DateTime(d.year, d.month, d.day + 1)).toUtc(),
+          ),
+        ),
+    ];
+  }
+
+  /// The timer stretches of the working day holding [day] (today when
+  /// null), clipped to it, oldest first, with the work they were on.
+  List<({DateTime start, DateTime end, bool running, int? workId, int? taskId})>
+  dayIntervals({DateTime? day}) {
+    final now = clock().toUtc();
+    final range = dayRange(day ?? clock(), settings.dayStartMinutes);
+    final from = range.start.toUtc();
+    final to = range.end.toUtc();
+    final rows = db.select(
+      '''
+SELECT i.started_at, i.stopped_at, i.task_id, s.work_id
+FROM work_intervals i
+LEFT JOIN tasks t ON t.id = i.task_id
+LEFT JOIN work_stages s ON s.id = t.stage_id
+WHERE i.started_at < ? AND (i.stopped_at IS NULL OR i.stopped_at > ?)
+ORDER BY i.started_at;''',
+      [_ms(to), _ms(from)],
+    );
+    DateTime utc(int ms) =>
+        DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+    return [
+      for (final r in rows)
+        if (_clip(
+              utc(r['started_at'] as int),
+              r['stopped_at'] == null ? now : utc(r['stopped_at'] as int),
+              from,
+              to,
+            )
+            case (final s, final e))
+          (
+            start: s,
+            end: e,
+            running: r['stopped_at'] == null,
+            workId: r['work_id'] as int?,
+            taskId: r['task_id'] as int?,
+          ),
+    ];
+  }
+
+  static (DateTime, DateTime)? _clip(
+    DateTime s,
+    DateTime e,
+    DateTime from,
+    DateTime to,
+  ) {
+    final a = s.isAfter(from) ? s : from;
+    final b = e.isBefore(to) ? e : to;
+    return b.isAfter(a) ? (a, b) : null;
+  }
+
+  List<WorkInterval> _intervals(DateTime from, DateTime to) => [
+    for (final r in db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE started_at < ? AND (stopped_at IS NULL OR stopped_at > ?);',
+      [_ms(to), _ms(from)],
+    ))
+      WorkInterval(
+        id: r['id'] as int,
+        start: DateTime.fromMillisecondsSinceEpoch(
+          r['started_at'] as int,
+          isUtc: true,
+        ),
+        stop: r['stopped_at'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                r['stopped_at'] as int,
+                isUtc: true,
+              ),
+        taskId: r['task_id'] as int?,
+      ),
+  ];
+
+  /// Hides [id] of [kind] and everything beneath it from the views. The
+  /// rows stay; [restore] brings them back.
+  void archive(ArchiveKind kind, int id) {
+    db.execute(
+      'UPDATE ${kind.table} SET archived_at = ? '
+      'WHERE id = ? AND archived_at IS NULL;',
+      [_now(), id],
+    );
+  }
+
+  /// Brings back an archived item. Throws [StateError] when a live item
+  /// now takes its place (a cut number or a cut × stage reused since).
+  void restore(ArchiveKind kind, int id) {
+    try {
+      db.execute('UPDATE ${kind.table} SET archived_at = NULL WHERE id = ?;', [
+        id,
+      ]);
+    } on SqliteException catch (e) {
+      if (e.extendedResultCode == 2067 || e.resultCode == 19) {
+        throw StateError(
+          'Cannot restore ${kind.name} $id: a live one now uses its place.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Archived items, newest first, with a label to show: works by title,
+  /// episodes by number, parts by label, cuts by number, storyboards by
+  /// label, tasks by "cut or storyboard · stage", stages by name.
+  List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>
+  archived() {
+    final rows = db.select('''
+SELECT 'work' AS kind, id, title AS label, archived_at FROM works
+  WHERE archived_at IS NOT NULL
+UNION ALL SELECT 'episode', e.id, w.title || ' ' || e.number, e.archived_at
+  FROM episodes e JOIN works w ON w.id = e.work_id
+  WHERE e.archived_at IS NOT NULL
+UNION ALL SELECT 'part', p.id, e.number || ' ' || p.label, p.archived_at
+  FROM parts p JOIN episodes e ON e.id = p.episode_id
+  WHERE p.archived_at IS NOT NULL
+UNION ALL SELECT 'cut', c.id, e.number || ' ' || c.number, c.archived_at
+  FROM cuts c JOIN episodes e ON e.id = c.episode_id
+  WHERE c.archived_at IS NOT NULL
+UNION ALL SELECT 'storyboard', sb.id, e.number || ' ' || sb.label,
+    sb.archived_at
+  FROM storyboards sb JOIN episodes e ON e.id = sb.episode_id
+  WHERE sb.archived_at IS NOT NULL
+UNION ALL SELECT 'task', t.id,
+    COALESCE(c.number, sb.label) || ' · ' || s.name, t.archived_at
+  FROM tasks t JOIN work_stages s ON s.id = t.stage_id
+  LEFT JOIN cuts c ON c.id = t.cut_id
+  LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
+  WHERE t.archived_at IS NOT NULL
+UNION ALL SELECT 'stage', s.id, w.title || ' · ' || s.name, s.archived_at
+  FROM work_stages s JOIN works w ON w.id = s.work_id
+  WHERE s.archived_at IS NOT NULL
+ORDER BY 4 DESC, 1, 2;''');
+    return [
+      for (final r in rows)
+        (
+          kind: ArchiveKind.values.byName(r['kind'] as String),
+          id: r['id'] as int,
+          label: r['label'] as String,
+          archivedAt: DateTime.fromMillisecondsSinceEpoch(
+            r['archived_at'] as int,
+            isUtc: true,
+          ),
+        ),
+    ];
+  }
+
+  /// Adds a stage to a work's own list, at the end or before
+  /// [beforeStageId], and returns its id. Presets are not touched.
+  int addStage(int workId, String name, {int? beforeStageId}) =>
+      _transaction(() {
+        final ids = [for (final s in stages(workId)) s.id];
+        var at = ids.length;
+        if (beforeStageId != null) {
+          at = ids.indexOf(beforeStageId);
+          if (at < 0) {
+            throw ArgumentError.value(beforeStageId, 'beforeStageId');
+          }
+        }
+        db.execute(
+          'INSERT INTO work_stages (work_id, name, position) VALUES (?, ?, 0);',
+          [workId, name],
+        );
+        final id = db.lastInsertRowId;
+        _setOrder([...ids.take(at), id, ...ids.skip(at)]);
+        return id;
+      });
+
+  void renameStage(int stageId, String name) => db.execute(
+    'UPDATE work_stages SET name = ? WHERE id = ?;',
+    [name, stageId],
+  );
+
+  /// Puts a work's live stages in the order of [stageIds], which must be
+  /// exactly those stages.
+  void reorderStages(int workId, List<int> stageIds) => _transaction(() {
+    final live = {for (final s in stages(workId)) s.id};
+    if (stageIds.length != live.length || !live.containsAll(stageIds)) {
+      throw ArgumentError('Give every live stage of the work exactly once.');
+    }
+    _setOrder(stageIds);
+  });
+
+  void _setOrder(List<int> stageIds) {
+    for (var i = 0; i < stageIds.length; i++) {
+      db.execute('UPDATE work_stages SET position = ? WHERE id = ?;', [
+        i,
+        stageIds[i],
+      ]);
+    }
+  }
+
   /// Adds a part (a bundle of the user's cuts) to an episode. The cut
   /// count may be known before the cuts themselves.
   int addPart(int episodeId, String label, {int? plannedCutCount}) {
@@ -128,7 +943,23 @@ class CatalogueStore {
       'AND t.stage_id = ? AND t.archived_at IS NULL) ORDER BY c.sort_key;',
       [partId, stageId],
     );
-    return [for (final c in cuts) addTask(stageId, cutId: c['id'] as int)];
+    if (cuts.isEmpty) return const <int>[];
+    // One statement for all cuts; then the part's default kickoff once.
+    final now = _now();
+    final insert = db.prepare(
+      'INSERT INTO tasks (stage_id, cut_id, received_at) VALUES (?, ?, ?);',
+    );
+    final ids = <int>[];
+    try {
+      for (final c in cuts) {
+        insert.execute([stageId, c['id'], now]);
+        ids.add(db.lastInsertRowId);
+      }
+    } finally {
+      insert.close();
+    }
+    _defaultKickoff(ids.first);
+    return ids;
   });
 
   /// The task's deadline: its own, else its part's for the stage.
@@ -182,7 +1013,32 @@ class CatalogueStore {
         rate?.amount,
       ],
     );
-    return db.lastInsertRowId;
+    final id = db.lastInsertRowId;
+    _defaultKickoff(id);
+    return id;
+  }
+
+  /// A new task's production kickoff defaults to the day it was entered:
+  /// on its part × stage when the cut is in a part (unless the part
+  /// already has one), else on the task itself.
+  void _defaultKickoff(int taskId) {
+    final day = dayRange(clock(), settings.dayStartMinutes).start;
+    final at = _ms(DateTime(day.year, day.month, day.day));
+    db
+      ..execute(
+        '''
+INSERT OR IGNORE INTO part_stage_kickoffs (part_id, stage_id, kickoff_at)
+SELECT c.part_id, t.stage_id, ? FROM tasks t JOIN cuts c ON c.id = t.cut_id
+WHERE t.id = ? AND c.part_id IS NOT NULL;''',
+        [at, taskId],
+      )
+      ..execute(
+        '''
+UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM cuts c WHERE c.id = tasks.cut_id
+                  AND c.part_id IS NOT NULL);''',
+        [at, taskId],
+      );
   }
 
   void setStatus(int taskId, TaskStatus status) {
@@ -286,11 +1142,11 @@ WHERE t.id = ?;''',
       final p = billingPeriod(year, month, day);
       final rows = db.select(
         '''
-SELECT t.id, w.currency FROM tasks t
+SELECT t.id, w.currency FROM live_tasks t
 JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
 LEFT JOIN clients cl ON cl.id = w.client_id
-WHERE t.archived_at IS NULL AND t.done_at >= ? AND t.done_at < ?
+WHERE t.done_at >= ? AND t.done_at < ?
   AND cl.closing_day IS ?;''',
         [
           p.start.toUtc().millisecondsSinceEpoch,
@@ -326,6 +1182,11 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
        pl.start_at AS part_plan_start, pl.end_at AS part_plan_end,
+       t.kickoff_at AS own_kickoff, k.kickoff_at AS part_kickoff,
+       CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
+         SELECT 1 FROM cuts m WHERE m.shared_with = c.id
+           AND m.archived_at IS NULL)
+       THEN COALESCE(c.shared_with, c.id) END AS shared_head,
        s.id AS stage_id, s.name AS stage_name,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        e.id AS episode_id, e.number AS episode_number,
@@ -349,15 +1210,21 @@ JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
 LEFT JOIN parts p ON p.id = c.part_id
 LEFT JOIN part_stage_dues d
   ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+LEFT JOIN part_stage_kickoffs k
+  ON k.part_id = c.part_id AND k.stage_id = t.stage_id
 LEFT JOIN part_stage_plans pl
   ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
-WHERE t.archived_at IS NULL AND w.archived_at IS NULL
-  AND (?2 IS NULL OR w.id = ?2)
+WHERE (?2 IS NULL OR w.id = ?2)
+  -- the live_tasks conditions, inlined: these joins are already here
+  AND t.archived_at IS NULL AND w.archived_at IS NULL
+  AND e.archived_at IS NULL
+  AND (c.id IS NULL OR c.archived_at IS NULL)
+  AND (sb.id IS NULL OR sb.archived_at IS NULL)
+  AND (p.id IS NULL OR p.archived_at IS NULL)
   AND (?3 = 1 OR t.status <> 'done' OR (t.storyboard_id IS NULL AND EXISTS (
-    SELECT 1 FROM cuts c2 JOIN tasks t2 ON t2.cut_id = c2.id
+    SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
     WHERE t2.stage_id = t.stage_id AND t2.status <> 'done'
-      AND t2.archived_at IS NULL AND c2.archived_at IS NULL
       AND (c2.part_id = c.part_id
         OR (c.part_id IS NULL AND c2.part_id IS NULL
             AND c2.episode_id = c.episode_id)))))
@@ -368,6 +1235,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     DateTime? utc(Object? ms) => ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
+    final sharedLabels = _sharedLabels();
     return [
       for (final r in rows)
         TaskRow(
@@ -396,6 +1264,10 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           ownPlanEndAt: utc(r['own_plan_end']),
           partPlanStartAt: utc(r['part_plan_start']),
           partPlanEndAt: utc(r['part_plan_end']),
+          ownKickoffAt: utc(r['own_kickoff']),
+          sharedHeadCutId: r['shared_head'] as int?,
+          sharedLabel: sharedLabels[r['shared_head']],
+          partKickoffAt: utc(r['part_kickoff']),
           pay: _pay(
             r['unit'] as String?,
             r['amount'] as int?,
@@ -414,7 +1286,87 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// count: the settings read and [taskRows].
   /// Finished units are left out unless [includeDone].
   List<PartGroup> partGroups({int? workId, bool includeDone = false}) =>
-      groupRows(taskRows(workId: workId, includeDone: includeDone));
+      groupRows(
+        taskRows(workId: workId, includeDone: includeDone),
+        manualOrder: {
+          for (final r in db.select(
+            'SELECT group_key, position FROM group_order;',
+          ))
+            r['group_key'] as String: r['position'] as int,
+        },
+      );
+
+  /// The calendar: every open unit as a bar over [basis] dates, laid out
+  /// on the parallel-lanes setting. Units missing either end are not
+  /// placed and are listed in `unplaced` (group keys).
+  ({LaneLayout layout, List<String> unplaced}) calendarLayout({
+    CalendarBasis basis = CalendarBasis.work,
+  }) {
+    final spans = <Span>[];
+    final unplaced = <String>[];
+    for (final g in partGroups()) {
+      if (!g.status.isOpen) continue;
+      final (start, end) = switch (basis) {
+        CalendarBasis.production => (g.kickoffAt, g.dueAt),
+        CalendarBasis.work => (
+          g.planStartAt ?? g.kickoffAt,
+          g.planEndAt ?? g.dueAt,
+        ),
+      };
+      if (start == null || end == null || end.isBefore(start)) {
+        unplaced.add(g.key);
+      } else {
+        spans.add(Span(g.key, start, end));
+      }
+    }
+    return (
+      layout: layoutLanes(
+        spans,
+        settings.parallelLanes,
+        pinned: {
+          for (final r in db.select('SELECT group_key, lane FROM lane_pins;'))
+            r['group_key'] as String: r['lane'] as int,
+        },
+      ),
+      unplaced: unplaced,
+    );
+  }
+
+  /// Pins a calendar bar (by group key) to [lane], as after a drag
+  /// between lanes. The layout keeps it there unless it overlaps another
+  /// pinned bar or the lane is past the lane count — then it overflows.
+  void pinLane(String groupKey, int lane) => db.execute(
+    'INSERT INTO lane_pins (group_key, lane) VALUES (?, ?) '
+    'ON CONFLICT (group_key) DO UPDATE SET lane = excluded.lane;',
+    [groupKey, lane],
+  );
+
+  /// Lets one bar be placed automatically again.
+  void unpinLane(String groupKey) =>
+      db.execute('DELETE FROM lane_pins WHERE group_key = ?;', [groupKey]);
+
+  /// Lets every bar be placed automatically again.
+  void clearLanePins() => db.execute('DELETE FROM lane_pins;');
+
+  /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
+  /// display order, replacing any earlier order. Units not listed fall
+  /// after the listed ones, by deadline.
+  void setGroupOrder(List<String> groupKeys) => _transaction(() {
+    db.execute('DELETE FROM group_order;');
+    for (var i = 0; i < groupKeys.length; i++) {
+      db.execute(
+        'INSERT OR IGNORE INTO group_order (group_key, position) VALUES (?, ?);',
+        [groupKeys[i], i],
+      );
+    }
+  });
+
+  /// "Sort automatically": drops the drag order, back to deadline order.
+  void clearGroupOrder() => db.execute('DELETE FROM group_order;');
+
+  /// True when a drag order is saved.
+  bool get hasGroupOrder =>
+      db.select('SELECT 1 FROM group_order LIMIT 1;').isNotEmpty;
 
   /// The pace (cuts per working day) for [group] as of now, using the
   /// day start, rest weekdays and pace-end settings.
@@ -450,8 +1402,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       for (final r in db.select(
         '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts
-FROM tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE t.archived_at IS NULL
+FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE 1
   AND COALESCE(t.submitted_at, t.done_at) >= ?
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name ORDER BY s.name;''',
@@ -479,8 +1431,8 @@ GROUP BY s.name ORDER BY s.name;''',
       '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts,
        MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
-FROM tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE t.archived_at IS NULL
+FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+WHERE 1
   AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name;''',
@@ -687,6 +1639,49 @@ GROUP BY s.name;''',
     'UPDATE tasks SET due_at = ? WHERE id = ?;',
     [_ms(dueAt), taskId],
   );
+
+  /// Sets or clears (null) when production work began for a part × stage.
+  void setPartKickoff(int partId, int stageId, DateTime? kickoffAt) {
+    if (kickoffAt == null) {
+      db.execute(
+        'DELETE FROM part_stage_kickoffs WHERE part_id = ? AND stage_id = ?;',
+        [partId, stageId],
+      );
+      return;
+    }
+    db.execute(
+      'INSERT INTO part_stage_kickoffs (part_id, stage_id, kickoff_at) '
+      'VALUES (?, ?, ?) ON CONFLICT (part_id, stage_id) '
+      'DO UPDATE SET kickoff_at = excluded.kickoff_at;',
+      [partId, stageId, _ms(kickoffAt)],
+    );
+  }
+
+  /// Sets or clears one task's own kickoff (a cut's override).
+  void setTaskKickoff(int taskId, DateTime? kickoffAt) => db.execute(
+    'UPDATE tasks SET kickoff_at = ? WHERE id = ?;',
+    [_ms(kickoffAt), taskId],
+  );
+
+  /// Writes a part × stage's production schedule — kickoff and deadline —
+  /// in one transaction, as a timeline bar dropped after a drag. A null
+  /// clears that end.
+  void setPartSchedule(
+    int partId,
+    int stageId, {
+    required DateTime? kickoffAt,
+    required DateTime? dueAt,
+  }) => _transaction(() {
+    if (kickoffAt != null && dueAt != null && dueAt.isBefore(kickoffAt)) {
+      throw ArgumentError('A deadline cannot come before the kickoff.');
+    }
+    setPartKickoff(partId, stageId, kickoffAt);
+    if (dueAt == null) {
+      clearPartDue(partId, stageId);
+    } else {
+      setPartDue(partId, stageId, dueAt);
+    }
+  });
 
   /// Sets the user's own plan for a part × stage. Both null removes it.
   void setPartPlan(int partId, int stageId, {DateTime? start, DateTime? end}) {

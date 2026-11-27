@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:anisched/src/models/work_interval.dart';
+import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -169,6 +170,57 @@ void main() {
       store.start(); // untracked time does not count toward the task
       now = t0.add(const Duration(hours: 1));
       expect(store.workedOn(1), const Duration(minutes: 20));
+    });
+  });
+
+  group('week hours and day intervals', () {
+    test('per working day of the week, cut at the day start', () {
+      final db = openAppDatabase(':memory:');
+      addTearDown(db.close);
+      // now: Friday 2026-11-27 14:00 local.
+      var clockNow = DateTime(2026, 11, 27, 14);
+      final store = CatalogueStore(db, clock: () => clockNow);
+      final timer = WorkTimerStore(db, clock: () => clockNow.toUtc());
+      void work(DateTime from, Duration d) {
+        clockNow = from;
+        timer.start();
+        clockNow = from.add(d);
+        timer.stop();
+      }
+
+      work(DateTime(2026, 11, 23, 10), const Duration(hours: 2)); // Mon
+      work(DateTime(2026, 11, 25, 23), const Duration(hours: 3)); // Wed→Thu
+      work(DateTime(2026, 11, 22, 10), const Duration(hours: 9)); // last Sun
+      clockNow = DateTime(2026, 11, 27, 13);
+      timer.start(); // running since 13:00
+      clockNow = DateTime(2026, 11, 27, 14);
+
+      final week = store.weekHours();
+      expect(week.first.day, DateTime(2026, 11, 23));
+      expect(week.map((d) => d.worked.inMinutes), [
+        120, 0, 60, 120, 60, 0, 0, //
+      ]);
+
+      // With days starting at 05:00, Wed 23:00–Thu 02:00 is all Wednesday.
+      store.settings.dayStartMinutes = 300;
+      expect(store.weekHours().map((d) => d.worked.inMinutes), [
+        120, 0, 180, 0, 60, 0, 0, //
+      ]);
+
+      // Weeks can start on Sunday.
+      store.settings
+        ..dayStartMinutes = 0
+        ..weekStart = DateTime.sunday;
+      final sunWeek = store.weekHours();
+      expect(sunWeek.first.day, DateTime(2026, 11, 22));
+      expect(sunWeek.first.worked, const Duration(hours: 9));
+
+      final today = store.dayIntervals();
+      expect(today, hasLength(1));
+      expect(today.single.running, isTrue);
+      expect(today.single.end.difference(today.single.start).inMinutes, 60);
+      final wed = store.dayIntervals(day: DateTime(2026, 11, 25, 12));
+      expect(wed.single.end.difference(wed.single.start).inMinutes, 60);
     });
   });
 }

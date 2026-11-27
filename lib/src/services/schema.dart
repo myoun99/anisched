@@ -18,6 +18,10 @@ class Migration {
 /// v4: editable stage presets that new works copy. v5: a work's own
 /// seconds rounding. v6: the user's own plan (start/end) beside the
 /// production deadline, and a work's default rate unit. v7: days off.
+/// v8: the live_tasks view (archiving hides everything beneath). v9: the
+/// production kickoff date and the user's own order of schedule units.
+/// v10: role presets, pinned calendar lanes, shared-cut links and a work's
+/// cut-number format.
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -37,6 +41,9 @@ CREATE TABLE work_intervals (
   const Migration(5, _v5WorkRounding),
   const Migration(6, _v6PlansAndDefaultUnit),
   const Migration(7, _v7DaysOff),
+  const Migration(8, _v8LiveTasks),
+  const Migration(9, _v9KickoffAndOrder),
+  const Migration(10, _v10RolesPinsSharedCuts),
 ];
 
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
@@ -345,4 +352,112 @@ CREATE TABLE days_off (
   CHECK (end_date >= start_date)
 );''');
   db.execute('CREATE INDEX days_off_end ON days_off(end_date);');
+}
+
+void _v8LiveTasks(Database db) {
+  // A task is live only when it and everything above it is: archiving a
+  // work, episode, part, cut or storyboard hides what lies beneath without
+  // touching it, so restoring brings it all back. Hidden stages do not
+  // hide their tasks.
+  db.execute('''
+CREATE VIEW live_tasks AS
+SELECT t.* FROM tasks t
+JOIN work_stages s ON s.id = t.stage_id
+JOIN works w ON w.id = s.work_id
+LEFT JOIN cuts c ON c.id = t.cut_id
+LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
+JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
+LEFT JOIN parts p ON p.id = c.part_id
+WHERE t.archived_at IS NULL AND w.archived_at IS NULL
+  AND e.archived_at IS NULL
+  AND (c.id IS NULL OR c.archived_at IS NULL)
+  AND (sb.id IS NULL OR sb.archived_at IS NULL)
+  AND (p.id IS NULL OR p.archived_at IS NULL);''');
+}
+
+void _v9KickoffAndOrder(Database db) {
+  for (final sql in const [
+    // When production work really began for a part × stage (a drawing
+    // meeting, say): with the deadline, the production schedule. A cut
+    // task may carry its own.
+    '''
+CREATE TABLE part_stage_kickoffs (
+  part_id INTEGER NOT NULL REFERENCES parts(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  kickoff_at INTEGER NOT NULL,
+  PRIMARY KEY (part_id, stage_id)
+);''',
+    'ALTER TABLE tasks ADD COLUMN kickoff_at INTEGER;',
+    // The user's drag order of schedule units, by group key
+    // (part:<part>:<stage>, nopart:<episode>:<stage>, storyboard:<task>).
+    '''
+CREATE TABLE group_order (
+  group_key TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);''',
+  ]) {
+    db.execute(sql);
+  }
+}
+
+void _v10RolesPinsSharedCuts(Database db) {
+  for (final sql in const [
+    // A role (원화, 작감 …) names the stages the user takes on; choosing it
+    // when registering work creates a task for each of them.
+    '''
+CREATE TABLE roles (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL
+);''',
+    '''
+CREATE TABLE role_stages (
+  role_id INTEGER NOT NULL REFERENCES roles(id),
+  stage_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (role_id, stage_name)
+);''',
+    // A calendar bar the user dragged to a lane, by group key.
+    '''
+CREATE TABLE lane_pins (
+  group_key TEXT PRIMARY KEY,
+  lane INTEGER NOT NULL CHECK (lane >= 0)
+);''',
+    // Cuts drawn as one shared cut (겸용) keep their own rows, lengths and
+    // tasks; they only point at the group's first cut.
+    'ALTER TABLE cuts ADD COLUMN shared_with INTEGER REFERENCES cuts(id);',
+    'CREATE INDEX cuts_shared ON cuts(shared_with);',
+    // How a work writes cut numbers: prefix and zero-padded digits
+    // (C + 3 → C001). The user types only the number.
+    "ALTER TABLE works ADD COLUMN cut_prefix TEXT NOT NULL DEFAULT 'C';",
+    '''
+ALTER TABLE works ADD COLUMN cut_digits INTEGER NOT NULL DEFAULT 3
+  CHECK (cut_digits BETWEEN 1 AND 8);''',
+  ]) {
+    db.execute(sql);
+  }
+  // Seeded with a literal copy so this step never changes once shipped.
+  const roles = [
+    // Ranks only (user): 원화 · 연출 · 작감 · 총작감 · 콘티.
+    ('원화', ['LO', '원화']),
+    ('연출', ['LO 연출 수정', '원화 연출 수정']),
+    ('작감', ['LO 작감 수정', '원화 작감 수정']),
+    ('총작감', ['LO 총작감 수정', '원화 총작감 수정']),
+    ('콘티', ['콘티']),
+  ];
+  for (var i = 0; i < roles.length; i++) {
+    db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [
+      roles[i].$1,
+      i,
+    ]);
+    final id = db.lastInsertRowId;
+    final stages = roles[i].$2;
+    for (var j = 0; j < stages.length; j++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [id, stages[j], j],
+      );
+    }
+  }
 }

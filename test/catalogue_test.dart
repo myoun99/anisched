@@ -212,6 +212,168 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       );
     });
 
+    test('many cuts at once; existing numbers are skipped', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B', plannedCutCount: 4);
+      store.addCut(ep, 'C101');
+      final r = store.addCuts(
+        ep,
+        ['C100', 'C101', 'C102'],
+        partId: part,
+        lengthMs: 3000,
+      );
+      expect(r.added, hasLength(2));
+      expect(r.skipped, ['C101']);
+      expect(store.cuts(ep).map((c) => (c.number, c.partId)), [
+        ('C100', part),
+        ('C101', null),
+        ('C102', part),
+      ]);
+      expect(store.parts(ep).single.cutCount, 2);
+    });
+
+    test('cuts move into a part of their episode only', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final other = store.addEpisode(w, '#02');
+      final part = store.addPart(ep, 'B');
+      final elsewhere = store.addPart(other, 'X');
+      final c = store.addCut(ep, 'C1');
+      store.setCutsPart([c], part);
+      expect(store.cuts(ep).single.partId, part);
+      expect(() => store.setCutsPart([c], elsewhere), throwsArgumentError);
+      expect(store.cuts(ep).single.partId, part); // rolled back
+      store.setCutsPart([c], null);
+      expect(store.cuts(ep).single.partId, isNull);
+    });
+
+    test('parts, cut lengths and part deadlines can be edited', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final part = store.addPart(ep, 'B', plannedCutCount: 11);
+      store
+        ..renamePart(part, 'B파트')
+        ..setPlannedCutCount(part, null);
+      expect(store.parts(ep).single.label, 'B파트');
+      expect(store.parts(ep).single.plannedCutCount, isNull);
+      final c = store.addCut(ep, 'C1', partId: part);
+      store.setCutLength(c, 2500);
+      expect(store.cuts(ep).single.lengthMs, 2500);
+      final lo = stageId(w, 'LO');
+      final task = store.addTasksForPart(part, lo).single;
+      store.setPartDue(part, lo, DateTime.utc(2026, 12, 10));
+      expect(store.dueFor(task).fromPart, isTrue);
+      store.clearPartDue(part, lo);
+      expect(store.dueFor(task).dueAt, isNull);
+    });
+
+    test('pickers: clients, works, episodes', () {
+      final client = store.addClient('스튜디오 X', closingDay: 20);
+      store.createWork('작품A', clientId: client);
+      final b = store.createWork('작품B');
+      store
+        ..addEpisode(b, '#10')
+        ..addEpisode(b, '#2');
+      expect(store.clients().single.closingDay, 20);
+      expect(store.works().map((w) => w.title).toSet(), {'작품A', '작품B'});
+      expect(store.episodes(b).map((e) => e.number), ['#2', '#10']);
+    });
+
+    test('archiving hides everything beneath; restoring brings it back', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final lo = stageId(w, 'LO');
+      store.setEpisodeRate(ep, lo, const Rate(RateUnit.fixed, 1000));
+      final part = store.addPart(ep, 'B');
+      final c1 = store.addCut(ep, 'C1', partId: part);
+      store.addCut(ep, 'C2', partId: part);
+      final ids = store.addTasksForPart(part, lo);
+      int visible() => store.partGroups().fold(0, (a, g) => a + g.total);
+      expect(visible(), 2);
+
+      for (final (kind, id) in [
+        (ArchiveKind.work, w),
+        (ArchiveKind.episode, ep),
+        (ArchiveKind.part, part),
+      ]) {
+        store.archive(kind, id);
+        expect(visible(), 0, reason: '$kind hides its tasks');
+        store.restore(kind, id);
+        expect(visible(), 2, reason: '$kind restores them');
+      }
+      store.archive(ArchiveKind.cut, c1);
+      expect(visible(), 1);
+      expect(store.cuts(ep).map((c) => c.number), ['C2']);
+      store.archive(ArchiveKind.task, ids[1]);
+      expect(visible(), 0);
+      store
+        ..restore(ArchiveKind.cut, c1)
+        ..restore(ArchiveKind.task, ids[1]);
+      expect(visible(), 2);
+
+      // Archived work stops counting in monthly totals too.
+      store.setStatusMany(ids, TaskStatus.done);
+      expect(store.monthlyTotals(2026, 11)['JPY']!.total, 2000);
+      store.archive(ArchiveKind.work, w);
+      expect(store.monthlyTotals(2026, 11), isEmpty);
+    });
+
+    test('the trash lists what is archived, newest first', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final c = store.addCut(ep, 'C7');
+      final t = store.addTask(stageId(w, 'LO'), cutId: c);
+      store
+        ..archive(ArchiveKind.task, t)
+        ..archive(ArchiveKind.cut, c);
+      final trash = store.archived();
+      expect(trash.map((a) => (a.kind, a.label)).toSet(), {
+        (ArchiveKind.task, 'C7 · LO'),
+        (ArchiveKind.cut, '#01 C7'),
+      });
+    });
+
+    test('restoring onto a reused cut number is refused', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#01');
+      final old = store.addCut(ep, 'C1');
+      store.archive(ArchiveKind.cut, old);
+      store.addCut(ep, 'C1');
+      expect(() => store.restore(ArchiveKind.cut, old), throwsStateError);
+    });
+
+    test('a work edits its own stage list; presets stay as they were', () {
+      final w = store.createWork('작품A');
+      List<String> names() => store.stages(w).map((s) => s.name).toList();
+      final lo = stageId(w, 'LO');
+      final extra = store.addStage(w, 'LO 감독 수정', beforeStageId: lo);
+      expect(names().indexOf('LO 감독 수정'), names().indexOf('LO') - 1);
+      store.renameStage(extra, 'LO 감독 체크');
+      expect(names(), contains('LO 감독 체크'));
+      final end = store.addStage(w, '동화 체크');
+      expect(names().last, '동화 체크');
+
+      final reversed = [for (final s in store.stages(w)) s.id].reversed
+          .toList();
+      store.reorderStages(w, reversed);
+      expect(names().first, '동화 체크');
+      expect(
+        () => store.reorderStages(w, reversed.skip(1).toList()),
+        throwsArgumentError,
+      );
+
+      // Hiding a stage takes it out of the picker; its tasks stay.
+      final ep = store.addEpisode(w, '#01');
+      store.addTask(end, cutId: store.addCut(ep, 'C1'));
+      store.archive(ArchiveKind.stage, end);
+      expect(names(), isNot(contains('동화 체크')));
+      expect(store.partGroups().single.stageName, '동화 체크');
+      store.restore(ArchiveKind.stage, end);
+      expect(names(), contains('동화 체크'));
+      expect(store.presetStages(store.defaultPresetId()), defaultStageNames);
+    });
+
     test('a failed createWork leaves no half-made work', () {
       db.execute('DROP TABLE work_stages;');
       expect(() => store.createWork('작품A'), throwsA(isA<SqliteException>()));

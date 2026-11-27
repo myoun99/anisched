@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../models/catalogue.dart';
@@ -15,6 +17,9 @@ class SettingsStore {
   static const _restWeekdays = 'rest_weekdays';
   static const _paceEnd = 'pace_end';
   static const _recentPaceDays = 'recent_pace_days';
+  static const _weekStart = 'week_start';
+  static const _parallelLanes = 'parallel_lanes';
+  static const _laneNames = 'lane_names';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -67,6 +72,43 @@ class SettingsStore {
     RangeError.checkValueInInterval(days, 1, 366, 'days');
     _set(_recentPaceDays, '$days');
   }
+
+  /// The weekday a week starts on (1 = Monday … 7 = Sunday). Default:
+  /// Monday.
+  int get weekStart => int.tryParse(_get(_weekStart) ?? '') ?? DateTime.monday;
+
+  set weekStart(int weekday) {
+    RangeError.checkValueInInterval(weekday, 1, 7, 'weekday');
+    _set(_weekStart, '$weekday');
+  }
+
+  /// How many units the user works on in parallel — the calendar's lane
+  /// count. Default: 2.
+  int get parallelLanes => int.tryParse(_get(_parallelLanes) ?? '') ?? 2;
+
+  set parallelLanes(int lanes) {
+    RangeError.checkValueInInterval(lanes, 1, 20, 'lanes');
+    _set(_parallelLanes, '$lanes');
+  }
+
+  /// The user's names for the calendar lanes, one per lane
+  /// ([parallelLanes] long). An unnamed lane is null — the view shows its
+  /// number.
+  List<String?> get laneNames {
+    final stored = <String?>[];
+    final v = _get(_laneNames);
+    if (v != null) {
+      for (final n in jsonDecode(v) as List<Object?>) {
+        stored.add(n is String && n.isNotEmpty ? n : null);
+      }
+    }
+    return [for (var i = 0; i < parallelLanes; i++) stored.elementAtOrNull(i)];
+  }
+
+  /// Names the lanes in order; null or empty leaves a lane unnamed. Names
+  /// past the lane count are kept for when lanes are added.
+  set laneNames(List<String?> names) =>
+      _set(_laneNames, jsonEncode([for (final n in names) n ?? '']));
 
   String? _get(String key) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);

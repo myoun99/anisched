@@ -146,3 +146,22 @@ String naturalSortKey(String label) =>
     ).add(Duration(minutes: dayStartMinutes)),
   );
 }
+
+/// What can be archived (hidden, restorable). Archiving hides everything
+/// beneath it in the views; restoring brings it back as it was.
+enum ArchiveKind {
+  work('works'),
+  episode('episodes'),
+  part('parts'),
+  cut('cuts'),
+  storyboard('storyboards'),
+  task('tasks'),
+
+  /// A stage of one work: hidden from pickers; its tasks stay visible.
+  stage('work_stages');
+
+  const ArchiveKind(this.table);
+
+  /// The table holding this kind; internal to the data layer.
+  final String table;
+}

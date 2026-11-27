@@ -741,5 +741,126 @@ void main() {
         expect(() => store.settings.recentPaceDays = 0, throwsRangeError);
       });
     });
+
+    group('kickoff and order', () {
+      test('kickoff: part default, cut override, shown with its source', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 10);
+        final ids = tasksOf(part, lo);
+        final kick = DateTime(2026, 11, 20);
+        store.setPartKickoff(part, lo, kick);
+        var g = store.partGroups().single;
+        expect(g.kickoffAt, kick.toUtc());
+        expect(g.tasks.every((t) => t.kickoffFromPart), isTrue);
+        final own = DateTime(2026, 11, 22);
+        store.setTaskKickoff(ids[1], own);
+        g = store.partGroups().single;
+        expect(g.tasks[1].kickoffAt, own.toUtc());
+        expect(g.tasks[1].kickoffFromPart, isFalse);
+        expect(g.tasks[0].kickoffAt, kick.toUtc());
+        store.setPartKickoff(part, lo, null);
+        expect(store.partGroups().single.kickoffAt, isNull);
+      });
+
+      test('without a plan, the pace counts from the kickoff', () {
+        store.settings.restWeekdays = {};
+        final part = partWithCuts('B', ['C1', 'C2', 'C3'], lo, 2);
+        // Kickoff defaulted to today: 3 cuts over today .. +2 days.
+        expect(store.paceOf(store.partGroups().single)!.perDay, 1);
+        // Kickoff tomorrow: 3 cuts over 2 days, nothing asked today.
+        store.setPartKickoff(part, lo, now.add(const Duration(days: 1)));
+        var pace = store.paceOf(store.partGroups().single)!;
+        expect(pace.perDay, 1.5);
+        expect(pace.startsLater, isTrue);
+        expect(pace.today, 0);
+        // A planned start wins over the kickoff; so does a planned end
+        // over the deadline.
+        store.setPartPlan(
+          part,
+          lo,
+          start: now,
+          end: now.add(const Duration(days: 5)),
+        );
+        pace = store.paceOf(store.partGroups().single)!;
+        expect(pace.startsLater, isFalse);
+        expect(pace.workDays, 6);
+        // D stays on the deadline whatever the kickoff.
+        expect((store.signals().values.single.due as DueDaysLeft).days, 2);
+      });
+
+      test('the kickoff defaults to the day the work was entered', () {
+        final part = partWithCuts('B', ['C1', 'C2'], lo, 9);
+        final today = DateTime(now.year, now.month, now.day).toUtc();
+        var g = store.partGroups().single;
+        expect(g.kickoffAt, today);
+        expect(g.tasks.every((t) => t.kickoffFromPart), isTrue);
+        // A part that already has one keeps it.
+        final earlier = DateTime(2026, 11, 1);
+        store.setPartKickoff(part, genga, earlier);
+        store.addTasksForPart(part, genga);
+        g = store.partGroups().firstWhere((g) => g.stageId == genga);
+        expect(g.kickoffAt, earlier.toUtc());
+        // A cut outside any part gets its own.
+        final solo = store.addTask(lo, cutId: store.addCut(ep, 'C9'));
+        final row = store.taskRows().firstWhere((t) => t.id == solo);
+        expect((row.kickoffAt, row.kickoffFromPart), (today, false));
+      });
+
+      test('a dropped bar writes kickoff and deadline together', () {
+        final part = partWithCuts('B', ['C1'], lo, 10);
+        final k = DateTime(2026, 12, 1);
+        final d = DateTime(2026, 12, 9);
+        store.setPartSchedule(part, lo, kickoffAt: k, dueAt: d);
+        var g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (k.toUtc(), d.toUtc()));
+        expect(
+          () => store.setPartSchedule(part, lo, kickoffAt: d, dueAt: k),
+          throwsArgumentError,
+        );
+        g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (k.toUtc(), d.toUtc()));
+        store.setPartSchedule(part, lo, kickoffAt: null, dueAt: null);
+        g = store.partGroups().single;
+        expect((g.kickoffAt, g.dueAt), (null, null));
+      });
+
+      test('part-less units: earliest kickoff, a range label', () {
+        for (final c in ['C100', 'C101', 'C102', 'C103', 'C105']) {
+          store.addTask(lo, cutId: store.addCut(ep, c));
+        }
+        final g = store.partGroups().single;
+        expect(g.kind, GroupKind.noPart);
+        expect(g.cutsLabel, 'C100~C103, C105');
+        store.setTaskKickoff(g.tasks[2].id, DateTime(2026, 11, 3));
+        store.setTaskKickoff(g.tasks[0].id, DateTime(2026, 11, 5));
+        expect(
+          store.partGroups().single.kickoffAt,
+          DateTime(2026, 11, 3).toUtc(),
+        );
+      });
+
+      test('drag order wins; new units follow by deadline; auto clears', () {
+        partWithCuts('A', ['C1'], lo, 1);
+        partWithCuts('B', ['C2'], lo, 2);
+        partWithCuts('C', ['C3'], lo, 3);
+        List<String?> labels() =>
+            store.partGroups().map((g) => g.partLabel).toList();
+        expect(labels(), ['A', 'B', 'C']);
+        expect(store.hasGroupOrder, isFalse);
+
+        final keys = {for (final g in store.partGroups()) g.partLabel: g.key};
+        store.setGroupOrder([keys['C']!, keys['A']!, keys['B']!]);
+        expect(labels(), ['C', 'A', 'B']);
+        expect(store.hasGroupOrder, isTrue);
+
+        // A new unit, even with an earlier deadline, comes after them.
+        partWithCuts('D', ['C4'], lo, 0);
+        partWithCuts('E', ['C5'], lo, 5);
+        expect(labels(), ['C', 'A', 'B', 'D', 'E']);
+
+        store.clearGroupOrder();
+        expect(labels(), ['D', 'A', 'B', 'C', 'E']);
+        expect(store.hasGroupOrder, isFalse);
+      });
+    });
   });
 }
