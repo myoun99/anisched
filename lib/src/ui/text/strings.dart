@@ -1,0 +1,361 @@
+/// The app's words in its five languages. Every piece of screen text goes
+/// through [S]; short tokens everyone reads (`cut`, `D-3`, `IN 12/10`) and
+/// names the user typed stay as they are.
+///
+/// Industry terms follow Japanese studio usage (原画 · 作監 · LO · 絵コンテ)
+/// and their usual equivalents elsewhere. Role and stage names are the
+/// user's own data and are not translated.
+library;
+
+import 'dart:ui' show Locale;
+
+import 'package:flutter/foundation.dart';
+
+import '../../services/device_settings.dart';
+
+/// A language the app ships.
+enum Lang {
+  en('en', 'English'),
+  ja('ja', '日本語'),
+  ko('ko', '한국어'),
+  fr('fr', 'Français'),
+  zhHans('zh', '简体中文');
+
+  const Lang(this.code, this.native);
+
+  /// Language code for [Locale].
+  final String code;
+
+  /// The language's own name, as the picker shows it.
+  final String native;
+
+  Locale get locale => this == zhHans
+      ? const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans')
+      : Locale(code);
+
+  /// The first of [preferred] the app ships, else English.
+  static Lang forLocales(Iterable<Locale> preferred) {
+    for (final l in preferred) {
+      for (final g in values) {
+        if (g.code == l.languageCode) return g;
+      }
+    }
+    return en;
+  }
+}
+
+/// The language the screens show. Korean until the app resolves the
+/// device's (tests read Korean).
+final appLang = ValueNotifier<Lang>(Lang.ko);
+
+/// This device's language choice (「기기」 follows the device). main.dart
+/// saves it; the app resolves [appLang] from it.
+final languageSetting = ValueNotifier<LanguageChoice>(LanguageChoice.device);
+
+/// The language [choice] means on a device preferring [device].
+Lang resolveLang(LanguageChoice choice, Iterable<Locale> device) =>
+    switch (choice) {
+      LanguageChoice.device => Lang.forLocales(device),
+      LanguageChoice.en => Lang.en,
+      LanguageChoice.ja => Lang.ja,
+      LanguageChoice.ko => Lang.ko,
+      LanguageChoice.fr => Lang.fr,
+      LanguageChoice.zhHans => Lang.zhHans,
+    };
+
+/// Screen words: English, Japanese, Korean, French, Simplified Chinese.
+/// `{name}` marks a value filled in by [f].
+enum S {
+  // Views.
+  viewList('List', 'リスト', '목록', 'Liste', '列表'),
+  viewTimeline('Timeline', 'タイムライン', '타임라인', 'Planning', '时间线'),
+  viewWork('Work', '作業', '작업', 'Travail', '工作'),
+  viewRegister('Add', '登録', '등록', 'Ajouter', '登记'),
+  viewSettings('Settings', '設定', '설정', 'Réglages', '设置'),
+  viewStats('Stats', '統計', '통계', 'Stats', '统计'),
+
+  // Task status.
+  stReceived('Received', '受取', '받음', 'Reçu', '已收到'),
+  stInProgress('In progress', '作業中', '작업중', 'En cours', '进行中'),
+  stSubmitted('Submitted', '提出', '제출', 'Remis', '已提交'),
+  stRetake('Retake', 'リテイク', '리테이크', 'Retake', '返修'),
+  stDone('Done', '完了', '완료', 'Terminé', '完成'),
+
+  // Counts and dates.
+  daysLate('{n}d late', '{n}日超過', '{n}일 지남', '{n} j de retard', '超期{n}天'),
+  days('{n}d', '{n}日', '{n}일', '{n} j', '{n}天'),
+  items('{n}', '{n}件', '{n}건', '{n}', '{n}项'),
+  monthLabel('{m}', '{m}月', '{m}월', '{m}', '{m}月'),
+  today('Today', '今日', '오늘', "Aujourd'hui", '今天'),
+
+  // Units of work.
+  partTitle('Part {p}', '{p}パート', '{p}파트', 'Partie {p}', '{p}部分'),
+  noPart('No part', 'パートなし', '파트 없음', 'Sans partie', '无部分'),
+  storyboard('Storyboard', '絵コンテ', '콘티', 'Storyboard', '分镜'),
+
+  // Plan signals.
+  planOver(
+    'Work ends after the deadline',
+    '作業の終わりが締切より遅い',
+    '실 작업 끝이 마감보다 늦음',
+    "Le travail finit après l'échéance",
+    '实际完成晚于截止',
+  ),
+  planHard(
+    'Daily share over 1.5× your recent average',
+    '1日の割当が最近の平均の1.5倍を超える',
+    '하루 할당이 최근 평균의 1.5배를 넘음',
+    'Part quotidienne > 1,5× la moyenne récente',
+    '每日分配超过近期平均的1.5倍',
+  ),
+  planLateStart(
+    'Start day has passed, not started yet',
+    '作業開始日を過ぎたのにまだ未着手',
+    '실 작업 시작일이 지났는데 아직 시작 전',
+    'Date de début passée, pas encore commencé',
+    '已过开始日期但尚未开始',
+  ),
+  planTight(
+    'Daily share above your recent average',
+    '1日の割当が最近の平均より多い',
+    '하루 할당이 최근 평균보다 많음',
+    'Part quotidienne au-dessus de la moyenne récente',
+    '每日分配高于近期平均',
+  ),
+
+  // Top bar and list.
+  sortByDue('By deadline', '締切順', '마감 순 정렬', 'Par échéance', '按截止排序'),
+  clear('Clear', '解除', '해제', 'Effacer', '取消'),
+
+  // Filter.
+  fAll('All', 'すべて', '전체', 'Tout', '全部'),
+  fLate('Overdue', '期限切れ', '지난 것', 'En retard', '已逾期'),
+  fWithin3('Within 3 days', '3日以内', '3일 안', 'Sous 3 jours', '3天内'),
+  fWithin14('Within 2 weeks', '2週間以内', '2주 안', 'Sous 2 semaines', '2周内'),
+  fLater('Later', 'それ以降', '그 뒤', 'Plus tard', '之后'),
+  fWithDone('With done', '完了含む', '완료 포함', 'Avec terminés', '含已完成'),
+  fPeriod('Period', '期間', '기간', 'Période', '期间'),
+  client('Client', '会社', '회사', 'Client', '公司'),
+  allClients('All clients', 'すべての会社', '모든 회사', 'Tous les clients', '所有公司'),
+  title('Title', '作品', '작품', 'Titre', '作品'),
+  allTitles('All titles', 'すべての作品', '모든 작품', 'Tous les titres', '所有作品'),
+  showDone('Show done', '完了も表示', '완료도 보기', 'Afficher terminés', '显示已完成'),
+  doneShown('Done shown', '完了表示', '완료 보임', 'Terminés visibles', '显示已完成'),
+  doneHidden('Done hidden', '完了非表示', '완료 숨김', 'Terminés masqués', '隐藏已完成'),
+
+  // File menu.
+  fileNew('New', '新規', '새로', 'Nouveau', '新建'),
+  fileOpen('Open', '開く', '열기', 'Ouvrir', '打开'),
+  fileSave('Save', '保存', '저장', 'Enregistrer', '保存'),
+  fileSaveAs('Save as', '名前を付けて保存', '다른 이름으로 저장', 'Enregistrer sous', '另存为'),
+  untitled('Untitled', '無題', '무제', 'Sans titre', '未命名'),
+  fileMissing(
+    'File missing',
+    'ファイルがない',
+    '파일 없음',
+    'Fichier introuvable',
+    '文件不存在',
+  ),
+  saved('Saved', '保存済み', '저장됨', 'Enregistré', '已保存'),
+  saving('Saving', '保存待ち', '저장 대기', 'À enregistrer', '待保存'),
+  notSaved('Not saved', '未保存', '저장 안 됨', 'Non enregistré', '未保存'),
+  recentFiles('Recent', '最近', '최근 파일', 'Récents', '最近'),
+
+  // Work lanes.
+  autoPlace('Auto', '自動配置', '자동 배치', 'Auto', '自动排列'),
+  todayBusy(
+    'Today {a} / {b}',
+    '今日 {a} / {b}',
+    '오늘 {a} / {b}',
+    'Auj. {a} / {b}',
+    '今天 {a} / {b}',
+  ),
+  overflow('Over', 'あふれ', '넘침', 'Excès', '溢出'),
+  laneN('Lane {n}', 'ライン {n}', '라인 {n}', 'Ligne {n}', '通道 {n}'),
+
+  // Part line and details.
+  part('Part', 'パート', '파트', 'Partie', '部分'),
+  progress('Progress', '進捗', '진행', 'Avancement', '进度'),
+  due('Due', '締切', '마감', 'Échéance', '截止'),
+  production('Production', '制作', '제작', 'Production', '制作'),
+  ownWork('My work', '作業', '실 작업', 'Mon travail', '实际工作'),
+  slack('Slack', '余裕', '여유', 'Marge', '余量'),
+  perDay('Per day', '1日', '하루', 'Par jour', '每天'),
+  rate('Rate', '単価', '단가', 'Tarif', '单价'),
+  time('Time', '時間', '시간', 'Temps', '时间'),
+  usual('Usual', '普段', '평소', 'Habituel', '平时'),
+  recent('recent', '最近', '최근', 'récent', '近期'),
+
+  // Settings.
+  display('Display', '表示', '화면', 'Affichage', '显示'),
+  themeSystem('System', 'システム', '시스템', 'Système', '系统'),
+  themeLight('Light', 'ライト', '라이트', 'Clair', '浅色'),
+  themeDark('Dark', 'ダーク', '다크', 'Sombre', '深色'),
+  language('Language', '言語', '언어', 'Langue', '语言'),
+  langDevice('Device', '端末', '기기', 'Appareil', '设备'),
+  workTime('Work time', '作業時間', '작업 시간', 'Temps de travail', '工作时间'),
+  timerAuto(
+    'Start timing when a cut is picked',
+    'カットを選ぶとすぐ計測',
+    '컷을 고르면 바로 기록 시작',
+    'Chronométrer dès qu’un cut est choisi',
+    '选中cut即开始计时',
+  ),
+  restWeekdays(
+    'Weekly days off',
+    '定休日',
+    '쉬는 요일',
+    'Repos hebdomadaire',
+    '每周休息日',
+  ),
+  daysOff('Days off', '休み', '쉬는 날', 'Congés', '休息日'),
+  remove('Remove', '削除', '지우기', 'Supprimer', '删除'),
+  add('Add', '追加', '추가', 'Ajouter', '添加'),
+  lanes('Parallel work', '並行数', '병행 수', 'En parallèle', '并行数'),
+  dayStart('Day starts at', '1日の始まり', '하루 시작', 'Début de journée', '一天开始于'),
+  rounding(
+    'Per-second rate rounding',
+    '秒単価の端数',
+    '초당 단가 반올림',
+    'Arrondi du tarif/s',
+    '按秒单价取整',
+  ),
+  rNearest('Round', '四捨五入', '반올림', 'Arrondir', '四舍五入'),
+  rUp('Up', '切り上げ', '올림', 'Supérieur', '进位'),
+  rDown('Down', '切り捨て', '버림', 'Inférieur', '舍去'),
+  rExact('Exact', 'そのまま', '그대로', 'Exact', '不取整'),
+  usualPace(
+    'Usual pace (cut/day)',
+    '普段のペース(1日 cut)',
+    '평소 속도 (하루 cut)',
+    'Rythme habituel (cut/jour)',
+    '平时速度(每天 cut)',
+  ),
+  restore('Restore', '復元', '복구', 'Restaurer', '恢复'),
+  overwritten(
+    'Overwritten copy',
+    '上書きされた版',
+    '덮어쓴 판',
+    'Version écrasée',
+    '被覆盖的版本',
+  ),
+  beforeChange('Before a change', '変更前', '바꾸기 전', 'Avant modification', '更改前'),
+  revive('Bring back', '戻す', '되살리기', 'Rétablir', '还原'),
+  monthDone(
+    'Done this month',
+    '今月の完了',
+    '이번 달 완료',
+    'Terminé ce mois-ci',
+    '本月完成',
+  ),
+  unpriced(
+    '{n} without rate',
+    '単価なし {n}',
+    '단가 없음 {n}',
+    '{n} sans tarif',
+    '无单价 {n}',
+  ),
+  storage('File', 'ファイル', '파일', 'Fichier', '文件'),
+
+  // Registration.
+  addCut('Add cut', 'カット追加', '컷 추가', 'Ajouter un cut', '添加 cut'),
+  cutName('Cut name', 'カット名', '컷 이름', 'Nom du cut', 'cut 名'),
+  registered('{n} added', '{n}件登録', '{n}건 등록', '{n} ajoutés', '已登记 {n} 项'),
+  episode('Episode', '話数', '화수', 'Épisode', '集数'),
+  roles('Roles', '担当', '담당', 'Rôles', '负责'),
+  firstCut('First cut', '最初の cut', '첫 컷', 'Premier cut', '首个 cut'),
+  cutCount('Cuts', 'cut 数', '컷 수', 'Nb de cuts', 'cut 数'),
+  kickoff('Start', '着手', '착수', 'Début', '开工'),
+  takeOut('Remove', '外す', '빼기', 'Retirer', '移除'),
+  shared('Shared', '兼用', '겸용', 'Partagé', '兼用'),
+  name('Name', '名前', '이름', 'Nom', '名称'),
+  register('Add', '登録', '등록', 'Ajouter', '登记'),
+  savedCuts(
+    '{title} cuts {n}',
+    '{title} 登録済み {n}',
+    '{title} 등록된 컷 {n}',
+    '{title} cuts {n}',
+    '{title} 已登记 {n}',
+  ),
+  createNew('Create new', '新規作成', '새로 만들기', 'Créer', '新建'),
+  createNamed(
+    'Create “{name}”',
+    '「{name}」を新規作成',
+    '「{name}」 새로 만들기',
+    'Créer « {name} »',
+    '新建“{name}”',
+  ),
+  cancel('Cancel', 'キャンセル', '취소', 'Annuler', '取消'),
+  ok('OK', 'OK', '확인', 'OK', '确定');
+
+  const S(this.en, this.ja, this.ko, this.fr, this.zh);
+
+  final String en;
+  final String ja;
+  final String ko;
+  final String fr;
+  final String zh;
+
+  /// In the current [appLang].
+  String get t => of(appLang.value);
+
+  String of(Lang l) => switch (l) {
+    Lang.en => en,
+    Lang.ja => ja,
+    Lang.ko => ko,
+    Lang.fr => fr,
+    Lang.zhHans => zh,
+  };
+
+  /// [t] with each `{key}` replaced by its value.
+  String f(Map<String, Object?> values) {
+    var s = t;
+    values.forEach((k, v) => s = s.replaceAll('{$k}', '$v'));
+    return s;
+  }
+}
+
+/// Short weekday names, Monday first.
+List<String> weekdayNames([Lang? lang]) => switch (lang ?? appLang.value) {
+  Lang.en => const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  Lang.ja => const ['月', '火', '水', '木', '金', '土', '日'],
+  Lang.ko => const ['월', '화', '수', '목', '금', '토', '일'],
+  Lang.fr => const ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'],
+  Lang.zhHans => const ['一', '二', '三', '四', '五', '六', '日'],
+};
+
+/// The month as a chart header shows it: 「11月」, 「Nov」.
+String monthName(int month, [Lang? lang]) {
+  final l = lang ?? appLang.value;
+  return switch (l) {
+    Lang.en => const [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ][month - 1],
+    Lang.fr => const [
+      'janv',
+      'févr',
+      'mars',
+      'avr',
+      'mai',
+      'juin',
+      'juil',
+      'août',
+      'sept',
+      'oct',
+      'nov',
+      'déc',
+    ][month - 1],
+    _ => S.monthLabel.of(l).replaceAll('{m}', '$month'),
+  };
+}

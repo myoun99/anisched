@@ -10,6 +10,8 @@ dependencies:
   file_selector: ^1.1.0
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   path_provider: ^2.1.6
   sqlite3: ^3.9.2
 
@@ -20,8 +22,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # BIZ UDPGothic carries Latin and Japanese; Nanum Gothic fills in Hangul.
-  # Both are SIL OFL 1.1 (licences next to the files), bundled so the app
+  # BIZ UDPGothic carries Latin and Japanese; Nanum Gothic fills in Hangul;
+  # Noto Sans SC (Adobe/Google subset OTF) draws Simplified Chinese and
+  # leads when the app is in Chinese so Han characters take SC forms.
+  # All SIL OFL 1.1 (licences next to the files), bundled so the app
   # renders the same offline on every platform.
   fonts:
     - family: BIZUDPGothic
@@ -33,4 +37,9 @@ flutter:
       fonts:
         - asset: assets/fonts/NanumGothic-Regular.ttf
         - asset: assets/fonts/NanumGothic-Bold.ttf
+          weight: 700
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/NotoSansSC-Regular.otf
+        - asset: assets/fonts/NotoSansSC-Bold.otf
           weight: 700

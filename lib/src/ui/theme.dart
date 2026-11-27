@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'text/strings.dart';
+
 /// Colours that sit outside Material's scheme: work statuses and the
 /// neutrals the mock-ups use. Read with `AppColors.of(context)`.
 @immutable
@@ -115,20 +117,29 @@ class AppColors extends ThemeExtension<AppColors> {
 /// with the device settings once the data lane stores it.
 final themeModeSetting = ValueNotifier<ThemeMode>(ThemeMode.system);
 
-/// Font stack: BIZ UDPGothic for Latin and Japanese, Nanum Gothic for Hangul.
+/// Font stack: BIZ UDPGothic for Latin and Japanese, Nanum Gothic for
+/// Hangul, Noto Sans SC for Simplified Chinese. In Chinese, Noto Sans SC
+/// leads so shared Han characters take their Chinese forms.
 abstract final class AppFonts {
   static const family = 'BIZUDPGothic';
-  static const fallback = <String>['NanumGothic'];
+  static const fallback = <String>['NanumGothic', 'NotoSansSC'];
+
+  static String familyFor(Lang lang) =>
+      lang == Lang.zhHans ? 'NotoSansSC' : family;
+
+  static List<String> fallbackFor(Lang lang) =>
+      lang == Lang.zhHans ? const ['BIZUDPGothic', 'NanumGothic'] : fallback;
 }
 
 abstract final class AppTheme {
   static const _accentLight = Color(0xFF4F5BD5);
   static const _accentDark = Color(0xFF8D96FA);
 
-  static ThemeData light() => _build(Brightness.light);
-  static ThemeData dark() => _build(Brightness.dark);
+  static ThemeData light([Lang? lang]) => _build(Brightness.light, lang);
+  static ThemeData dark([Lang? lang]) => _build(Brightness.dark, lang);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, Lang? lang) {
+    final l = lang ?? appLang.value;
     final isDark = brightness == Brightness.dark;
     final c = isDark ? AppColors.dark : AppColors.light;
     final accent = isDark ? _accentDark : _accentLight;
@@ -148,8 +159,8 @@ abstract final class AppTheme {
     final base = ThemeData(
       colorScheme: scheme,
       brightness: brightness,
-      fontFamily: AppFonts.family,
-      fontFamilyFallback: AppFonts.fallback,
+      fontFamily: AppFonts.familyFor(l),
+      fontFamilyFallback: AppFonts.fallbackFor(l),
       scaffoldBackgroundColor: c.panelAlt,
       dividerColor: c.line,
       extensions: [c],

@@ -6,7 +6,9 @@ import 'package:anisched/src/ui/theme.dart';
 import 'package:anisched/src/ui/views/chart.dart';
 import 'package:anisched/src/ui/views/timeline_view.dart';
 import 'package:anisched/src/ui/views/work_view.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/sample_catalogue.dart';
@@ -35,6 +37,8 @@ Future<void> pumpIn(WidgetTester t, Size size, Widget child) async {
 }
 
 void main() {
+  setUp(() => chartView.value = const ChartView());
+
   test('the window puts today a few days in, wider on bigger screens', () {
     final w = ChartWindow.around(now, SizeClass.wide);
     final n = ChartWindow.around(now, SizeClass.narrow);
@@ -95,6 +99,7 @@ void main() {
       await t.drag(handle, const Offset(dayWidth * 3, 0));
       await t.pump();
       expect(got, isNotNull);
+      expect(chartView.value.shift, 0, reason: 'a bar drag must not scroll');
       expect(got!.$3, chartDay(g.dueAt!).add(const Duration(days: 3)));
       expect(got!.$2, chartDay(g.kickoffAt!));
     });
@@ -157,6 +162,72 @@ void main() {
       await g.up();
       await t.pump();
       expect(pinned, (key, 1));
+    });
+  });
+
+  group('scroll and zoom', () {
+    Future<void> pumpTimeline(WidgetTester t) async {
+      final store = sampleCatalogue(now);
+      await pumpIn(
+        t,
+        const Size(1440, 900),
+        TimelineView(
+          parts: store.partGroups(),
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+        ),
+      );
+    }
+
+    testWidgets('dragging empty space scrolls by whole days', (t) async {
+      await pumpTimeline(t);
+      const dayWidth = (1440 - 250) / 35;
+      await t.dragFrom(
+        const Offset(1300, 600),
+        const Offset(-dayWidth * 5 - 2, 0),
+      );
+      await t.pump();
+      expect(chartView.value.shift, 5);
+      expect(
+        ChartWindow.of(now, SizeClass.wide, chartView.value).indexOf(now),
+        6,
+      );
+    });
+
+    testWidgets('zoom buttons and Ctrl + wheel change the days shown', (
+      t,
+    ) async {
+      await pumpTimeline(t);
+      await t.tap(find.byKey(const Key('chart-zoom-in')));
+      await t.pump();
+      expect(chartView.value.days, 28);
+      await t.tap(find.byKey(const Key('chart-zoom-out')));
+      await t.pump();
+      expect(chartView.value.days, 35);
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(900, 500),
+          scrollDelta: Offset(0, 40),
+        ),
+      );
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pump();
+      expect(chartView.value.days, 49);
+      expect(find.text('49'), findsNothing);
+    });
+
+    testWidgets('a pinch zooms', (t) async {
+      await pumpTimeline(t);
+      final a = await t.startGesture(const Offset(700, 600));
+      final b = await t.startGesture(const Offset(900, 600), pointer: 2);
+      await a.moveTo(const Offset(600, 600));
+      await b.moveTo(const Offset(1000, 600));
+      await t.pump();
+      await a.up();
+      await b.up();
+      await t.pump();
+      expect(chartView.value.days, lessThan(35));
     });
   });
 }

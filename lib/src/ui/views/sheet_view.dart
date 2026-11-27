@@ -9,6 +9,7 @@ import '../theme.dart';
 import '../part_line.dart';
 import '../selection.dart';
 import '../widgets.dart';
+import '../text/strings.dart';
 
 /// One line per part × stage: name, progress and one date signal. Everything
 /// else (dates, plan, pace, pay, time, cuts) opens under the line on demand.
@@ -142,7 +143,7 @@ class _SheetViewState extends State<SheetView> {
                   _workMenu(),
                   ToolbarButton(
                     key: const Key('toggle-done'),
-                    label: _showDone ? '완료 보임' : '완료 숨김',
+                    label: _showDone ? S.doneShown.t : S.doneHidden.t,
                     selected: _showDone,
                     onTap: () => _setShowDone(!_showDone),
                   ),
@@ -261,12 +262,12 @@ class _SheetViewState extends State<SheetView> {
       popUpAnimationStyle: instant,
       onSelected: (w) => setState(() => _work = w),
       itemBuilder: (_) => [
-        const PopupMenuItem(child: Text('모든 작품')),
+        PopupMenuItem(child: Text(S.allTitles.t)),
         for (final e in works.entries)
           PopupMenuItem(value: e.key, child: Text(e.value)),
       ],
       child: ToolbarButton(
-        label: _work == null ? '모든 작품' : works[_work]!,
+        label: _work == null ? S.allTitles.t : works[_work]!,
         selected: _work != null,
         dropdown: true,
       ),

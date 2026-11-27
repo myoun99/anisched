@@ -4,6 +4,7 @@ import '../models/catalogue.dart';
 import 'format.dart';
 import 'selection.dart';
 import 'theme.dart';
+import 'text/strings.dart';
 
 /// Always-present strip for acting on picked tasks: the count, a button per
 /// status, and clear. With nothing picked the buttons are disabled, so the
@@ -36,7 +37,7 @@ class SelectionBar extends StatelessWidget {
             SizedBox(
               width: 56,
               child: Text(
-                '$n건',
+                S.items.f({'n': n}),
                 key: const Key('picked-count'),
                 textAlign: TextAlign.right,
                 style: TextStyle(
@@ -53,7 +54,7 @@ class SelectionBar extends StatelessWidget {
               ),
             _ActionButton(
               key: const Key('pick-clear'),
-              label: '해제',
+              label: S.clear.t,
               onTap: n > 0 ? selection.clear : null,
             ),
           ],

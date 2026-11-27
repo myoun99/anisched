@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'instant.dart';
 import 'theme.dart';
+import 'text/strings.dart';
 
 /// One choice in a [PickField] list.
 typedef PickOption<T> = ({T value, String title, String? note});
@@ -196,7 +197,11 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
                   key: const Key('pick-create'),
                   dense: true,
                   leading: const Icon(Icons.add, size: 18),
-                  title: Text(typed.isEmpty ? '새로 만들기' : '「$typed」 새로 만들기'),
+                  title: Text(
+                    typed.isEmpty
+                        ? S.createNew.t
+                        : S.createNamed.f({'name': typed}),
+                  ),
                   onTap: _create,
                 ),
               ),
@@ -249,12 +254,12 @@ class _NameDialogState extends State<_NameDialog> {
     actions: [
       TextButton(
         onPressed: () => Navigator.of(context).pop(),
-        child: const Text('취소'),
+        child: Text(S.cancel.t),
       ),
       FilledButton(
         key: const Key('name-ok'),
         onPressed: () => Navigator.of(context).pop(_ctl.text),
-        child: const Text('확인'),
+        child: Text(S.ok.t),
       ),
     ],
   );

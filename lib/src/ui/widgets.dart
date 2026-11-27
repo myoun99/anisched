@@ -176,7 +176,13 @@ class SegmentButton extends StatelessWidget {
     required this.onTap,
     this.dot,
     this.count,
+    this.icon,
+    this.tooltip,
+    this.compact = false,
   });
+
+  /// Narrow side padding, for rows of many short segments.
+  final bool compact;
 
   final String label;
   final bool selected;
@@ -184,23 +190,38 @@ class SegmentButton extends StatelessWidget {
   final Color? dot;
   final int? count;
 
+  /// Drawn before the label; with an empty label, the button is the icon.
+  final IconData? icon;
+
+  /// Shown on hover or long press (icon-only buttons).
+  final String? tooltip;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return Material(
+    final button = Material(
       color: selected ? c.selected : c.panel,
       child: InkWell(
         onTap: onTap,
         hoverColor: c.hover,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 11),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             spacing: 6,
             children: [
               if (dot != null) Dot(dot!),
-              Text(label),
+              if (icon != null)
+                Icon(icon, size: 17, color: selected ? null : c.muted),
+              if (label.isNotEmpty)
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               if (count != null)
                 Text('$count', style: TextStyle(color: c.muted)),
             ],
@@ -208,6 +229,7 @@ class SegmentButton extends StatelessWidget {
         ),
       ),
     );
+    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
   }
 }
 
