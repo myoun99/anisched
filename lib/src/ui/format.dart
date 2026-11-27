@@ -96,7 +96,7 @@ String groupTitle(PartGroup g) => switch (g.kind) {
 
 /// 「4컷」 for cuts, 「1건」 for a storyboard.
 String groupCount(PartGroup g) =>
-    g.kind == GroupKind.storyboard ? '1건' : '${g.total}컷';
+    g.kind == GroupKind.storyboard ? '1건' : '${g.total} cut';
 
 /// A task's own name: its cut number or storyboard label.
 String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
@@ -126,9 +126,9 @@ PlanTone planTone(PlanSignal s) => switch (s) {
 
 /// Why the plan dot shows, for the opened details; null when it does not.
 String? planReason(PlanSignal s) => switch (s) {
-  PlanOver() => '계획 끝이 마감보다 늦음',
+  PlanOver() => '실 작업 끝이 마감보다 늦음',
   PlanHard() => '하루 할당이 최근 평균의 1.5배를 넘음',
-  PlanLateStart() => '계획 시작일이 지났는데 아직 시작 전',
+  PlanLateStart() => '실 작업 시작일이 지났는데 아직 시작 전',
   PlanTight() => '하루 할당이 최근 평균보다 많음',
   PlanNotStarted() || PlanNone() => null,
 };

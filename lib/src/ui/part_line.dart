@@ -250,20 +250,21 @@ class PartDetails extends StatelessWidget {
     final accent = Theme.of(context).colorScheme.primary;
     final slack = g.slackDays;
     final perDay = pace?.perDay;
-    final planText = g.planStartAt == null
+    String range(DateTime? a, DateTime? b, String open) =>
+        a == null && b == null
         ? '—'
-        : '${formatDate(g.planStartAt)} – '
-              '${g.planEndAt == null ? '마감' : formatDate(g.planEndAt)}';
+        : '${formatDate(a)} – ${b == null ? open : formatDate(b)}';
     final facts = <(String, String)>[
       ('마감', formatDate(g.dueAt)),
-      ('내 계획', planText),
+      ('제작', range(g.kickoffAt, g.dueAt, '—')),
+      ('실 작업', range(g.planStartAt, g.planEndAt, '마감')),
       ('여유', slack == null ? '—' : '$slack일'),
-      ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)}컷'),
+      ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)} cut'),
       ('단가', formatMoney(g.currency, g.pay)),
       ('시간', formatWorked(g.worked)),
       if (usual != null)
         ('평소', '${_perDay(usual!.overall)} · 최근 ${_perDay(usual!.recent)}'),
-      if (plan case PlanNotStarted(:final startAt)) ('시작', formatDate(startAt)),
+      if (plan case PlanNotStarted(:final startAt)) ('IN', formatDate(startAt)),
       ...extra,
     ];
     final reason = plan == null ? null : planReason(plan!);
@@ -442,5 +443,5 @@ class _CutChip extends StatelessWidget {
 
 String _perDay(UsualPace p) {
   final d = p.perDay;
-  return d == null ? '—' : '${d.toStringAsFixed(1)}컷';
+  return d == null ? '—' : '${d.toStringAsFixed(1)} cut';
 }
