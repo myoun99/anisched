@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'src/services/catalogue_reader.dart';
+import 'src/services/catalogue_store.dart';
 import 'src/services/database.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
@@ -23,5 +24,11 @@ Future<void> main() async {
       db.close();
     },
   );
-  runApp(AnischedApp(reader: reader, timer: WorkTimerStore(db)));
+  runApp(
+    AnischedApp(
+      reader: reader,
+      store: CatalogueStore(db),
+      timer: WorkTimerStore(db),
+    ),
+  );
 }

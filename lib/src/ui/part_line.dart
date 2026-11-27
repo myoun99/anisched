@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
 import 'format.dart';
+import 'selection.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
 const caretW = 32.0;
 const _progressW = 96.0;
-const _signalW = 84.0;
+const _signalW = 100.0;
 const _tabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
 class PartHeader extends StatelessWidget {
@@ -60,6 +61,9 @@ class PartLine extends StatelessWidget {
     required this.onTap,
     this.dimmed = false,
     this.signal,
+    this.signals,
+    this.picked = Picked.none,
+    this.onLongPress,
   });
 
   final PartGroup group;
@@ -75,15 +79,31 @@ class PartLine extends StatelessWidget {
   /// Replaces the deadline label, e.g. one built from precomputed days.
   final Widget? signal;
 
+  /// The group's deadline and plan signals; when given they fill the D
+  /// slot and a plan that has not started dims the line.
+  final GroupSignals? signals;
+
+  /// How much of the group is picked for an action (fill colour only).
+  final Picked picked;
+
+  /// Picks or drops the whole group.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
+    final fill = switch (picked) {
+      Picked.all => c.selected,
+      Picked.some => Color.lerp(c.panel, c.selected, 0.5)!,
+      Picked.none => selected ? c.hover : c.panel,
+    };
     final line = Material(
-      color: selected ? c.selected : c.panel,
+      color: fill,
       child: InkWell(
         key: Key('line-${g.key}'),
         onTap: onTap,
+        onLongPress: onLongPress,
         hoverColor: c.hover,
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -153,14 +173,23 @@ class PartLine extends StatelessWidget {
                     width: _signalW,
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child:
-                          signal ??
-                          DueText(
-                            g.dueAt,
-                            g.status,
-                            now,
-                            dayStartMinutes: dayStartMinutes,
-                          ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child:
+                            signal ??
+                            (signals == null
+                                ? null
+                                : SignalLabel(
+                                    due: signals!.due,
+                                    plan: signals!.plan,
+                                  )) ??
+                            DueText(
+                              g.dueAt,
+                              g.status,
+                              now,
+                              dayStartMinutes: dayStartMinutes,
+                            ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -171,7 +200,11 @@ class PartLine extends StatelessWidget {
         ),
       ),
     );
-    return dimmed ? Opacity(opacity: 0.5, child: line) : line;
+    final fade =
+        dimmed ||
+        (signals?.plan is PlanNotStarted &&
+            planTone(signals!.plan) == PlanTone.none);
+    return fade ? Opacity(opacity: 0.5, child: line) : line;
   }
 }
 
@@ -184,6 +217,9 @@ class PartDetails extends StatelessWidget {
     this.extra = const [],
     this.highlighted,
     this.onTask,
+    this.plan,
+    this.usual,
+    this.isPicked,
   });
 
   final PartGroup group;
@@ -198,6 +234,15 @@ class PartDetails extends StatelessWidget {
   /// Tapping a cut, when the view wants it (e.g. to start the timer).
   final ValueChanged<TaskRow>? onTask;
 
+  /// The plan signal; its reason shows as one line.
+  final PlanSignal? plan;
+
+  /// The stage's usual speeds (overall · recent).
+  final StagePace? usual;
+
+  /// Whether a cut is picked for an action (filled like the highlight).
+  final bool Function(TaskRow task)? isPicked;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -205,19 +250,30 @@ class PartDetails extends StatelessWidget {
     final accent = Theme.of(context).colorScheme.primary;
     final slack = g.slackDays;
     final perDay = pace?.perDay;
-    final plan = g.planStartAt == null
+    final planText = g.planStartAt == null
         ? '—'
         : '${formatDate(g.planStartAt)} – '
               '${g.planEndAt == null ? '마감' : formatDate(g.planEndAt)}';
     final facts = <(String, String)>[
       ('마감', formatDate(g.dueAt)),
-      ('내 계획', plan),
+      ('내 계획', planText),
       ('여유', slack == null ? '—' : '$slack일'),
       ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)}컷'),
       ('단가', formatMoney(g.currency, g.pay)),
       ('시간', formatWorked(g.worked)),
+      if (usual != null)
+        ('평소', '${_perDay(usual!.overall)} · 최근 ${_perDay(usual!.recent)}'),
+      if (plan case PlanNotStarted(:final startAt)) ('시작', formatDate(startAt)),
       ...extra,
     ];
+    final reason = plan == null ? null : planReason(plan!);
+    final reasonColor = plan == null
+        ? null
+        : switch (planTone(plan!)) {
+            PlanTone.red => c.retake,
+            PlanTone.amber => c.submitted,
+            PlanTone.none => c.muted,
+          };
     return DecoratedBox(
       key: Key('details-${g.key}'),
       decoration: BoxDecoration(
@@ -237,16 +293,36 @@ class PartDetails extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   for (final (k, v) in facts)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 8,
-                      children: [
-                        Text(k, style: TextStyle(fontSize: 12, color: c.muted)),
-                        Text(v),
-                      ],
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$k  ',
+                            style: TextStyle(fontSize: 12, color: c.muted),
+                          ),
+                          TextSpan(text: v),
+                        ],
+                      ),
                     ),
                 ],
               ),
+              if (reason != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    Dot(reasonColor!),
+                    Flexible(
+                      child: Text(
+                        reason,
+                        style: TextStyle(
+                          color: reasonColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               if (g.kind != GroupKind.storyboard)
                 Wrap(
                   spacing: 4,
@@ -259,7 +335,11 @@ class PartDetails extends StatelessWidget {
                         onTap: onTask == null ? null : () => onTask!(t),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: t.id == highlighted ? c.selected : c.panel,
+                            color:
+                                t.id == highlighted ||
+                                    (isPicked?.call(t) ?? false)
+                                ? c.selected
+                                : c.panel,
                             border: Border.all(color: c.line),
                             borderRadius: BorderRadius.circular(5),
                           ),
@@ -273,25 +353,41 @@ class PartDetails extends StatelessWidget {
                               spacing: 6,
                               children: [
                                 Dot(c.of(t.status)),
-                                Text(
-                                  taskLabel(t),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                TakeBadge(t.take),
-                                Text(
-                                  formatLength(t.lengthMs),
-                                  style: TextStyle(color: c.muted),
-                                ),
-                                if (t.dueOverridden)
-                                  Text(
-                                    formatDate(t.dueAt),
-                                    style: TextStyle(
-                                      color: accent,
-                                      fontWeight: FontWeight.w700,
+                                Flexible(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: taskLabel(t),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        if (t.take > 1)
+                                          TextSpan(
+                                            text: ' T${t.take}',
+                                            style: TextStyle(
+                                              color: c.retake,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        TextSpan(
+                                          text: '  ${formatLength(t.lengthMs)}',
+                                          style: TextStyle(color: c.muted),
+                                        ),
+                                        if (t.dueOverridden)
+                                          TextSpan(
+                                            text: '  ${formatDate(t.dueAt)}',
+                                            style: TextStyle(
+                                              color: accent,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
@@ -330,4 +426,9 @@ class _CutChip extends StatelessWidget {
       child: child,
     );
   }
+}
+
+String _perDay(UsualPace p) {
+  final d = p.perDay;
+  return d == null ? '—' : '${d.toStringAsFixed(1)}컷';
 }

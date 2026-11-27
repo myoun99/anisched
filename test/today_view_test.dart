@@ -55,11 +55,11 @@ void main() {
     expect(find.byKey(const Key('timer-stop')), findsNothing);
     await t.tap(find.textContaining('A파트', findRichText: true).first);
     await t.pump();
-    await t.tap(find.text('C012'));
+    await t.tap(find.textContaining('C012', findRichText: true).first);
     await t.pump();
     expect(timer.running()?.taskId, isNotNull);
     expect(find.byKey(const Key('timer-stop')), findsOneWidget);
-    expect(find.text('C012'), findsNWidgets(2));
+    expect(find.text('C012'), findsOneWidget);
     await t.tap(find.byKey(const Key('timer-stop')));
     await t.pump();
     expect(timer.running(), isNull);

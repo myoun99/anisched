@@ -25,8 +25,9 @@ CatalogueStore sampleCatalogue(DateTime now) {
     String stageName,
     int due,
     Rate rate,
-    List<(String, TaskStatus, int, String, int?)> cuts,
-  ) {
+    List<(String, TaskStatus, int, String, int?)> cuts, {
+    (int, int)? plan,
+  }) {
     final s = stage(workId, stageName);
     store.setEpisodeRate(episodeId, s, rate);
     final partId = store.addPart(
@@ -35,6 +36,9 @@ CatalogueStore sampleCatalogue(DateTime now) {
       plannedCutCount: cuts.length,
     );
     store.setPartDue(partId, s, at(due));
+    if (plan != null) {
+      store.setPartPlan(partId, s, start: at(plan.$1), end: at(plan.$2));
+    }
     for (final (number, status, take, len, own) in cuts) {
       final cutId = store.addCut(
         episodeId,
@@ -74,13 +78,22 @@ CatalogueStore sampleCatalogue(DateTime now) {
     ('C015', t, 2, '4+06', null),
     ('C021', w, 1, '1+18', 2),
   ]);
-  part(star, star7, 'C', 'LO', 4, const Rate(RateUnit.fixed, 3000), [
-    ('C044', t, 3, '2+18', 1),
-    ('C045', r, 1, '0+18', null),
-    ('C046', w, 1, '3+06', null),
-    ('C047', r, 1, '2+12', null),
-    ('C048', s, 1, '1+06', null),
-  ]);
+  part(
+    star,
+    star7,
+    'C',
+    'LO',
+    4,
+    const Rate(RateUnit.fixed, 3000),
+    [
+      ('C044', t, 3, '2+18', 1),
+      ('C045', r, 1, '0+18', null),
+      ('C046', w, 1, '3+06', null),
+      ('C047', r, 1, '2+12', null),
+      ('C048', s, 1, '1+06', null),
+    ],
+    plan: (-1, 6),
+  );
 
   final riko = store.createWork('마법소녀 리코');
   final riko11 = store.addEpisode(riko, '#11');
