@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../core/clock.dart';
 import '../core/size_class.dart';
+import '../models/progress.dart';
+import '../services/catalogue_store.dart';
 import 'theme.dart';
+import 'views/sheet_view.dart';
 
 /// The four ways of looking at the same work. All four stay in the app;
 /// the user switches between them.
@@ -19,9 +23,20 @@ enum AppView {
 /// App frame: a top bar, the current view, and the view switcher — in the
 /// top bar on medium and wide screens, along the bottom on narrow ones.
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, this.initialView = AppView.board});
+  const AppShell({
+    super.key,
+    this.initialView = AppView.board,
+    this.store,
+    this.clock = systemClock,
+  });
 
   final AppView initialView;
+
+  /// The user's catalogue; null shows empty views.
+  final CatalogueStore? store;
+
+  /// Source of "now" for deadlines; injectable for tests.
+  final Clock clock;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -29,6 +44,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
+  late final List<PartGroup> _groups = widget.store?.partGroups() ?? const [];
+  late final int _dayStart = widget.store?.settings.dayStartMinutes ?? 0;
 
   void _select(AppView v) {
     if (v != _view) setState(() => _view = v);
@@ -61,7 +78,15 @@ class _AppShellState extends State<AppShell> {
                     sizing: StackFit.expand,
                     children: [
                       for (final v in AppView.values)
-                        ViewSlot(view: v, layout: layout),
+                        if (v == AppView.sheet)
+                          SheetView(
+                            parts: _groups,
+                            now: widget.clock(),
+                            dayStartMinutes: _dayStart,
+                            layout: layout,
+                          )
+                        else
+                          ViewSlot(view: v, layout: layout),
                     ],
                   ),
                 ),
