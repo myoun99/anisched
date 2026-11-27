@@ -4,6 +4,20 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release signing comes from Gradle properties (CI passes them as
+// ORG_GRADLE_PROJECT_* from secrets). Without them the release build falls
+// back to the debug key, which is new on every CI runner — such an APK
+// cannot update an earlier install, so sideload builds must be signed.
+val uploadKey: Map<String, String?> =
+    listOf(
+        "anischedUploadStoreFile",
+        "anischedUploadStorePassword",
+        "anischedUploadKeyAlias",
+        "anischedUploadKeyPassword",
+    ).associateWith { providers.gradleProperty(it).orNull }
+val uploadKeyMissing: List<String> =
+    uploadKey.filterValues { it.isNullOrEmpty() }.keys.toList()
+
 android {
     namespace = "com.myoun.anisched"
     compileSdk = flutter.compileSdkVersion
@@ -34,11 +48,21 @@ android {
         }
     }
 
+    signingConfigs {
+        if (uploadKeyMissing.isEmpty()) {
+            create("upload") {
+                storeFile = file(uploadKey.getValue("anischedUploadStoreFile")!!)
+                storePassword = uploadKey.getValue("anischedUploadStorePassword")
+                keyAlias = uploadKey.getValue("anischedUploadKeyAlias")
+                keyPassword = uploadKey.getValue("anischedUploadKeyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
 }

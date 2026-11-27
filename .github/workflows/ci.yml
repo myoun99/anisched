@@ -47,11 +47,33 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      # Same upload key as release.yml when the secrets exist. Without it the
+      # APK is signed with this runner's throwaway debug key and cannot
+      # update an earlier install (Android refuses a different signature).
+      - name: Upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — this APK is debug-signed and cannot update an earlier install"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          {
+            echo "ORG_GRADLE_PROJECT_anischedUploadStoreFile=$RUNNER_TEMP/upload.jks"
+            echo "ORG_GRADLE_PROJECT_anischedUploadStorePassword=$STORE_PASSWORD"
+            echo "ORG_GRADLE_PROJECT_anischedUploadKeyAlias=$KEY_ALIAS"
+            echo "ORG_GRADLE_PROJECT_anischedUploadKeyPassword=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
       - run: flutter build apk --release
       # Sideload onto the Galaxy Tab straight from the run page.
       - uses: actions/upload-artifact@v4

@@ -55,3 +55,8 @@ app.*.map.json
 *.mobileprovision
 *.jks
 key.properties
+
+# fastlane output
+ios/fastlane/report.xml
+ios/fastlane/README.md
+ios/build/
