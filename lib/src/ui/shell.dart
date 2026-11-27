@@ -10,9 +10,11 @@ import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/work_timer.dart';
+import 'filter.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
+import 'widgets.dart';
 import 'views/sheet_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
@@ -69,7 +71,9 @@ class _AppShellState extends State<AppShell> {
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
   LaneLayout? _lanes;
-  bool _showDone = false;
+  ViewFilter _filter = const ViewFilter();
+  Map<int, ({String title, int? clientId})> _works = const {};
+  Map<int, String> _clients = const {};
   final _selection = TaskSelection();
   int _refresh = 0;
 
@@ -99,15 +103,21 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadGroups() async {
     final reader = widget.reader;
     if (reader == null) return;
-    final done = _showDone;
-    final (groups, signals, paces, lanes) = await (
+    final done = _filter.showDone;
+    final (groups, signals, paces, lanes, works, clients) = await (
       reader.partGroups(includeDone: done),
       reader.signals(includeDone: done),
       reader.stagePaces(),
       reader.calendarLayout(basis: CalendarBasis.work),
+      reader.works(),
+      reader.clients(),
     ).wait;
     if (!mounted) return;
     setState(() {
+      _works = {
+        for (final w in works) w.id: (title: w.title, clientId: w.clientId),
+      };
+      _clients = {for (final c in clients) c.id: c.name};
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
@@ -123,6 +133,61 @@ class _AppShellState extends State<AppShell> {
     setState(() => _refresh++);
     unawaited(_loadGroups());
   }
+
+  void _setFilter(ViewFilter f) {
+    final reload = f.showDone != _filter.showDone;
+    setState(() => _filter = f);
+    if (reload) unawaited(_loadGroups());
+  }
+
+  /// Units passing the filter, in the stored order.
+  List<PartGroup> _visible(DateTime now) {
+    final clientOf = {for (final e in _works.entries) e.key: e.value.clientId};
+    return [
+      for (final g in _groups)
+        if (_filter.matches(g, now, clientOf)) g,
+    ];
+  }
+
+  /// A drag in the list: [shownKeys] in their new order. Hidden units
+  /// keep their slots.
+  void _reorder(List<String> shownKeys) => _write((store) {
+    final shown = shownKeys.toSet();
+    final next = shownKeys.iterator;
+    store.setGroupOrder([
+      for (final g in _groups)
+        if (shown.contains(g.key)) (next..moveNext()).current else g.key,
+    ]);
+  });
+
+  List<Widget> _toolbar(int count) => [
+    ToolbarButton(
+      key: const Key('sort-by-due'),
+      label: '마감 순 정렬',
+      selected: false,
+      onTap: widget.store == null
+          ? null
+          : () => _write((s) => s.clearGroupOrder()),
+    ),
+    FilterButton(
+      filter: _filter,
+      onChanged: _setFilter,
+      clients: _clients,
+      works: {
+        for (final w in _works.entries)
+          if (_groups.any((g) => g.workId == w.key)) w.key: w.value.title,
+      },
+    ),
+    SizedBox(
+      height: 34,
+      child: Center(
+        child: Text(
+          '$count건',
+          style: TextStyle(color: AppColors.of(context).muted),
+        ),
+      ),
+    ),
+  ];
 
   static DateTime _startOf(DateTime d) => DateTime(d.year, d.month, d.day);
   static DateTime _endOf(DateTime d) =>
@@ -166,24 +231,23 @@ class _AppShellState extends State<AppShell> {
         widget.store?.settings.restWeekdays ??
         const {DateTime.saturday, DateTime.sunday};
     final writable = widget.store != null;
-    void showDone(bool on) {
-      setState(() => _showDone = on);
-      unawaited(_loadGroups());
-    }
-
+    final shown = _visible(now);
+    final toolbar = _toolbar(shown.length);
     return switch (v) {
       AppView.list => SheetView(
-        parts: _groups,
+        parts: shown,
         now: now,
         layout: layout,
-        showDone: _showDone,
+        showDone: _filter.showDone,
         signals: _signals,
         paces: _paces,
         selection: _selection,
-        onShowDoneChanged: showDone,
+        toolbar: toolbar,
+        onReorder: writable ? _reorder : null,
       ),
       AppView.timeline => TimelineView(
-        parts: _groups,
+        parts: shown,
+        toolbar: toolbar,
         now: now,
         layout: layout,
         restWeekdays: rest,

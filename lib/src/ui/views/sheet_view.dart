@@ -24,9 +24,21 @@ class SheetView extends StatefulWidget {
     this.signals = const {},
     this.paces = const {},
     this.selection,
+    this.toolbar,
+    this.onReorder,
   });
 
+  /// Units to list. With [onReorder] they are shown as given (already
+  /// filtered and in the user's order); without it this view filters by
+  /// work and sorts by deadline itself.
   final List<PartGroup> parts;
+
+  /// Replaces the view's own toolbar controls (the shell's sort and
+  /// filter buttons).
+  final List<Widget>? toolbar;
+
+  /// Turns on the rows' drag grips; gets the shown keys in their new order.
+  final ValueChanged<List<String>>? onReorder;
 
   /// The instant deadlines count from.
   final DateTime now;
@@ -82,15 +94,18 @@ class _SheetViewState extends State<SheetView> {
   }
 
   List<PartGroup> get _visible =>
-      [
-        for (final p in widget.parts)
-          if ((_showDone || p.status != TaskStatus.done) &&
-              (_work == null || p.workId == _work))
-            p,
-      ]..sort(
-        (a, b) =>
-            (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)),
-      );
+      widget.onReorder != null
+            ? widget.parts
+            : [
+                for (final p in widget.parts)
+                  if ((_showDone || p.status != TaskStatus.done) &&
+                      (_work == null || p.workId == _work))
+                    p,
+              ]
+        ..sort(
+          (a, b) =>
+              (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)),
+        );
 
   void _toggle(PartGroup p) => setState(() {
     _selected = p.key;
@@ -108,65 +123,111 @@ class _SheetViewState extends State<SheetView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ViewToolbar(
-            children: [
-              _workMenu(),
-              ToolbarButton(
-                key: const Key('toggle-done'),
-                label: _showDone ? '완료 보임' : '완료 숨김',
-                selected: _showDone,
-                onTap: () => _setShowDone(!_showDone),
-              ),
-            ],
+            children:
+                widget.toolbar ??
+                [
+                  _workMenu(),
+                  ToolbarButton(
+                    key: const Key('toggle-done'),
+                    label: _showDone ? '완료 보임' : '완료 숨김',
+                    selected: _showDone,
+                    onTap: () => _setShowDone(!_showDone),
+                  ),
+                ],
           ),
           if (!narrow) const PartHeader(),
           Expanded(
             child: ListenableBuilder(
               listenable: widget.selection ?? const _Never(),
-              builder: (context, _) => ListView.builder(
-                key: const Key('sheet-rows'),
-                controller: _rows,
-                itemCount: parts.length,
-                itemBuilder: (context, i) {
-                  final p = parts[i];
-                  final sel = widget.selection;
-                  final open = _expanded.contains(p.key);
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      PartLine(
+              builder: (context, _) => _list(parts, (context, i) {
+                final p = parts[i];
+                final sel = widget.selection;
+                final open = _expanded.contains(p.key);
+                final body = Column(
+                  key: ValueKey(p.key),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    PartLine(
+                      group: p,
+                      now: widget.now,
+                      dayStartMinutes: widget.dayStartMinutes,
+                      expanded: open,
+                      selected: _selected == p.key,
+                      signals: widget.signals[p.key],
+                      picked: sel?.of(p) ?? Picked.none,
+                      onLongPress: sel == null
+                          ? null
+                          : () => sel.toggleGroup(p),
+                      onTap: () => sel != null && !sel.isEmpty
+                          ? sel.toggleGroup(p)
+                          : _toggle(p),
+                    ),
+                    if (open)
+                      PartDetails(
                         group: p,
-                        now: widget.now,
-                        dayStartMinutes: widget.dayStartMinutes,
-                        expanded: open,
-                        selected: _selected == p.key,
-                        signals: widget.signals[p.key],
-                        picked: sel?.of(p) ?? Picked.none,
-                        onLongPress: sel == null
-                            ? null
-                            : () => sel.toggleGroup(p),
-                        onTap: () => sel != null && !sel.isEmpty
-                            ? sel.toggleGroup(p)
-                            : _toggle(p),
+                        pace:
+                            widget.signals[p.key]?.pace ??
+                            widget.paceOf?.call(p),
+                        plan: widget.signals[p.key]?.plan,
+                        usual: widget.paces[p.stageName],
+                        isPicked: sel?.has,
+                        onTask: sel?.toggleTask,
                       ),
-                      if (open)
-                        PartDetails(
-                          group: p,
-                          pace:
-                              widget.signals[p.key]?.pace ??
-                              widget.paceOf?.call(p),
-                          plan: widget.signals[p.key]?.plan,
-                          usual: widget.paces[p.stageName],
-                          isPicked: sel?.has,
-                          onTask: sel?.toggleTask,
+                  ],
+                );
+                if (widget.onReorder == null) return body;
+                return Row(
+                  key: ValueKey(p.key),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: SizedBox(
+                          key: Key('grip-${p.key}'),
+                          width: 22,
+                          height: 52,
+                          child: Icon(
+                            Icons.drag_indicator,
+                            size: 16,
+                            color: c.faint,
+                          ),
                         ),
-                    ],
-                  );
-                },
-              ),
+                      ),
+                    ),
+                    Expanded(child: body),
+                  ],
+                );
+              }),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _list(List<PartGroup> parts, IndexedWidgetBuilder item) {
+    final reorder = widget.onReorder;
+    if (reorder == null) {
+      return ListView.builder(
+        key: const Key('sheet-rows'),
+        controller: _rows,
+        itemCount: parts.length,
+        itemBuilder: item,
+      );
+    }
+    return ReorderableListView.builder(
+      key: const Key('sheet-rows'),
+      scrollController: _rows,
+      buildDefaultDragHandles: false,
+      itemCount: parts.length,
+      itemBuilder: item,
+      onReorderItem: (from, to) {
+        final keys = [for (final p in parts) p.key];
+        keys.insert(to, keys.removeAt(from));
+        reorder(keys);
+      },
     );
   }
 
