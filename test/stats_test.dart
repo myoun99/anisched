@@ -47,26 +47,30 @@ void main() {
       expect(store.runningTimer()!.taskId, b);
     });
 
-    test('moving to another cut pauses, or follows when set', () {
+    test('picking a cut: the setting alone decides', () {
       final w = store.createWork('W');
       final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
       final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
       final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
       expect(store.settings.timerAutoStart, isFalse);
 
+      // Off (default): the picked cut comes up paused, running or not.
       timer.start(taskId: a);
-      expect(timer.selectionChanged(b, follow: false), isNull);
+      expect(timer.selectionChanged(b, autoStart: false), isNull);
       expect(timer.running(), isNull);
-      expect(timer.selectionChanged(a, follow: true), isNull); // paused stays
+      expect(timer.selectionChanged(a, autoStart: false), isNull);
+      expect(timer.running(), isNull);
 
+      // On: the picked cut runs, from paused or from another cut.
       store.settings.timerAutoStart = true;
-      timer.start(taskId: a);
-      expect(
-        timer
-            .selectionChanged(b, follow: store.settings.timerAutoStart)!
-            .taskId,
-        b,
-      );
+      final auto = store.settings.timerAutoStart;
+      expect(timer.selectionChanged(a, autoStart: auto)!.taskId, a);
+      expect(timer.selectionChanged(b, autoStart: auto)!.taskId, b);
+      final runningOnB = timer.running()!.id;
+      // Picking the running cut again keeps the same stretch.
+      expect(timer.selectionChanged(b, autoStart: auto)!.id, runningOnB);
+      expect(timer.selectionChanged(null, autoStart: auto), isNull);
+      expect(timer.running(), isNull);
     });
   });
 

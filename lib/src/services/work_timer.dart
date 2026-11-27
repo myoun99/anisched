@@ -77,14 +77,16 @@ class WorkTimerStore {
     return start(taskId: taskId);
   }
 
-  /// The user moved to [taskId] (another cut). With the timer running it
-  /// follows the move when [follow] (setting `timerAutoStart`), else
-  /// pauses. Nothing happens while paused or on the same task.
-  WorkInterval? selectionChanged(int? taskId, {required bool follow}) {
+  /// The user picked [taskId] (a cut). The setting alone decides what
+  /// follows, whatever ran before: [autoStart] (`timerAutoStart`) runs the
+  /// timer on the picked task, otherwise it ends up paused. Picking the
+  /// task the timer already runs on leaves it running; picking nothing
+  /// (null) pauses.
+  WorkInterval? selectionChanged(int? taskId, {required bool autoStart}) {
     final open = running();
-    if (open == null || open.taskId == taskId) return open;
-    stop();
-    return follow ? start(taskId: taskId) : null;
+    if (open != null && open.taskId == taskId && taskId != null) return open;
+    if (open != null) stop();
+    return autoStart && taskId != null ? start(taskId: taskId) : null;
   }
 
   /// Intervals that overlap `[from, to)`, oldest first, including a
