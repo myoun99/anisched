@@ -205,7 +205,7 @@
 | 화 | `addEpisode(작품, 번호, title:)` · 화 단가 `setEpisodeRate` | `episodes(작품)` · 검색 `searchEpisodes(작품, 글자)`(번호·제목) |
 | 파트 | `addPart(화, 라벨, plannedCutCount:)` · `renamePart` · `setPlannedCutCount` | `parts(화)`(살아 있는 컷 수 포함) |
 | 컷 여러 개 | `parseCutNumbers(입력)` → `addCuts(화, 번호들, partId:, lengthMs:)`(이미 있는 번호는 건너뛰고 알려 줌) | `cuts(화)` |
-| 컷 손보기 | `setCutsPart(컷들, 파트 또는 null)`(같은 화의 파트만) · `setCutLength` | |
+| 컷 손보기 | `setCutsPart(컷들, 파트 또는 null)`(같은 화의 파트만) · `setCutLength` | `cuts(화, includeArchived:)` → `CutRow`(겸용 `sharedHeadCutId` · `sharedLabel`, 보관된 결번 `archived`) |
 | 파트 × 공정 | `setPartDue` · `clearPartDue` · `setPartPlan(start:, end:)` · `addTasksForPart` | |
 | 컷 × 공정 | `addTask` · `setTaskDue` · `setTaskPlan` · `setTaskRate` · `setStatus` / `setStatusMany` · `requestRetake` | |
 | 쉬는 날 | `addDaysOff` · `removeDaysOff` | `daysOff`(스토어) |

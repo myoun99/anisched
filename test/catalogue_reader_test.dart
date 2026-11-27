@@ -73,6 +73,10 @@ void main() {
     expect(await reader.episodes(1), store.episodes(1));
     expect(await reader.parts(ep), store.parts(ep));
     expect(await reader.cuts(ep), store.cuts(ep));
+    expect(
+      await reader.cuts(ep, includeArchived: true),
+      store.cuts(ep, includeArchived: true),
+    );
     expect(await reader.clients(), store.clients());
     expect(await reader.weekHours(), store.weekHours());
     expect(await reader.dayIntervals(), store.dayIntervals());
