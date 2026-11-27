@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/clock.dart';
 import '../core/size_class.dart';
+import '../models/lanes.dart';
 import '../models/progress.dart';
 import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
@@ -12,17 +13,18 @@ import '../services/work_timer.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
-import 'views/board_view.dart';
 import 'views/sheet_view.dart';
-import 'views/today_view.dart';
+import 'views/timeline_view.dart';
+import 'views/work_view.dart';
 
-/// The four ways of looking at the same work. All four stay in the app;
-/// the user switches between them.
+/// The app's views: the list, the production timeline, the user's own
+/// work on parallel lanes, registration and settings.
 enum AppView {
-  board('보드'),
+  list('목록'),
   timeline('타임라인'),
-  sheet('시트'),
-  today('오늘');
+  work('작업'),
+  register('등록'),
+  settings('설정');
 
   const AppView(this.label);
 
@@ -34,7 +36,7 @@ enum AppView {
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
-    this.initialView = AppView.board,
+    this.initialView = AppView.list,
     this.reader,
     this.store,
     this.timer,
@@ -66,6 +68,7 @@ class _AppShellState extends State<AppShell> {
   List<PartGroup> _groups = const [];
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
+  LaneLayout? _lanes;
   bool _showDone = false;
   final _selection = TaskSelection();
   int _refresh = 0;
@@ -97,21 +100,110 @@ class _AppShellState extends State<AppShell> {
     final reader = widget.reader;
     if (reader == null) return;
     final done = _showDone;
-    final (groups, signals, paces) = await (
+    final (groups, signals, paces, lanes) = await (
       reader.partGroups(includeDone: done),
       reader.signals(includeDone: done),
       reader.stagePaces(),
+      reader.calendarLayout(basis: CalendarBasis.work),
     ).wait;
     if (!mounted) return;
     setState(() {
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
+      _lanes = lanes.layout;
     });
   }
 
+  /// Runs one write on the store, then reloads every view.
+  void _write(void Function(CatalogueStore store) body) {
+    final store = widget.store;
+    if (store == null) return;
+    body(store);
+    setState(() => _refresh++);
+    unawaited(_loadGroups());
+  }
+
+  static DateTime _startOf(DateTime d) => DateTime(d.year, d.month, d.day);
+  static DateTime _endOf(DateTime d) =>
+      DateTime(d.year, d.month, d.day, 23, 59);
+
+  /// A timeline bar dropped: the unit's production kickoff and deadline.
+  void _schedule(PartGroup g, DateTime kickoff, DateTime due) =>
+      _write((store) {
+        final k = _startOf(kickoff);
+        final d = _endOf(due);
+        if (g.kind == GroupKind.part) {
+          store.setPartSchedule(g.partId!, g.stageId, kickoffAt: k, dueAt: d);
+        } else {
+          for (final t in g.tasks) {
+            store.setTaskKickoff(t.id, k);
+            store.setTaskDue(t.id, d);
+          }
+        }
+      });
+
+  /// A work bar's end dragged: the user's own start and end.
+  void _plan(PartGroup g, DateTime start, DateTime end) => _write((store) {
+    final a = _startOf(start);
+    final b = _endOf(end);
+    if (g.kind == GroupKind.part) {
+      store.setPartPlan(g.partId!, g.stageId, start: a, end: b);
+    } else {
+      for (final t in g.tasks) {
+        store.setTaskPlan(t.id, start: a, end: b);
+      }
+    }
+  });
+
   void _select(AppView v) {
     if (v != _view) setState(() => _view = v);
+  }
+
+  Widget _viewFor(AppView v, ScreenLayout layout) {
+    final now = widget.clock();
+    final rest =
+        widget.store?.settings.restWeekdays ??
+        const {DateTime.saturday, DateTime.sunday};
+    final writable = widget.store != null;
+    void showDone(bool on) {
+      setState(() => _showDone = on);
+      unawaited(_loadGroups());
+    }
+
+    return switch (v) {
+      AppView.list => SheetView(
+        parts: _groups,
+        now: now,
+        layout: layout,
+        showDone: _showDone,
+        signals: _signals,
+        paces: _paces,
+        selection: _selection,
+        onShowDoneChanged: showDone,
+      ),
+      AppView.timeline => TimelineView(
+        parts: _groups,
+        now: now,
+        layout: layout,
+        restWeekdays: rest,
+        selection: _selection,
+        onSchedule: writable ? _schedule : null,
+      ),
+      AppView.work => WorkView(
+        lanes: _lanes,
+        parts: {for (final g in _groups) g.key: g},
+        now: now,
+        layout: layout,
+        restWeekdays: rest,
+        onPin: writable
+            ? (key, lane) => _write((s) => s.pinLane(key, lane))
+            : null,
+        onClearPins: writable ? () => _write((s) => s.clearLanePins()) : null,
+        onPlan: writable ? _plan : null,
+      ),
+      AppView.register || AppView.settings => ViewSlot(view: v, layout: layout),
+    };
   }
 
   @override
@@ -152,45 +244,7 @@ class _AppShellState extends State<AppShell> {
                     index: _view.index,
                     sizing: StackFit.expand,
                     children: [
-                      for (final v in AppView.values)
-                        if (v == AppView.board)
-                          BoardView(
-                            parts: _groups,
-                            layout: layout,
-                            signals: _signals,
-                            paces: _paces,
-                            selection: _selection,
-                            showDone: _showDone,
-                            onShowDoneChanged: (on) {
-                              setState(() => _showDone = on);
-                              unawaited(_loadGroups());
-                            },
-                          )
-                        else if (v == AppView.sheet)
-                          SheetView(
-                            parts: _groups,
-                            now: widget.clock(),
-                            layout: layout,
-                            showDone: _showDone,
-                            signals: _signals,
-                            paces: _paces,
-                            selection: _selection,
-                            onShowDoneChanged: (on) {
-                              setState(() => _showDone = on);
-                              unawaited(_loadGroups());
-                            },
-                          )
-                        else if (v == AppView.today && widget.reader != null)
-                          TodayScreen(
-                            reader: widget.reader!,
-                            timer: widget.timer,
-                            clock: widget.clock,
-                            layout: layout,
-                            selection: _selection,
-                            refresh: _refresh,
-                          )
-                        else
-                          ViewSlot(view: v, layout: layout),
+                      for (final v in AppView.values) _viewFor(v, layout),
                     ],
                   ),
                 ),

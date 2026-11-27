@@ -36,7 +36,7 @@ void main() {
       MaterialApp(
         theme: AppTheme.light(),
         home: AppShell(
-          initialView: AppView.sheet,
+          initialView: AppView.list,
           reader: SyncCatalogueReader(store),
           store: store,
           clock: () => now,
