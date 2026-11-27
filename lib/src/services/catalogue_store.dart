@@ -626,6 +626,91 @@ ORDER BY sort_key, id;''')) {
       ),
   ];
 
+  /// Clients whose name contains [query] (any case; empty = all), most
+  /// recently used first — by the latest activity on their works.
+  List<({int id, String name, int? closingDay})> searchClients(
+    String query, {
+    int limit = 50,
+  }) => [
+    for (final r in db.select(
+      '''
+SELECT cl.id, cl.name, cl.closing_day,
+  (SELECT MAX(COALESCE(
+     (SELECT MAX(MAX(COALESCE(t.done_at, 0), COALESCE(t.submitted_at, 0),
+                     COALESCE(t.received_at, 0)))
+      FROM work_stages s JOIN tasks t ON t.stage_id = s.id
+      WHERE s.work_id = w.id), w.created_at))
+   FROM works w WHERE w.client_id = cl.id AND w.archived_at IS NULL) AS used
+FROM clients cl
+WHERE cl.archived_at IS NULL AND cl.name LIKE ? ESCAPE '\\'
+ORDER BY used IS NULL, used DESC, cl.name, cl.id
+LIMIT ?;''',
+      [_like(query), limit],
+    ))
+      (
+        id: r['id'] as int,
+        name: r['name'] as String,
+        closingDay: r['closing_day'] as int?,
+      ),
+  ];
+
+  /// Live works whose title contains [query] (any case; empty = all),
+  /// optionally of one client, most recently used first — by the latest
+  /// task activity, else when the work was made.
+  List<({int id, String title, String currency, int? clientId})> searchWorks(
+    String query, {
+    int? clientId,
+    int limit = 50,
+  }) => [
+    for (final r in db.select(
+      '''
+SELECT w.id, w.title, w.currency, w.client_id,
+  COALESCE((SELECT MAX(MAX(COALESCE(t.done_at, 0),
+                           COALESCE(t.submitted_at, 0),
+                           COALESCE(t.received_at, 0)))
+            FROM work_stages s JOIN tasks t ON t.stage_id = s.id
+            WHERE s.work_id = w.id), w.created_at) AS used
+FROM works w
+WHERE w.archived_at IS NULL AND w.title LIKE ? ESCAPE '\\'
+  AND (? IS NULL OR w.client_id = ?)
+ORDER BY used DESC, w.id DESC
+LIMIT ?;''',
+      [_like(query), clientId, clientId, limit],
+    ))
+      (
+        id: r['id'] as int,
+        title: r['title'] as String,
+        currency: r['currency'] as String,
+        clientId: r['client_id'] as int?,
+      ),
+  ];
+
+  /// A work's episodes whose number or title contains [query], in number
+  /// order.
+  List<({int id, String number, String? title})> searchEpisodes(
+    int workId,
+    String query,
+  ) => [
+    for (final r in db.select(
+      '''
+SELECT id, number, title FROM episodes
+WHERE work_id = ? AND archived_at IS NULL
+  AND (number LIKE ?2 ESCAPE '\\' OR COALESCE(title, '') LIKE ?2 ESCAPE '\\')
+ORDER BY sort_key, id;''',
+      [workId, _like(query)],
+    ))
+      (
+        id: r['id'] as int,
+        number: r['number'] as String,
+        title: r['title'] as String?,
+      ),
+  ];
+
+  /// A LIKE pattern matching [query] anywhere, with `%`, `_` and `\`
+  /// taken literally.
+  static String _like(String query) =>
+      '%${query.trim().replaceAllMapped(RegExp(r'[\\%_]'), (m) => '\\${m[0]}')}%';
+
   /// Live works, newest first.
   List<({int id, String title, String currency, int? clientId})> works() => [
     for (final r in db.select(
