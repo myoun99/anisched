@@ -199,7 +199,8 @@ void main() {
   });
 
   test('roles: picking one creates its stages\' tasks', () {
-    expect(store.roles().map((r) => r.name), ['원화', '작감', '총작감', '연출', '콘티']);
+    expect(store.roles().map((r) => r.name), ['원화', '연출', '작감', '총작감', '콘티']);
+    expect(store.roles()[1].stages, ['LO 연출 수정', '원화 연출 수정']);
     expect(store.roles().first.stages, ['LO', '원화']);
     final w = store.createWork('W');
     final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'B');
@@ -223,5 +224,74 @@ void main() {
     expect(edited.stages, ['2원', '동화']);
     store.deleteRole(niwon);
     expect(store.roles(), hasLength(5));
+  });
+
+  test('checkboxes: tasks from a list of stages; a role ticks its boxes', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C2', partLabel: 'B');
+    final lo = stage(w, 'LO');
+    // "LO only" is not a role: just tick LO.
+    expect(store.addTasksForStages([lo], partId: r.partId), hasLength(2));
+    final sakkan = store.roles().firstWhere((x) => x.name == '작감').id;
+    final ids = store.roleStageIds(sakkan, w);
+    expect(
+      ids.map((id) => store.stages(w).firstWhere((s) => s.id == id).name),
+      ['LO 작감 수정', '원화 작감 수정'],
+    );
+    expect(
+      store.addTasksForStages([lo, ...ids], partId: r.partId),
+      hasLength(4), // LO already there
+    );
+  });
+
+  test('cut numbers follow the format of their work', () {
+    final w = store.createWork('W');
+    expect(store.workCutFormat(w), (prefix: 'C', digits: 3));
+    expect(store.cutNumberFor(w, 1), 'C001');
+    final ep = store.addEpisode(w, '#1');
+    store.addCutRun(ep, start: 98, count: 3);
+    expect(numbers(ep), ['C098', 'C099', 'C100']);
+
+    store.setWorkCutFormat(w, prefix: '', digits: 4);
+    expect(store.cutNumberFor(w, 12), '0012');
+    store.addCutRun(ep, start: 1, count: 2);
+    expect(numbers(ep).take(2), ['0001', '0002']);
+    expect(
+      () => store.setWorkCutFormat(w, prefix: 'C', digits: 0),
+      throwsRangeError,
+    );
+  });
+
+  test('a shared pair is two cuts everywhere: count, progress, pace, pay', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C2', partLabel: 'B');
+    final lo = stage(w, 'LO');
+    store
+      ..settings.restWeekdays = {}
+      ..setEpisodeRate(r.episodeId, lo, const Rate(RateUnit.fixed, 2500))
+      ..addTasksForPart(r.partId!, lo)
+      ..setPartDue(r.partId!, lo, DateTime(2026, 11, 28))
+      ..linkSharedCuts(r.cutIds);
+
+    // Registration does not shrink the count.
+    expect(store.cuts(r.episodeId), hasLength(2));
+    expect(store.parts(r.episodeId).single.cutCount, 2);
+    var g = store.partGroups().single;
+    expect(g.total, 2);
+    expect(g.tasks.map((t) => t.sharedLabel), ['C1-2', 'C1-2']);
+    // Per-cut rate twice.
+    expect(g.pay, 5000);
+    // Two cuts over today and tomorrow.
+    expect(store.paceOf(g)!.remaining, 2);
+    expect(store.paceOf(g)!.perDay, 1);
+
+    // Progress counts each: one handed is 1/2.
+    store.setStatus(g.tasks.first.id, TaskStatus.submitted);
+    g = store.partGroups().single;
+    expect((g.handed, g.total), (1, 2));
+
+    // Monthly totals pay both.
+    store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.done);
+    expect(store.monthlyTotals(2026, 11)['JPY']!.total, 5000);
   });
 }
