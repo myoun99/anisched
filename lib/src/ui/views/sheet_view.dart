@@ -78,9 +78,10 @@ class _SheetViewState extends State<SheetView> {
     int byDue() =>
         (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999));
     final r = switch (_sort) {
-      SheetSort.name => '${a.workTitle}${a.episodeNumber}${a.label}'.compareTo(
-        '${b.workTitle}${b.episodeNumber}${b.label}',
-      ),
+      SheetSort.name =>
+        '${a.workTitle}${a.episodeNumber}${groupTitle(a)}'.compareTo(
+          '${b.workTitle}${b.episodeNumber}${groupTitle(b)}',
+        ),
       SheetSort.stage => a.stageName.compareTo(b.stageName),
       SheetSort.count => a.total.compareTo(b.total),
       SheetSort.progress => (a.handed / a.total).compareTo(b.handed / b.total),
@@ -122,7 +123,7 @@ class _SheetViewState extends State<SheetView> {
     final rows = <_Row>[
       for (final p in parts) ...[
         _PartRow(p),
-        if (_expanded.contains(p.key) && !p.solo)
+        if (_expanded.contains(p.key) && p.kind != GroupKind.storyboard)
           for (final t in p.tasks) _TaskRow(p, t),
       ],
     ];
@@ -388,7 +389,7 @@ class _Caret extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (part.solo) return const SizedBox(width: 28);
+    if (part.kind == GroupKind.storyboard) return const SizedBox(width: 28);
     return SizedBox(
       width: 28,
       child: InkWell(

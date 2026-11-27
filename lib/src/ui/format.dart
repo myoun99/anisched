@@ -84,11 +84,16 @@ Map<String, int> totalsByCurrency(Iterable<PartGroup> groups) {
   return out;
 }
 
-/// 「B파트」, or a solo task's own label (storyboard label or cut number).
-String groupTitle(PartGroup g) => g.solo ? g.label : '${g.label}파트';
+/// 「B파트」, 「파트 없음」 for an episode's loose cuts, or a storyboard's label.
+String groupTitle(PartGroup g) => switch (g.kind) {
+  GroupKind.part => '${g.partLabel}파트',
+  GroupKind.noPart => '파트 없음',
+  GroupKind.storyboard => g.storyboardLabel ?? '콘티',
+};
 
-/// 「4컷」 for a part, 「1건」 for a solo task.
-String groupCount(PartGroup g) => g.solo ? '1건' : '${g.total}컷';
+/// 「4컷」 for cuts, 「1건」 for a storyboard.
+String groupCount(PartGroup g) =>
+    g.kind == GroupKind.storyboard ? '1건' : '${g.total}컷';
 
 /// A task's own name: its cut number or storyboard label.
 String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';

@@ -80,6 +80,8 @@ String partKey(String label, String stage) => sampleCatalogue(now)
     .partGroups()
     .firstWhere(
       (g) =>
-          g.workTitle == '별빛 정류장' && g.label == label && g.stageName == stage,
+          g.workTitle == '별빛 정류장' &&
+          g.partLabel == label &&
+          g.stageName == stage,
     )
     .key;

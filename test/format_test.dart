@@ -1,4 +1,5 @@
 import 'package:anisched/src/models/catalogue.dart';
+import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/ui/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -62,12 +63,12 @@ void main() {
     expect(totals['KRW'], 900000);
   });
 
-  test('a solo storyboard reads as one item, a part by its label', () {
+  test('a storyboard reads as one item, a part by its label', () {
     final groups = sampleCatalogue(DateTime(2026, 11, 27)).partGroups();
-    final conte = groups.firstWhere((g) => g.solo);
+    final conte = groups.firstWhere((g) => g.kind == GroupKind.storyboard);
     expect(groupTitle(conte), '콘티');
     expect(groupCount(conte), '1건');
-    final part = groups.firstWhere((g) => !g.solo);
+    final part = groups.firstWhere((g) => g.kind == GroupKind.part);
     expect(groupTitle(part), endsWith('파트'));
   });
 }
