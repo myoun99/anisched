@@ -1,65 +1,115 @@
 /// Registering cuts in one go: what the register screen collects, and the
-/// writes that turn it into an episode, a part, cuts and tasks.
+/// writes that turn it into a part, cuts and tasks.
 library;
 
 import '../models/cut_numbers.dart';
 import '../services/catalogue_store.dart';
 
-/// The cut grid before it is saved: a numbered run, minus missing
-/// numbers, with some cuts split into lettered cuts and some pairs joined
-/// as one shared cut (each keeps its own status).
+/// The cut grid before it is saved. Cells are a numbered run plus cuts
+/// added by name; any cell can be renamed, left out (missing number),
+/// split into lettered cuts, or paired with another as a shared cut.
+/// A shared pair stays two cuts — it is only marked as one.
 class CutDraft {
   CutDraft({
     this.start = 1,
     this.count = 100,
     this.prefix = 'C',
     this.width = 3,
-    Set<String>? removed,
-    Map<String, int>? splits,
-    Map<String, String>? shared,
-  }) : removed = removed ?? {},
-       splits = splits ?? {},
-       shared = shared ?? {};
+  });
 
   int start;
   int count;
   final String prefix;
   final int width;
 
+  /// Cuts added one by one, by name, after the run.
+  final extras = <String>[];
+
+  /// Cell → the name the user gave it.
+  final renames = <String, String>{};
+
   /// Missing numbers (결번), kept on the grid crossed out.
-  final Set<String> removed;
+  final removed = <String>{};
 
-  /// Cut → how many lettered cuts it becomes (2 = A/B).
-  final Map<String, int> splits;
+  /// Cell → how many lettered cuts it becomes (2 = A/B).
+  final splits = <String, int>{};
 
-  /// First cut → last cut of a shared pair (겸용).
-  final Map<String, String> shared;
+  /// First cell → second cell of a shared pair (겸용).
+  final shared = <String, String>{};
 
   String number(int n) => '$prefix${n.toString().padLeft(width, '0')}';
 
-  /// The run's numbers, before anything is taken out.
-  List<String> get run =>
-      cutNumberRun(start: start, count: count, prefix: prefix, width: width);
+  /// Cell ids in grid order: the run, then the added cuts.
+  List<String> get cells => [
+    ...cutNumberRun(start: start, count: count, prefix: prefix, width: width),
+    for (final e in extras)
+      if (!_inRun(e)) e,
+  ];
 
-  /// Cells shown on the grid: the run without the second halves of
-  /// shared pairs.
-  List<String> get cells {
-    final tails = shared.values.toSet();
-    return [
-      for (final n in run)
-        if (!tails.contains(n)) n,
-    ];
+  bool _inRun(String id) {
+    final m = RegExp(r'^(\D*)(\d+)$').firstMatch(id);
+    if (m == null || m[1] != prefix || m[2]!.length != width) return false;
+    final n = int.parse(m[2]!);
+    return n >= start && n < start + count;
   }
 
+  /// The cut number a cell will be saved as.
+  String nameOf(String id) => renames[id] ?? id;
+
   /// How many cuts will be saved.
-  int get total {
-    var t = 0;
-    for (final n in cells) {
-      if (removed.contains(n)) continue;
-      t += splits[n] ?? 1;
-      if (shared.containsKey(n)) t += 1;
+  int get total => [
+    for (final c in cells)
+      if (!removed.contains(c)) splits[c] ?? 1,
+  ].fold(0, (a, b) => a + b);
+
+  /// Cells whose name is used twice on the grid or already [taken].
+  Set<String> clashes([Set<String> taken = const {}]) {
+    final seen = <String, String>{};
+    final out = <String>{};
+    for (final c in cells) {
+      if (removed.contains(c)) continue;
+      final n = nameOf(c);
+      if (taken.contains(n)) out.add(c);
+      final other = seen[n];
+      if (other != null) out.addAll([c, other]);
+      seen[n] = c;
     }
-    return t;
+    return out;
+  }
+
+  /// The other cell of [id]'s shared pair, if any.
+  String? partner(String id) {
+    if (shared.containsKey(id)) return shared[id];
+    for (final e in shared.entries) {
+      if (e.value == id) return e.key;
+    }
+    return null;
+  }
+
+  /// What a cell shows: its name; the first of a shared pair shows the
+  /// pair (`C004-005`).
+  String label(String id) {
+    final tail = shared[id];
+    return tail == null
+        ? nameOf(id)
+        : sharedCutNumber(nameOf(id), nameOf(tail));
+  }
+
+  /// Adds a cut by name at the end. False if the name is empty.
+  bool add(String name) {
+    final n = name.trim();
+    if (n.isEmpty) return false;
+    extras.add(n);
+    return true;
+  }
+
+  void rename(String id, String name) {
+    final n = name.trim();
+    if (n.isEmpty || n == id) {
+      renames.remove(id);
+    } else {
+      renames[id] = n;
+    }
   }
 
   /// Takes [picked] out, or puts them back when all were out.
@@ -78,32 +128,31 @@ class CutDraft {
     }
   }
 
-  /// Joins two picked cells, or parts a joined one.
+  /// Two picked cells can be paired; one paired cell can be unpaired.
   bool canShare(List<String> picked) =>
-      picked.length == 2 ||
-      (picked.length == 1 && shared.containsKey(picked.first));
+      (picked.length == 2 && picked.every((p) => partner(p) == null)) ||
+      (picked.length == 1 && partner(picked.first) != null);
 
   void toggleShared(List<String> picked) {
     if (picked.length == 1) {
-      shared.remove(picked.first);
+      final p = picked.first;
+      shared.remove(p);
+      shared.removeWhere((_, v) => v == p);
     } else if (picked.length == 2) {
-      final p = [...picked]..sort();
+      final order = cells;
+      final p = [...picked]
+        ..sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
       shared[p.first] = p.last;
     }
   }
-
-  /// The label a cell shows.
-  String label(String n) =>
-      shared.containsKey(n) ? sharedCutNumber(n, shared[n]!) : n;
 }
 
-/// Everything the register screen asks for.
+/// Everything the register screen asks for. The client, work and
+/// episode are picked (or made) before this.
 class RegistrationDraft {
   RegistrationDraft({
-    this.workId,
-    this.newWorkTitle,
-    this.clientId,
-    required this.episodeNumber,
+    required this.workId,
+    required this.episodeId,
     this.partLabel,
     required this.stages,
     required this.cuts,
@@ -111,13 +160,11 @@ class RegistrationDraft {
     this.dueAt,
   });
 
-  /// An existing work, or null with [newWorkTitle] to create one.
-  final int? workId;
-  final String? newWorkTitle;
-  final int? clientId;
-  final String episodeNumber;
+  final int workId;
+  final int episodeId;
 
-  /// Free text; empty or null leaves the cuts outside any part.
+  /// Free text; an existing part of that label is reused; empty or null
+  /// leaves the cuts outside any part.
   final String? partLabel;
 
   /// Stage names to make work for, in order.
@@ -127,62 +174,69 @@ class RegistrationDraft {
   final DateTime? dueAt;
 }
 
-/// Saves [d]: the work (when new), the episode (reused when its number
-/// exists), the part, the cuts, a task per cut and stage, the splits and
-/// shared pairs, and the kickoff and deadline. Returns the new task ids.
+/// Thrown when cut names clash with each other or with the episode.
+class CutNameClash implements Exception {
+  CutNameClash(this.names);
+
+  final List<String> names;
+
+  @override
+  String toString() => 'CutNameClash: ${names.join(', ')}';
+}
+
+/// Saves [d]: the part, the cuts, a task per cut and stage, the splits
+/// and shared pairs, and the kickoff and deadline. Returns the new task
+/// ids. Clashing names change nothing and throw [CutNameClash].
 List<int> register(CatalogueStore store, RegistrationDraft d) {
   if (d.stages.isEmpty) throw ArgumentError('No stage picked.');
-  final workId =
-      d.workId ??
-      store.createWork(
-        (d.newWorkTitle ?? '').trim().isEmpty ? '새 작품' : d.newWorkTitle!.trim(),
-        clientId: d.clientId,
-      );
-  final ep =
-      store
-          .episodes(workId)
-          .where((e) => e.number == d.episodeNumber)
-          .map((e) => e.id)
-          .firstOrNull ??
-      store.addEpisode(workId, d.episodeNumber);
-  final label = d.partLabel?.trim() ?? '';
-  final numbers = [
-    for (final n in d.cuts.run)
-      if (!d.cuts.removed.contains(n)) n,
+  final ep = d.episodeId;
+  final taken = {for (final c in store.cuts(ep)) c.number};
+  final clash = d.cuts.clashes(taken);
+  if (clash.isNotEmpty) {
+    throw CutNameClash([for (final c in clash) d.cuts.nameOf(c)]);
+  }
+  final live = [
+    for (final c in d.cuts.cells)
+      if (!d.cuts.removed.contains(c)) c,
   ];
+  final label = d.partLabel?.trim() ?? '';
   final partId = label.isEmpty
       ? null
-      : store.addPart(ep, label, plannedCutCount: numbers.length);
-  store.addCuts(ep, numbers, partId: partId);
+      : store
+                .parts(ep)
+                .where((p) => p.label == label)
+                .map((p) => p.id)
+                .firstOrNull ??
+            store.addPart(ep, label, plannedCutCount: live.length);
+  final added = store.addCuts(ep, [
+    for (final c in live) d.cuts.nameOf(c),
+  ], partId: partId).added;
   final idOf = {for (final c in store.cuts(ep)) c.number: c.id};
-  final cutIds = [for (final n in numbers) ?idOf[n]];
+  final cellId = {for (final c in live) c: idOf[d.cuts.nameOf(c)]};
 
   final tasks = <int>[];
   final stageIds = <int>[];
   for (final name in d.stages) {
-    final found = store.stages(workId).where((s) => s.name == name);
-    final stage = found.isEmpty ? store.addStage(workId, name) : found.first.id;
+    final found = store.stages(d.workId).where((s) => s.name == name);
+    final stage = found.isEmpty
+        ? store.addStage(d.workId, name)
+        : found.first.id;
     stageIds.add(stage);
-    if (partId != null) {
-      tasks.addAll(store.addTasksForPart(partId, stage));
-    } else {
-      for (final c in cutIds) {
-        tasks.add(store.addTask(stage, cutId: c));
-      }
+    for (final c in added) {
+      tasks.add(store.addTask(stage, cutId: c));
     }
   }
-  for (final MapEntry(key: n, value: parts) in d.cuts.splits.entries) {
-    final id = idOf[n];
-    if (id == null || d.cuts.removed.contains(n) || parts < 2) continue;
+  for (final MapEntry(key: c, value: parts) in d.cuts.splits.entries) {
+    final id = cellId[c];
+    if (id == null || parts < 2) continue;
     store.splitCut(id, [
       for (var i = 0; i < parts; i++) String.fromCharCode(65 + i),
     ]);
   }
   for (final MapEntry(key: a, value: b) in d.cuts.shared.entries) {
-    final ia = idOf[a];
-    final ib = idOf[b];
-    if (ia == null || ib == null) continue;
-    store.linkSharedCuts([ia, ib]);
+    final ia = cellId[a];
+    final ib = cellId[b];
+    if (ia != null && ib != null) store.linkSharedCuts([ia, ib]);
   }
   final kickoff = d.kickoffAt ?? store.clock();
   if (partId != null) {
@@ -190,10 +244,13 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
       store.setPartSchedule(partId, s, kickoffAt: kickoff, dueAt: d.dueAt);
     }
   } else {
-    for (final t in store.partGroups().expand((g) => g.tasks)) {
-      if (!tasks.contains(t.id)) continue;
-      store.setTaskKickoff(t.id, kickoff);
-      if (d.dueAt != null) store.setTaskDue(t.id, d.dueAt);
+    final mine = tasks.toSet();
+    for (final g in store.partGroups()) {
+      for (final t in g.tasks) {
+        if (!mine.contains(t.id)) continue;
+        store.setTaskKickoff(t.id, kickoff);
+        if (d.dueAt != null) store.setTaskDue(t.id, d.dueAt);
+      }
     }
   }
   return tasks;

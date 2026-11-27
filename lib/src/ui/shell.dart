@@ -324,9 +324,29 @@ class _AppShellState extends State<AppShell> {
       AppView.register => RegisterView(
         now: now,
         layout: layout,
-        works: {for (final e in _works.entries) e.key: e.value.title},
-        clients: _clients,
+        reader: widget.reader,
         roles: _roles,
+        onCreateClient: writable
+            ? (name) {
+                var id = 0;
+                _write((s) => id = s.addClient(name));
+                return id;
+              }
+            : null,
+        onCreateWork: writable
+            ? (title, client) {
+                var id = 0;
+                _write((s) => id = s.createWork(title, clientId: client));
+                return id;
+              }
+            : null,
+        onCreateEpisode: writable
+            ? (work, number) {
+                var id = 0;
+                _write((s) => id = s.addEpisode(work, number));
+                return id;
+              }
+            : null,
         onRegister: writable
             ? (draft) {
                 var n = 0;
