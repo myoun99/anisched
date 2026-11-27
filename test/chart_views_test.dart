@@ -91,7 +91,7 @@ void main() {
         matching: find.byKey(const Key('bar-end')),
       );
       const dayWidth = (1440 - 250) / 35;
-      await t.drag(handle, Offset(dayWidth * 3, 0));
+      await t.drag(handle, const Offset(dayWidth * 3, 0));
       await t.pump();
       expect(got, isNotNull);
       expect(got!.$3, chartDay(g.dueAt!).add(const Duration(days: 3)));
