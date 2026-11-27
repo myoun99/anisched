@@ -12,9 +12,8 @@ class Migration {
 /// Every migration, oldest first. Append only — never edit a shipped step;
 /// a fix is a new step. Versions must be 1, 2, 3, … with no gaps.
 ///
-/// v1 holds only what does not depend on open domain questions: timer
-/// intervals. Works, episodes, cuts, rates and invoices arrive as later
-/// steps once their rules are settled.
+/// v1: timer intervals. v2: the work catalogue (clients, works, stages,
+/// episodes, cuts, storyboards, rates, tasks, retakes).
 final List<Migration> migrations = [
   Migration(1, (db) {
     db.execute('''
@@ -28,7 +27,132 @@ CREATE TABLE work_intervals (
       'CREATE INDEX work_intervals_started ON work_intervals(started_at);',
     );
   }),
+  const Migration(2, _v2Catalogue),
 ];
+
+/// Conventions: instants are UTC epoch milliseconds; money is an integer
+/// in the currency's smallest unit; rows are soft-deleted via
+/// `archived_at` because finished work must stay countable.
+void _v2Catalogue(Database db) {
+  for (final sql in const [
+    // closing_day NULL means the last day of the month.
+    '''
+CREATE TABLE clients (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  closing_day INTEGER CHECK (closing_day BETWEEN 1 AND 31),
+  archived_at INTEGER
+);''',
+    '''
+CREATE TABLE works (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER REFERENCES clients(id),
+  title TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'JPY' CHECK (length(currency) = 3),
+  created_at INTEGER NOT NULL,
+  archived_at INTEGER
+);''',
+    // A work's own ordered, editable list of process stages.
+    '''
+CREATE TABLE work_stages (
+  id INTEGER PRIMARY KEY,
+  work_id INTEGER NOT NULL REFERENCES works(id),
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  archived_at INTEGER
+);''',
+    'CREATE INDEX work_stages_work ON work_stages(work_id, position);',
+    '''
+CREATE TABLE episodes (
+  id INTEGER PRIMARY KEY,
+  work_id INTEGER NOT NULL REFERENCES works(id),
+  number TEXT NOT NULL,
+  sort_key TEXT NOT NULL,
+  title TEXT,
+  archived_at INTEGER
+);''',
+    'CREATE INDEX episodes_work ON episodes(work_id, sort_key);',
+    // length_ms: cut length, for per-second rates.
+    '''
+CREATE TABLE cuts (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  number TEXT NOT NULL,
+  sort_key TEXT NOT NULL,
+  length_ms INTEGER CHECK (length_ms IS NULL OR length_ms >= 0),
+  note TEXT,
+  archived_at INTEGER
+);''',
+    'CREATE INDEX cuts_episode ON cuts(episode_id, sort_key);',
+    '''
+CREATE UNIQUE INDEX cuts_live_number ON cuts(episode_id, number)
+  WHERE archived_at IS NULL;''',
+    // The storyboard is one unit of work for an episode, not a cut.
+    '''
+CREATE TABLE storyboards (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  label TEXT NOT NULL,
+  archived_at INTEGER
+);''',
+    'CREATE INDEX storyboards_episode ON storyboards(episode_id);',
+    // Default rate for a stage within an episode.
+    '''
+CREATE TABLE episode_rates (
+  episode_id INTEGER NOT NULL REFERENCES episodes(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  unit TEXT NOT NULL CHECK (unit IN ('fixed', 'per_second')),
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  PRIMARY KEY (episode_id, stage_id)
+);''',
+    // One task = one stage of one cut or storyboard that is the user's.
+    // rate_* override the episode rate when set.
+    '''
+CREATE TABLE tasks (
+  id INTEGER PRIMARY KEY,
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  cut_id INTEGER REFERENCES cuts(id),
+  storyboard_id INTEGER REFERENCES storyboards(id),
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN
+    ('received', 'in_progress', 'submitted', 'retake', 'done')),
+  received_at INTEGER,
+  due_at INTEGER,
+  submitted_at INTEGER,
+  done_at INTEGER,
+  rate_unit TEXT CHECK (rate_unit IN ('fixed', 'per_second')),
+  rate_amount INTEGER CHECK (rate_amount >= 0),
+  note TEXT,
+  archived_at INTEGER,
+  CHECK ((cut_id IS NULL) <> (storyboard_id IS NULL)),
+  CHECK ((rate_unit IS NULL) = (rate_amount IS NULL))
+);''',
+    '''
+CREATE UNIQUE INDEX tasks_live_cut ON tasks(stage_id, cut_id)
+  WHERE cut_id IS NOT NULL AND archived_at IS NULL;''',
+    '''
+CREATE UNIQUE INDEX tasks_live_storyboard ON tasks(stage_id, storyboard_id)
+  WHERE storyboard_id IS NOT NULL AND archived_at IS NULL;''',
+    'CREATE INDEX tasks_due ON tasks(due_at) WHERE archived_at IS NULL;',
+    'CREATE INDEX tasks_cut ON tasks(cut_id);',
+    // take 2, 3, … without limit. Free unless marked paid.
+    '''
+CREATE TABLE retakes (
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL REFERENCES tasks(id),
+  take INTEGER NOT NULL CHECK (take >= 2),
+  received_at INTEGER,
+  due_at INTEGER,
+  submitted_at INTEGER,
+  paid INTEGER NOT NULL DEFAULT 0 CHECK (paid IN (0, 1)),
+  amount INTEGER CHECK (amount >= 0),
+  note TEXT,
+  UNIQUE (task_id, take),
+  CHECK (paid = 1 OR amount IS NULL)
+);''',
+  ]) {
+    db.execute(sql);
+  }
+}
 
 /// The schema version this build expects.
 int get latestSchemaVersion => migrations.isEmpty ? 0 : migrations.last.version;
