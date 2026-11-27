@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/progress.dart';
-import '../services/catalogue_store.dart';
+import '../services/catalogue_reader.dart';
+import '../services/work_timer.dart';
 import 'theme.dart';
 import 'views/sheet_view.dart';
+import 'views/today_view.dart';
 
 /// The four ways of looking at the same work. All four stay in the app;
 /// the user switches between them.
@@ -26,14 +30,19 @@ class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
     this.initialView = AppView.board,
-    this.store,
+    this.reader,
+    this.timer,
     this.clock = systemClock,
   });
 
   final AppView initialView;
 
-  /// The user's catalogue; null shows empty views.
-  final CatalogueStore? store;
+  /// Reads the user's catalogue off the main isolate; null shows empty
+  /// views.
+  final CatalogueReader? reader;
+
+  /// The work timer's store (writes on the main isolate).
+  final WorkTimerStore? timer;
 
   /// Source of "now" for deadlines; injectable for tests.
   final Clock clock;
@@ -44,9 +53,22 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
-  late final List<PartGroup> _groups =
-      widget.store?.partGroups(includeDone: true) ?? const [];
-  late final int _dayStart = widget.store?.settings.dayStartMinutes ?? 0;
+  List<PartGroup> _groups = const [];
+  bool _showDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadGroups());
+  }
+
+  /// Reloads the sheet's groups; the last ones stay on screen meanwhile.
+  Future<void> _loadGroups() async {
+    final reader = widget.reader;
+    if (reader == null) return;
+    final groups = await reader.partGroups(includeDone: _showDone);
+    if (mounted) setState(() => _groups = groups);
+  }
 
   void _select(AppView v) {
     if (v != _view) setState(() => _view = v);
@@ -83,9 +105,19 @@ class _AppShellState extends State<AppShell> {
                           SheetView(
                             parts: _groups,
                             now: widget.clock(),
-                            dayStartMinutes: _dayStart,
                             layout: layout,
-                            paceOf: widget.store?.paceOf,
+                            showDone: _showDone,
+                            onShowDoneChanged: (on) {
+                              setState(() => _showDone = on);
+                              unawaited(_loadGroups());
+                            },
+                          )
+                        else if (v == AppView.today && widget.reader != null)
+                          TodayScreen(
+                            reader: widget.reader!,
+                            timer: widget.timer,
+                            clock: widget.clock,
+                            layout: layout,
                           )
                         else
                           ViewSlot(view: v, layout: layout),

@@ -1,0 +1,333 @@
+/// Shared pieces for views that list part × stage groups: a header, a
+/// one-line summary and the details that open under it.
+library;
+
+import 'package:flutter/material.dart';
+
+import '../models/progress.dart';
+import 'format.dart';
+import 'theme.dart';
+import 'widgets.dart';
+
+const caretW = 32.0;
+const _progressW = 96.0;
+const _signalW = 84.0;
+const _tabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
+
+class PartHeader extends StatelessWidget {
+  const PartHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final style = TextStyle(fontSize: 12, color: c.muted);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.panelAlt,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: SizedBox(
+        height: 30,
+        child: Row(
+          children: [
+            const SizedBox(width: caretW),
+            Expanded(child: Text('파트', style: style)),
+            SizedBox(
+              width: _progressW,
+              child: Text('진행', style: style),
+            ),
+            SizedBox(
+              width: _signalW,
+              child: Text('마감', style: style, textAlign: TextAlign.right),
+            ),
+            const SizedBox(width: 14),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Name, progress and the date signal for one group. Tapping opens it.
+class PartLine extends StatelessWidget {
+  const PartLine({
+    super.key,
+    required this.group,
+    required this.now,
+    required this.dayStartMinutes,
+    required this.expanded,
+    required this.selected,
+    required this.onTap,
+    this.dimmed = false,
+    this.signal,
+  });
+
+  final PartGroup group;
+  final DateTime now;
+  final int dayStartMinutes;
+  final bool expanded;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Fades the line (work whose planned start is still ahead).
+  final bool dimmed;
+
+  /// Replaces the deadline label, e.g. one built from precomputed days.
+  final Widget? signal;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final g = group;
+    final line = Material(
+      color: selected ? c.selected : c.panel,
+      child: InkWell(
+        key: Key('line-${g.key}'),
+        onTap: onTap,
+        hoverColor: c.hover,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: c.line)),
+          ),
+          child: SizedBox(
+            height: 52,
+            child: DefaultTextStyle.merge(
+              style: _tabular,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: caretW,
+                    child: Icon(
+                      expanded ? Icons.expand_more : Icons.chevron_right,
+                      size: 18,
+                      color: c.muted,
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 2,
+                      children: [
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: groupTitle(g),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(
+                                text: '  ${g.stageName}',
+                                style: TextStyle(color: c.muted),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${g.workTitle} ${g.episodeNumber}',
+                          style: TextStyle(fontSize: 12, color: c.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: _progressW,
+                    child: Row(
+                      spacing: 6,
+                      children: [
+                        SizedBox(width: 44, child: PartProgress(g, height: 4)),
+                        Text(
+                          '${g.handed}/${g.total}',
+                          style: TextStyle(fontSize: 12, color: c.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: _signalW,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child:
+                          signal ??
+                          DueText(
+                            g.dueAt,
+                            g.status,
+                            now,
+                            dayStartMinutes: dayStartMinutes,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return dimmed ? Opacity(opacity: 0.5, child: line) : line;
+  }
+}
+
+/// What opens under a line: dates, plan, pace, pay, time and the cuts.
+class PartDetails extends StatelessWidget {
+  const PartDetails({
+    super.key,
+    required this.group,
+    this.pace,
+    this.extra = const [],
+    this.highlighted,
+    this.onTask,
+  });
+
+  final PartGroup group;
+  final Pace? pace;
+
+  /// More label/value pairs after the standard ones.
+  final List<(String, String)> extra;
+
+  /// A task to mark (e.g. the one the timer runs on).
+  final int? highlighted;
+
+  /// Tapping a cut, when the view wants it (e.g. to start the timer).
+  final ValueChanged<TaskRow>? onTask;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final g = group;
+    final accent = Theme.of(context).colorScheme.primary;
+    final slack = g.slackDays;
+    final perDay = pace?.perDay;
+    final plan = g.planStartAt == null
+        ? '—'
+        : '${formatDate(g.planStartAt)} – '
+              '${g.planEndAt == null ? '마감' : formatDate(g.planEndAt)}';
+    final facts = <(String, String)>[
+      ('마감', formatDate(g.dueAt)),
+      ('내 계획', plan),
+      ('여유', slack == null ? '—' : '$slack일'),
+      ('하루', perDay == null ? '—' : '${perDay.toStringAsFixed(1)}컷'),
+      ('단가', formatMoney(g.currency, g.pay)),
+      ('시간', formatWorked(g.worked)),
+      ...extra,
+    ];
+    return DecoratedBox(
+      key: Key('details-${g.key}'),
+      decoration: BoxDecoration(
+        color: c.panelAlt,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(caretW, 10, 14, 12),
+        child: DefaultTextStyle.merge(
+          style: _tabular,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 10,
+            children: [
+              Wrap(
+                spacing: 20,
+                runSpacing: 6,
+                children: [
+                  for (final (k, v) in facts)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 8,
+                      children: [
+                        Text(k, style: TextStyle(fontSize: 12, color: c.muted)),
+                        Text(v),
+                      ],
+                    ),
+                ],
+              ),
+              if (g.kind != GroupKind.storyboard)
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final t in g.tasks)
+                      _CutChip(
+                        task: t,
+                        highlighted: t.id == highlighted,
+                        onTap: onTask == null ? null : () => onTask!(t),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: t.id == highlighted ? c.selected : c.panel,
+                            border: Border.all(color: c.line),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 6,
+                              children: [
+                                Dot(c.of(t.status)),
+                                Text(
+                                  taskLabel(t),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                TakeBadge(t.take),
+                                Text(
+                                  formatLength(t.lengthMs),
+                                  style: TextStyle(color: c.muted),
+                                ),
+                                if (t.dueOverridden)
+                                  Text(
+                                    formatDate(t.dueAt),
+                                    style: TextStyle(
+                                      color: accent,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CutChip extends StatelessWidget {
+  const _CutChip({
+    required this.task,
+    required this.highlighted,
+    required this.child,
+    this.onTap,
+  });
+
+  final TaskRow task;
+  final bool highlighted;
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onTap == null) return child;
+    return InkWell(
+      key: Key('cut-${task.id}'),
+      borderRadius: BorderRadius.circular(5),
+      onTap: onTap,
+      child: child,
+    );
+  }
+}
