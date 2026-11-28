@@ -77,4 +77,47 @@ void main() {
     store.undoHandOff(ids);
     expect(store.partGroups().length, 2);
   });
+
+  test('statistics narrowed to a client or a work', () async {
+    final a = store.addClient('A');
+    final b = store.addClient('B');
+    final wa = store.createWork('WA', clientId: a);
+    final wb = store.createWork('WB', clientId: b);
+    final ta = store.addTask(
+      store.stages(wa).first.id,
+      cutId: store.addEpisodeWithCuts(wa, '#1', 'C001').cutIds.single,
+    );
+    final tb = store.addTask(
+      store.stages(wb).first.id,
+      cutId: store.addEpisodeWithCuts(wb, '#1', 'C001').cutIds.single,
+    );
+    timer.start(taskId: ta);
+    now = DateTime(2026, 11, 2, 11);
+    timer.toggle(taskId: tb);
+    now = DateTime(2026, 11, 2, 13);
+    timer.stop();
+    store
+      ..setStatus(ta, TaskStatus.submitted)
+      ..setStatus(tb, TaskStatus.submitted);
+    timer.start(); // time on no task
+    now = DateTime(2026, 11, 2, 14);
+    timer.stop();
+    now = DateTime(2026, 11, 9);
+    final from = DateTime(2026, 11, 2);
+    final to = DateTime(2026, 11, 9);
+
+    expect(store.stats(from: from, to: to).total.worked.inHours, 4);
+    final onlyA = store.stats(from: from, to: to, clientId: a);
+    expect(onlyA.total.handed, 1);
+    expect(onlyA.total.worked, const Duration(hours: 1));
+    expect(onlyA.works.single.label, 'WA');
+    final onlyB = await SyncCatalogueReader(store)
+        .stats(from: from, to: to, workId: wb);
+    expect(onlyB.total.worked, const Duration(hours: 2));
+    expect(onlyB.previous!.total.handed, 0);
+    expect(
+      store.stats(from: from, to: to, clientId: a, workId: wb).total.handed,
+      0,
+    );
+  });
 }

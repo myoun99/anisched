@@ -1115,28 +1115,40 @@ ORDER BY sort_key, id;''',
   }
 
   /// The statistics tab for the work days `[from, to)` (local dates),
-  /// bucketed by [bucket], with [Stats.previous] = the same length just
+  /// bucketed by [bucket], narrowed to [clientId] and/or [workId] when
+  /// given (timer time on no task then drops out), with [Stats.previous] = the same length just
   /// before and [Stats.stagePaces]. Day start, week start and lane count
   /// come from the settings.
   Stats stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   }) {
     from = DateTime(from.year, from.month, from.day);
     to = DateTime(to.year, to.month, to.day);
     final days = to.difference(from).inHours ~/ 24;
-    final current = _stats(from, to, bucket);
+    final current = _stats(from, to, bucket, clientId, workId);
     current.previous = _stats(
       DateTime(from.year, from.month, from.day - days),
       from,
       bucket,
+      clientId,
+      workId,
     );
     current.stagePaces = stagePaces();
     return current;
   }
 
-  Stats _stats(DateTime from, DateTime to, StatsBucket bucket) {
+  Stats _stats(
+    DateTime from,
+    DateTime to,
+    StatsBucket bucket,
+    int? clientId,
+    int? workId,
+  ) {
+    final filtered = clientId != null || workId != null;
     DateTime? at(Object? ms) => ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
@@ -1151,30 +1163,35 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
         r['id'] as int: r,
     };
     final facts = [
-      for (final t in taskRows(includeDone: true, includeHandedOff: true))
+      for (final t in taskRows(
+        workId: workId,
+        includeDone: true,
+        includeHandedOff: true,
+      ))
         if (extra[t.id] case final x?)
-          StatsFact(
-            taskId: t.id,
-            stageName: t.stageName,
-            workId: t.workId,
-            workTitle: t.workTitle,
-            currency: t.currency,
-            groupKey: t.groupKey,
-            clientId: x['client_id'] as int?,
-            clientName: x['client'] as String?,
-            take: t.take,
-            submittedAt: at(x['submitted_at']),
-            doneAt: at(x['done_at']),
-            dueAt: t.dueAt,
-            submittedDueAt: at(x['submitted_due_at']),
-            firstDueAt: t.firstDueAt,
-            dueExtensions: t.dueExtensions,
-            handedOffAt: t.handedOffAt,
-            planStartAt: t.planStartAt,
-            planEndAt: t.planEndAt,
-            pay: t.pay,
-            worked: t.worked,
-          ),
+          if (clientId == null || x['client_id'] == clientId)
+            StatsFact(
+              taskId: t.id,
+              stageName: t.stageName,
+              workId: t.workId,
+              workTitle: t.workTitle,
+              currency: t.currency,
+              groupKey: t.groupKey,
+              clientId: x['client_id'] as int?,
+              clientName: x['client'] as String?,
+              take: t.take,
+              submittedAt: at(x['submitted_at']),
+              doneAt: at(x['done_at']),
+              dueAt: t.dueAt,
+              submittedDueAt: at(x['submitted_due_at']),
+              firstDueAt: t.firstDueAt,
+              dueExtensions: t.dueExtensions,
+              handedOffAt: t.handedOffAt,
+              planStartAt: t.planStartAt,
+              planEndAt: t.planEndAt,
+              pay: t.pay,
+              worked: t.worked,
+            ),
     ];
     final dayStart = settings.dayStartMinutes;
     final start = DateTime(
@@ -1187,6 +1204,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
       to.month,
       to.day,
     ).add(Duration(minutes: dayStart));
+    final taskIds = {for (final f in facts) f.taskId};
     final intervals = [
       for (final r in db.select(
         'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
@@ -1199,7 +1217,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
           stop: at(r['stopped_at']),
           taskId: r['task_id'] as int?,
         ),
-    ];
+    ].where((i) => !filtered || taskIds.contains(i.taskId)).toList();
     return computeStats(
       facts: facts,
       intervals: intervals,

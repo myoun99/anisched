@@ -229,7 +229,7 @@
 
 ## 통계 (`stats(from, to, bucket)` — 리더에서)
 
-`models/stats.dart` 의 `computeStats` 가 작업 사실 + 타이머 구간을 한 번에 접는다. 범위는 로컬 작업일(하루 시작 설정) `[from, to)`.
+`models/stats.dart` 의 `computeStats` 가 작업 사실 + 타이머 구간을 한 번에 접는다. 범위는 로컬 작업일(하루 시작 설정) `[from, to)`. 필터 `clientId` · `workId`(선택, 목록 공통 필터와 같은 범위 — 직전 기간에도 같이 적용, 작업 없는 타이머 시간은 빠짐).
 
 | 항목 | 정의 |
 |---|---|

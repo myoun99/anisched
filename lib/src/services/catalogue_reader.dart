@@ -69,6 +69,8 @@ abstract interface class CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   });
 
   /// Pickers for the input screens: see [CatalogueStore.works],
@@ -198,7 +200,17 @@ class SyncCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _run(() => store.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _run(
+    () => store.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
@@ -457,7 +469,17 @@ class BackgroundCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _ask((s) => s.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _ask(
+    (s) => s.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
