@@ -33,6 +33,8 @@ class TimelineView extends StatefulWidget {
     this.events = const {},
     this.onNewEvent,
     this.onEvent,
+    this.onRulerPress,
+    this.onRulerEvent,
   });
 
   /// Dated events by episode (null: on no episode), shown on that
@@ -73,6 +75,11 @@ class TimelineView extends StatefulWidget {
   onSchedule;
 
   final TaskSelection? selection;
+
+  /// The date ruler's long press (a new event of no episode: a day off,
+  /// a note) and its events' taps.
+  final ValueChanged<DateTime>? onRulerPress;
+  final ValueChanged<EventRow>? onRulerEvent;
 
   @override
   State<TimelineView> createState() => _TimelineViewState();
@@ -164,6 +171,8 @@ class _TimelineViewState extends State<TimelineView> {
     required bool month,
   }) => ChartBoard(
     window: window,
+    onDayLongPress: widget.onRulerPress,
+    onDayEvent: widget.onRulerEvent ?? widget.onEvent,
     shrinkWrap: month,
     today: widget.now,
     days: widget.days,

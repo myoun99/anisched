@@ -17,7 +17,6 @@ import '../../services/device_settings.dart';
 import '../../services/recovery_snapshots.dart';
 import '../document_menu.dart';
 import '../format.dart';
-import '../instant.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
@@ -98,17 +97,6 @@ class _SettingsViewState extends State<SettingsView> {
     widget.onChanged?.call();
   }
 
-  Future<void> _addDaysOff() async {
-    final r = await showInstantDateRangePicker(
-      context: context,
-      firstDate: DateTime(widget.now.year - 1),
-      lastDate: DateTime(widget.now.year + 2),
-      title: S.daysOff.t,
-    );
-    if (r == null || !mounted) return;
-    _set((s) => s.addRestDays(r.start, end: r.end));
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -116,7 +104,6 @@ class _SettingsViewState extends State<SettingsView> {
     final rest = s?.restWeekdays ?? {DateTime.saturday, DateTime.sunday};
     final dayStart = s?.dayStartMinutes ?? 0;
     final rounding = s?.secondsRounding ?? SecondsRounding.nearest;
-    final off = widget.store?.restDays() ?? const [];
     final weekdays = weekdayNames();
     final display = _Group(
       icon: Icons.palette_outlined,
@@ -244,39 +231,6 @@ class _SettingsViewState extends State<SettingsView> {
                   : (v) => _set((st) => st.settings.restOnHolidays = v),
             ),
           ],
-        ),
-        for (final o in off)
-          _Line(
-            children: [
-              Text(
-                formatDate(o.date),
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              if (o.title.isNotEmpty)
-                Expanded(
-                  child: Text(
-                    o.title,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.muted),
-                  ),
-                )
-              else
-                const Spacer(),
-              _IconAction(
-                icon: Icons.delete_outline,
-                tooltip: S.remove.t,
-                onTap: () => _set((st) => st.deleteEvent(o.id)),
-              ),
-            ],
-          ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const Key('days-off-add'),
-            onPressed: widget.store == null ? null : _addDaysOff,
-            icon: const Icon(Icons.add, size: 18),
-            label: Text(S.add.t),
-          ),
         ),
       ],
     );

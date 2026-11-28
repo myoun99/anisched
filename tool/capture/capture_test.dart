@@ -434,6 +434,8 @@ void main() {
               end: DateTime(2026, 12, 2),
               title: '여행',
             );
+            // A note of no episode on the ruler.
+            store.addEvent(date: DateTime(2026, 11, 30), title: '회의');
           }
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);

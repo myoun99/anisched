@@ -17,9 +17,17 @@ sealed class EventAnswer {
 }
 
 class EventSave extends EventAnswer {
-  const EventSave({required this.title, this.timeMinutes, this.note});
+  const EventSave({
+    required this.title,
+    this.timeMinutes,
+    this.note,
+    this.rest = false,
+  });
 
   final String title;
+
+  /// A day off (only for events on no episode: the ruler's).
+  final bool rest;
 
   /// Minutes past midnight; null = all day.
   final int? timeMinutes;
@@ -35,9 +43,10 @@ Future<EventAnswer?> showEventEditor(
   BuildContext context, {
   required DateTime day,
   EventRow? existing,
+  bool global = false,
 }) => showInstantDialog<EventAnswer>(
   context: context,
-  builder: (_) => _EventEditor(day: day, existing: existing),
+  builder: (_) => _EventEditor(day: day, existing: existing, global: global),
 );
 
 /// 「09:30」.
@@ -46,10 +55,13 @@ String eventTimeLabel(int minutes) =>
     '${(minutes % 60).toString().padLeft(2, '0')}';
 
 class _EventEditor extends StatefulWidget {
-  const _EventEditor({required this.day, this.existing});
+  const _EventEditor({required this.day, this.existing, this.global = false});
 
   final DateTime day;
   final EventRow? existing;
+
+  /// An event on no episode (the date ruler's): it can be a day off.
+  final bool global;
 
   @override
   State<_EventEditor> createState() => _EventEditorState();
@@ -59,6 +71,7 @@ class _EventEditorState extends State<_EventEditor> {
   late final _title = TextEditingController(text: widget.existing?.title);
   late final _note = TextEditingController(text: widget.existing?.note);
   late int? _time = widget.existing?.timeMinutes;
+  late bool _rest = widget.existing?.rest ?? false;
 
   @override
   void dispose() {
@@ -76,6 +89,7 @@ class _EventEditorState extends State<_EventEditor> {
         title: title,
         timeMinutes: _time,
         note: note.isEmpty ? null : note,
+        rest: widget.global && _rest,
       ),
     );
   }
@@ -137,6 +151,19 @@ class _EventEditorState extends State<_EventEditor> {
                   ),
               ],
             ),
+            if (widget.global)
+              Row(
+                spacing: 8,
+                children: [
+                  Icon(Icons.beach_access_outlined, size: 18, color: c.muted),
+                  Expanded(child: Text(S.daysOff.t)),
+                  Switch(
+                    key: const Key('event-rest'),
+                    value: _rest,
+                    onChanged: (v) => setState(() => _rest = v),
+                  ),
+                ],
+              ),
             TextField(
               key: const Key('event-note'),
               controller: _note,
