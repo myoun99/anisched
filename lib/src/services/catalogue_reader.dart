@@ -31,6 +31,7 @@ abstract interface class CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
+    bool includeHandedOff = false,
   });
 
   /// See [CatalogueStore.today].
@@ -57,11 +58,19 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.runningTimer].
   Future<WorkInterval?> runningTimer();
 
+  /// See [CatalogueStore.dueRevisions].
+  Future<List<DueRevision>> dueRevisions(DueTarget target);
+
+  /// See [CatalogueStore.holding].
+  Future<({int inHand, int waiting})> holding();
+
   /// See [CatalogueStore.stats].
   Future<Stats> stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   });
 
   /// Pickers for the input screens: see [CatalogueStore.works],
@@ -139,7 +148,14 @@ class SyncCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _run(() => store.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _run(
+    () => store.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
@@ -173,11 +189,28 @@ class SyncCatalogueReader implements CatalogueReader {
   Future<WorkInterval?> runningTimer() => _run(store.runningTimer);
 
   @override
+  Future<List<DueRevision>> dueRevisions(DueTarget target) =>
+      _run(() => store.dueRevisions(target));
+
+  @override
+  Future<({int inHand, int waiting})> holding() => _run(store.holding);
+
+  @override
   Future<Stats> stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _run(() => store.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _run(
+    () => store.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
@@ -384,7 +417,14 @@ class BackgroundCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _ask((s) => s.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _ask(
+    (s) => s.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
@@ -418,11 +458,28 @@ class BackgroundCatalogueReader implements CatalogueReader {
   Future<WorkInterval?> runningTimer() => _ask((s) => s.runningTimer());
 
   @override
+  Future<List<DueRevision>> dueRevisions(DueTarget target) =>
+      _ask((s) => s.dueRevisions(target));
+
+  @override
+  Future<({int inHand, int waiting})> holding() => _ask((s) => s.holding());
+
+  @override
   Future<Stats> stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _ask((s) => s.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _ask(
+    (s) => s.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
