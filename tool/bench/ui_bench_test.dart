@@ -150,6 +150,17 @@ void main() {
       chartView.value = chartView.value.scrolled(1);
       await t.pump();
     });
+    // A finger's drag: 3 px a frame, the whole day ticking over now and
+    // then (34 px a day at 35 days).
+    final g2 = await t.startGesture(const Offset(1100, 400));
+    await g2.moveBy(const Offset(-6, 0));
+    await t.pump();
+    await measure(t, 'timeline: drag days (3 px a frame)', 40, (i) async {
+      await g2.moveBy(const Offset(-3, 0));
+      await t.pump();
+    });
+    await g2.up();
+    await t.pumpAndSettle();
     await measure(t, 'timeline: zoom', 6, (i) async {
       chartView.value = chartView.value.stepped(
         chartView.value.days ?? 35,
