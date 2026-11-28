@@ -126,10 +126,13 @@ void main() {
       ..setPartDue(part, genga, now.add(const Duration(days: 9)))
       ..archiveTasks([gengaTasks.last]); // archived ones still count
     decorateLoCard();
-    expect(
-      store.deletionSummary(loTasks),
-      (tasks: 2, cuts: 0, episodes: 0, works: 0, timerMinutes: 25),
-    );
+    expect(store.deletionSummary(loTasks), (
+      tasks: 2,
+      cuts: 0,
+      episodes: 0,
+      works: 0,
+      timerMinutes: 25,
+    ));
 
     store.deleteTasks(loTasks);
     expect(db.select('SELECT id FROM cuts;').map((r) => r['id']), cuts);

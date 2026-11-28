@@ -232,6 +232,25 @@ INSERT INTO cuts (episode_id, number, sort_key, archived_at) VALUES
     );
   });
 
+  test('v19: existing events stay episode or global events', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 18).toList());
+    db.execute(
+      'INSERT INTO events (episode_id, day, title, rest) '
+      "VALUES (NULL, '2026-12-24', '휴가', 1);",
+    );
+    migrate(db);
+    expect(
+      db
+          .select('SELECT episode_id, part_id, stage_id, title FROM events')
+          .map((r) => r.values),
+      [
+        [null, null, null, '휴가'],
+      ],
+    );
+  });
+
   test('v15: works on the default format write no setting', () {
     final db = sqlite3.openInMemory();
     addTearDown(db.close);
