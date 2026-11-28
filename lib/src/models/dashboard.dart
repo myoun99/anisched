@@ -79,7 +79,8 @@ class Dashboard {
 
   // ---- due soon ----
 
-  /// Open cards whose production deadline is within the window or past,
+  /// Cards with work left ([PartGroup.hasWork]) whose production
+  /// deadline is within the window or past,
   /// soonest (most late) first.
   final List<DashboardDue> dueSoon;
 

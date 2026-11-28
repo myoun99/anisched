@@ -440,6 +440,11 @@ class PartGroup {
   /// Open cuts in hand (not waiting) — the 「보유」 count.
   int get inHand => unitCount(tasks.where((t) => t.inHand));
 
+  /// Cuts still to work on (received, in progress, retake) remain — the
+  /// test for being late or due soon: a card whose cuts are all done or
+  /// submitted has nothing left to be late with (유저 2026-11-28).
+  bool get hasWork => tasks.any((t) => t.status.needsWork);
+
   /// Open cuts on hold.
   int get waiting =>
       unitCount(tasks.where((t) => t.status.isOpen && t.waiting));
@@ -780,7 +785,8 @@ class TodayView {
 
   final List<TodayEntry> entries;
 
-  /// Late open groups plus late open cuts with their own deadline.
+  /// Late groups plus late cuts with their own deadline, counting only
+  /// those with work left ([PartGroup.hasWork], [TaskStatus.needsWork]).
   final int late;
 
   /// What every open group asks of today, summed.
