@@ -12,8 +12,12 @@ class DueButton extends StatelessWidget {
     required this.due,
     required this.onPicked,
     required this.child,
+    required this.title,
     this.longPress = false,
   });
+
+  /// What is being picked, as the picker's heading (「마감 날짜」 …).
+  final String title;
 
   final DateTime? due;
   final ValueChanged<DateTime>? onPicked;
@@ -32,6 +36,7 @@ class DueButton extends StatelessWidget {
       firstDate: DateTime(now.year - 2),
       lastDate: DateTime(now.year + 3),
       initialDate: (due ?? now).toLocal(),
+      title: title,
     );
     if (d != null) cb(DateTime(d.year, d.month, d.day, 23, 59));
   }

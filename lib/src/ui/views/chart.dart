@@ -125,6 +125,28 @@ class _ChartViewportState extends State<ChartViewport> {
 
   double get _dayWidth => _width / widget.days;
 
+  /// Space held (desktop): a drag anywhere pans, bars included.
+  bool _space = false;
+
+  bool _onKey(KeyEvent e) {
+    if (e.logicalKey != LogicalKeyboardKey.space) return false;
+    final down = e is! KeyUpEvent;
+    if (down != _space && mounted) setState(() => _space = down);
+    return false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
   void _pan(double dx) {
     _carry += dx;
     final whole = (_carry / _dayWidth).truncate();
@@ -157,6 +179,10 @@ class _ChartViewportState extends State<ChartViewport> {
             }
           },
           onPointerMove: (e) {
+            if (_space && e.buttons & kPrimaryButton != 0) {
+              _pan(e.delta.dx);
+              return;
+            }
             if (!_pointers.containsKey(e.pointer)) return;
             _pointers[e.pointer] = e.position;
             final start = _pinchStart;
@@ -191,9 +217,12 @@ class _ChartViewportState extends State<ChartViewport> {
             behavior: HitTestBehavior.translucent,
             onHorizontalDragStart: (_) => _carry = 0,
             onHorizontalDragUpdate: (d) {
-              if (_pointers.length < 2) _pan(d.delta.dx);
+              if (_pointers.length < 2 && !_space) _pan(d.delta.dx);
             },
-            child: widget.child,
+            child: MouseRegion(
+              cursor: _space ? SystemMouseCursors.grab : MouseCursor.defer,
+              child: IgnorePointer(ignoring: _space, child: widget.child),
+            ),
           ),
         );
       },
@@ -203,78 +232,100 @@ class _ChartViewportState extends State<ChartViewport> {
 
 /// Toolbar paging and zoom buttons: 「◀ 오늘 ▶ − +」.
 class ChartPager extends StatelessWidget {
-  const ChartPager({
-    super.key,
-    required this.onShift,
-    required this.onToday,
-    this.onZoom,
-  });
+  const ChartPager({super.key, required this.days});
 
-  final ValueChanged<int> onShift;
-  final VoidCallback onToday;
-
-  /// Zoom one step: true = in (fewer days).
-  final ValueChanged<bool>? onZoom;
+  /// Days in view now.
+  final int days;
 
   @override
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
-    spacing: 4,
+    spacing: 6,
     children: [
-      _IconFace(
-        key: const Key('chart-prev'),
-        icon: Icons.chevron_left,
-        onTap: () => onShift(-7),
-      ),
       ToolbarButton(
         key: const Key('chart-today'),
         label: S.today.t,
         selected: false,
-        onTap: onToday,
+        onTap: () => chartView.value = ChartView(days: chartView.value.days),
       ),
-      _IconFace(
-        key: const Key('chart-next'),
-        icon: Icons.chevron_right,
-        onTap: () => onShift(7),
-      ),
-      if (onZoom != null) ...[
-        const SizedBox(width: 4),
-        _IconFace(
-          key: const Key('chart-zoom-out'),
-          icon: Icons.remove,
-          onTap: () => onZoom!(false),
-        ),
-        _IconFace(
-          key: const Key('chart-zoom-in'),
-          icon: Icons.add,
-          onTap: () => onZoom!(true),
-        ),
-      ],
+      ZoomDrag(days: days),
     ],
   );
 }
 
-class _IconFace extends StatelessWidget {
-  const _IconFace({super.key, required this.icon, required this.onTap});
+/// The zoom as one control (Anicel's timeline zoom): the days in view,
+/// dragged sideways — right to zoom in (fewer days), left to zoom out —
+/// one step of [ChartView.zoomSteps] per [stepPixels]; a wheel notch over
+/// it is one step too. ↩️A − and a + stood here, with ◀ ▶ paging beside.
+class ZoomDrag extends StatefulWidget {
+  const ZoomDrag({super.key, required this.days});
 
-  final IconData icon;
-  final VoidCallback onTap;
+  final int days;
+
+  static const stepPixels = 14.0;
+
+  @override
+  State<ZoomDrag> createState() => _ZoomDragState();
+}
+
+class _ZoomDragState extends State<ZoomDrag> {
+  double _carry = 0;
+
+  void _step(bool zoomIn) => chartView.value = chartView.value.stepped(
+    chartView.value.days ?? widget.days,
+    zoomIn: zoomIn,
+  );
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: c.panel,
-          border: Border.all(color: c.line),
-          borderRadius: BorderRadius.circular(8),
+    return Tooltip(
+      message: S.zoomDrag.t,
+      child: Listener(
+        onPointerSignal: (e) {
+          if (e is PointerScrollEvent && e.scrollDelta.dy != 0) {
+            _step(e.scrollDelta.dy < 0);
+          }
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          child: GestureDetector(
+            key: const Key('chart-zoom'),
+            behavior: HitTestBehavior.opaque,
+            dragStartBehavior: DragStartBehavior.down,
+            onHorizontalDragStart: (_) => _carry = 0,
+            onHorizontalDragUpdate: (d) {
+              _carry += d.delta.dx;
+              while (_carry.abs() >= ZoomDrag.stepPixels) {
+                _step(_carry > 0);
+                _carry -= _carry.sign * ZoomDrag.stepPixels;
+              }
+            },
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: c.panel,
+                border: Border.all(color: c.line),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 4,
+                children: [
+                  Icon(Icons.zoom_in, size: 18, color: c.muted),
+                  Text(
+                    S.days.f({'n': widget.days}),
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  Icon(Icons.unfold_more, size: 16, color: c.faint),
+                ],
+              ),
+            ),
+          ),
         ),
-        child: Icon(icon, size: 20),
       ),
     );
   }
@@ -291,6 +342,82 @@ abstract final class ChartPaints {
   static void reset() => background = today = preview = barBuilds = 0;
 }
 
+/// Which day columns carry a number and how the stripes run: every
+/// [step] days, the step the smallest that leaves a number its real width.
+/// Anchored to the calendar, not the window, so scrolling never moves which
+/// days are numbered. Steps under a week count days; a week or more starts
+/// on Mondays.
+@immutable
+class DayLabels {
+  DayLabels(this.window, this.dayWidth, double numberWidth)
+    : need = numberWidth + 6,
+      step = _steps.firstWhere(
+        (k) => dayWidth * k >= numberWidth + 6,
+        orElse: () => _steps.last,
+      );
+
+  static const _steps = [1, 2, 3, 7, 14, 28];
+
+  final ChartWindow window;
+  final double dayWidth;
+
+  /// Pixels a number needs, with a little room.
+  final double need;
+  final int step;
+
+  static int _epochDay(DateTime d) =>
+      DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/
+      Duration.millisecondsPerDay;
+
+  /// Weeks counted from a Monday (1970-01-01 was a Thursday).
+  static int _week(int epochDay) => (epochDay + 3) ~/ 7;
+
+  int _block(DateTime d) {
+    final e = _epochDay(d);
+    return step < 7 ? e ~/ step : _week(e) ~/ (step ~/ 7);
+  }
+
+  /// The first day of its stripe carries the number.
+  bool labelled(int i) =>
+      _block(window.dayAt(i - 1)) != _block(window.dayAt(i));
+
+  /// Alternate stripes, Excel-like: one per numbered stretch.
+  bool shaded(int i) => _block(window.dayAt(i)).isOdd;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DayLabels &&
+      other.window == window &&
+      other.dayWidth == dayWidth &&
+      other.need == need;
+
+  @override
+  int get hashCode => Object.hash(window, dayWidth, need);
+}
+
+/// How wide a day number is drawn: the widest two digits at the header's
+/// size.
+double chartNumberWidth(BuildContext context) {
+  final style = DefaultTextStyle.of(context).style.copyWith(fontSize: 11);
+  return (TextPainter(
+    text: TextSpan(text: '30', style: style),
+    textDirection: TextDirection.ltr,
+  )..layout()).width;
+}
+
+/// The bands' grey: light enough that bars and the today wash read over
+/// it, dark enough to count days by.
+Color chartStripe(BuildContext context) {
+  final c = AppColors.of(context);
+  return Color.lerp(c.panel, c.line, 0.32)!;
+}
+
+/// Rest days: a step darker than a band, so both show.
+Color chartRestShade(BuildContext context) {
+  final c = AppColors.of(context);
+  return c.line.withValues(alpha: 0.45);
+}
+
 /// The colour today's column is washed with, light or dark.
 Color chartTodayWash(BuildContext context) {
   final red = Theme.of(context).colorScheme.error;
@@ -304,40 +431,41 @@ class _BackgroundPainter extends CustomPainter {
   _BackgroundPainter({
     required this.window,
     required this.rest,
+    required this.stripe,
     required this.shade,
-    required this.line,
+    required this.numberWidth,
   });
 
   final ChartWindow window;
   final Set<int> rest;
+
+  /// Every other numbered stretch (Excel-like bands).
+  final Color stripe;
+
+  /// Rest days, over the bands.
   final Color shade;
-  final Color line;
+  final double numberWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     ChartPaints.background++;
     final dw = size.width / window.days;
-    final fill = Paint()..color = shade;
+    final labels = DayLabels(window, dw, numberWidth);
+    final band = Paint()..color = stripe;
+    final off = Paint()..color = shade;
     for (var i = 0; i < window.days; i++) {
-      if (rest.contains(window.dayAt(i).weekday)) {
-        canvas.drawRect(Rect.fromLTWH(i * dw, 0, dw, size.height), fill);
-      }
-    }
-    if (dw >= 14) {
-      final p = Paint()
-        ..color = line.withValues(alpha: 0.5)
-        ..strokeWidth = 1;
-      for (var i = 1; i < window.days; i++) {
-        canvas.drawLine(Offset(i * dw, 0), Offset(i * dw, size.height), p);
-      }
+      final r = Rect.fromLTWH(i * dw, 0, dw, size.height);
+      if (labels.shaded(i)) canvas.drawRect(r, band);
+      if (rest.contains(window.dayAt(i).weekday)) canvas.drawRect(r, off);
     }
   }
 
   @override
   bool shouldRepaint(_BackgroundPainter old) =>
       old.window != window ||
+      old.stripe != stripe ||
       old.shade != shade ||
-      old.line != line ||
+      old.numberWidth != numberWidth ||
       !setEquals(old.rest, rest);
 }
 
@@ -385,7 +513,6 @@ class _DayLayers extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -394,8 +521,9 @@ class _DayLayers extends StatelessWidget {
             painter: _BackgroundPainter(
               window: window,
               rest: restWeekdays,
-              shade: c.panelAlt,
-              line: c.line,
+              stripe: chartStripe(context),
+              shade: chartRestShade(context),
+              numberWidth: chartNumberWidth(context),
             ),
           ),
         ),
@@ -448,6 +576,7 @@ class ChartHeader extends StatelessWidget {
                 red: Theme.of(context).colorScheme.error,
                 style: style,
                 lang: appLang.value,
+                numberWidth: chartNumberWidth(context),
               ),
             ),
           ),
@@ -468,8 +597,10 @@ class _HeaderPainter extends CustomPainter {
     required this.red,
     required this.style,
     required this.lang,
+    required this.numberWidth,
   });
 
+  final double numberWidth;
   final ChartWindow window;
   final int today;
   final Set<int> rest;
@@ -493,27 +624,11 @@ class _HeaderPainter extends CustomPainter {
     maxLines: 1,
   )..layout();
 
-  /// Narrow days keep a number only on Mondays (and today), so the
-  /// numbers never run together when zoomed out.
-  bool _labelled(int i, double dw) {
-    if (dw >= 16 || i == today) return true;
-    if ((i - today).abs() < (dw >= 8 ? 2 : 4)) return false;
-    final d = window.dayAt(i);
-    return d.weekday == DateTime.monday &&
-        (dw >= 8 ||
-            (DateTime.utc(
-                      d.year,
-                      d.month,
-                      d.day,
-                    ).difference(DateTime.utc(2024)).inDays ~/
-                    7)
-                .isEven);
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     ChartPaints.background++;
     final dw = size.width / window.days;
+    final labels = DayLabels(window, dw, numberWidth);
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     for (var i = 0; i < window.days; i++) {
@@ -525,13 +640,16 @@ class _HeaderPainter extends CustomPainter {
           bold: true,
         ).paint(canvas, Offset(i * dw + 4, 4));
       }
-      if (!_labelled(i, dw)) continue;
+      // A number where its stretch starts (and today's, always); none so
+      // near today that the two would touch.
+      final near = i != today && (i - today).abs() * dw < labels.need;
+      if (i != today && (!labels.labelled(i) || near)) continue;
       final t = _text(
         '${d.day}',
         i == today ? red : (rest.contains(d.weekday) ? faint : muted),
         bold: i == today,
       );
-      final x = dw >= 16 ? i * dw + (dw - t.width) / 2 : i * dw + 1;
+      final x = labels.step == 1 ? i * dw + (dw - t.width) / 2 : i * dw + 2;
       t.paint(canvas, Offset(x, 24));
     }
     canvas.restore();
@@ -544,6 +662,7 @@ class _HeaderPainter extends CustomPainter {
       old.ink != ink ||
       old.muted != muted ||
       old.lang != lang ||
+      old.numberWidth != numberWidth ||
       !setEquals(old.rest, rest);
 }
 
@@ -614,6 +733,7 @@ class ChartBoard extends StatefulWidget {
     this.rowWrap,
     this.rowTint,
     this.onReorder,
+    this.corner,
   });
 
   final ChartWindow window;
@@ -621,6 +741,9 @@ class ChartBoard extends StatefulWidget {
   final Set<int> restWeekdays;
   final double labelWidth;
   final int rowCount;
+
+  /// The header's left cell, over the row labels (e.g. 「라인 +」).
+  final Widget? corner;
 
   /// The row's label column.
   final Widget Function(BuildContext context, int row) label;
@@ -703,7 +826,7 @@ class _ChartBoardState extends State<ChartBoard> {
             ),
             child: Row(
               children: [
-                SizedBox(width: widget.labelWidth),
+                SizedBox(width: widget.labelWidth, child: widget.corner),
                 Expanded(
                   child: ChartHeader(
                     window: widget.window,

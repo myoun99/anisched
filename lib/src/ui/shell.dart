@@ -314,10 +314,6 @@ class _AppShellState extends State<AppShell> {
     }
   });
 
-  /// One cut's own deadline, as a new round of it.
-  void _setTaskDue(TaskRow t, DateTime due) =>
-      _write((store) => store.extendDue(DueTarget.task(t.id), due));
-
   /// The rounds of a unit's deadline (one target: a part or storyboard).
   Future<List<DueRevision>> _revisions(PartGroup g) async {
     final reader = widget.reader;
@@ -381,10 +377,23 @@ class _AppShellState extends State<AppShell> {
     ];
   }
 
+  /// The production start (착수) picked in the details.
+  void _setKickoff(PartGroup g, DateTime kickoff) => _write((store) {
+    final k = _startOf(kickoff);
+    if (g.kind == GroupKind.part) {
+      store.setPartKickoff(g.partId!, g.stageId, k);
+    } else {
+      for (final t in g.tasks) {
+        store.setTaskKickoff(t.id, k);
+      }
+    }
+  });
+
   /// A work bar's end dragged: the user's own start and end.
   void _plan(PartGroup g, DateTime start, DateTime end) => _write((store) {
     final a = _startOf(start);
-    final b = _endOf(end);
+    // An end picked before the start ends on the start day.
+    final b = _endOf(end.isBefore(a) ? start : end);
     if (g.kind == GroupKind.part) {
       store.setPartPlan(g.partId!, g.stageId, start: a, end: b);
     } else {
@@ -418,8 +427,9 @@ class _AppShellState extends State<AppShell> {
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
         onDue: writable ? _setDue : null,
-        onTaskDue: writable ? _setTaskDue : null,
         onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
+        onKickoff: writable ? _setKickoff : null,
+        onPlan: writable ? _plan : null,
         revisionsOf: widget.reader == null ? null : _revisions,
         onEditRevision: writable ? _editRevision : null,
         onTaskTap: widget.timer == null
@@ -450,6 +460,13 @@ class _AppShellState extends State<AppShell> {
             : null,
         onClearPins: writable ? () => _write((s) => s.clearLanePins()) : null,
         onPlan: writable ? _plan : null,
+        laneNames: widget.store?.lanes() ?? const [],
+        onAddLane: writable ? () => _write((s) => s.addLane()) : null,
+        onEditLane: writable
+            ? (lane, {name, remove = false}) => _write(
+                (s) => remove ? s.removeLane(lane) : s.renameLane(lane, name),
+              )
+            : null,
       ),
       AppView.register => RegisterView(
         now: now,
@@ -521,7 +538,6 @@ class _AppShellState extends State<AppShell> {
           constraints.maxHeight,
         );
         final narrow = layout.size == SizeClass.narrow;
-        final wide = layout.size == SizeClass.wide;
         final selectionBar = SelectionBar(
           selection: _selection,
           onApply: widget.store == null ? null : _apply,
@@ -568,15 +584,9 @@ class _AppShellState extends State<AppShell> {
                               remote: remote,
                             ),
                           ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 16,
-                      children: [if (wide) selectionBar, if (!narrow) switcher],
-                    ),
+                    actions: selectionBar,
+                    switcher: narrow ? null : switcher,
                   ),
-                  // Below wide screens the picked-task actions get a row of
-                  // their own, always there, so nothing shifts or overlaps.
-                  if (!wide) _SelectionRow(child: selectionBar),
                   Expanded(
                     child: IndexedStack(
                       index: _view.index,
@@ -598,39 +608,17 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-class _SelectionRow extends StatelessWidget {
-  const _SelectionRow({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return DecoratedBox(
-      key: const Key('selection-row'),
-      decoration: BoxDecoration(
-        color: c.panel,
-        border: Border(bottom: BorderSide(color: c.line)),
-      ),
-      child: SizedBox(
-        height: 46,
-        width: double.infinity,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
 class _TopBar extends StatelessWidget {
-  const _TopBar({this.title, this.trailing});
+  const _TopBar({this.title, required this.actions, this.switcher});
 
   /// The document's name and file menu, after the app name.
   final Widget? title;
-  final Widget? trailing;
+
+  /// The picked-task actions: they take the room left and shrink to icons.
+  final Widget actions;
+
+  /// The view switcher, when it sits up here.
+  final Widget? switcher;
 
   @override
   Widget build(BuildContext context) {
@@ -644,32 +632,36 @@ class _TopBar extends StatelessWidget {
         height: 52,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              const Text(
-                'Anisched',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(width: 12),
-              ?title,
-              const SizedBox(width: 12),
-              if (trailing != null)
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      reverse: true,
-                      child: trailing,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          child: LayoutBuilder(builder: (context, box) => _row(box.maxWidth)),
         ),
       ),
     );
   }
+
+  Widget _row(double width) => Row(
+    children: [
+      const Text(
+        'Anisched',
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(width: 10),
+      if (title != null) Flexible(child: title!),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Align(alignment: Alignment.centerRight, child: actions),
+      ),
+      if (switcher case final s?) ...[
+        const SizedBox(width: 12),
+        // Its own width up to a little over half the bar; past that
+        // (long words, a phone held sideways) it shrinks a little
+        // rather than push the actions off.
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: width * 0.55),
+          child: FittedBox(fit: BoxFit.scaleDown, child: s),
+        ),
+      ],
+    ],
+  );
 }
 
 class _BottomBar extends StatelessWidget {

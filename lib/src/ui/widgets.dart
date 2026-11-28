@@ -82,7 +82,7 @@ class TakeBadge extends StatelessWidget {
   }
 }
 
-/// Bar split by task status: done, submitted, in progress, retake, received.
+/// Bar split by task status: submitted, done, in progress, retake, received.
 class PartProgress extends StatelessWidget {
   const PartProgress(this.group, {super.key, this.width, this.height = 6});
 
@@ -91,8 +91,8 @@ class PartProgress extends StatelessWidget {
   final double height;
 
   static const _order = [
-    TaskStatus.done,
     TaskStatus.submitted,
+    TaskStatus.done,
     TaskStatus.inProgress,
     TaskStatus.retake,
     TaskStatus.received,

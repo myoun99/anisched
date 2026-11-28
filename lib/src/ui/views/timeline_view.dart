@@ -98,15 +98,7 @@ class _TimelineViewState extends State<TimelineView> {
                   S.items.f({'n': rows.length}),
                   style: TextStyle(color: c.muted),
                 ),
-              ChartPager(
-                onShift: (d) => chartView.value = chartView.value.scrolled(d),
-                onToday: () =>
-                    chartView.value = ChartView(days: chartView.value.days),
-                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
-                  window.days,
-                  zoomIn: zoomIn,
-                ),
-              ),
+              ChartPager(days: window.days),
             ],
           ),
           Expanded(
@@ -226,7 +218,7 @@ class _TimelineLabel extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       TextSpan(
-                        text: g.episodeNumber,
+                        text: episodeLabel(g.episodeNumber),
                         style: TextStyle(
                           color: narrow ? null : c.muted,
                           fontWeight: narrow ? FontWeight.w700 : null,
@@ -247,29 +239,41 @@ class _TimelineLabel extends StatelessWidget {
               ],
             ),
           ),
-          DueButton(
-            key: Key('tl-due-${g.key}'),
-            due: g.dueAt,
-            onPicked: onDue == null ? null : (d) => onDue!(g, d),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    due.text,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: due.tone == DueTone.late
-                          ? Theme.of(context).colorScheme.error
-                          : c.muted,
-                      fontWeight: due.tone == DueTone.late
-                          ? FontWeight.w700
-                          : null,
-                    ),
+          // At most half the label; long words (6 j de retard) shrink.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 72),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: DueButton(
+                key: Key('tl-due-${g.key}'),
+                title: S.pickDue.t,
+                due: g.dueAt,
+                onPicked: onDue == null ? null : (d) => onDue!(g, d),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
                   ),
-                  RoundBadge(g.dueRevision),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        due.text,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: due.tone == DueTone.late
+                              ? Theme.of(context).colorScheme.error
+                              : c.muted,
+                          fontWeight: due.tone == DueTone.late
+                              ? FontWeight.w700
+                              : null,
+                        ),
+                      ),
+                      RoundBadge(g.dueRevision),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

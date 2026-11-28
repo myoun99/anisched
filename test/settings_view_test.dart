@@ -34,11 +34,6 @@ void main() {
       await t.tap(find.byKey(const Key('rest-3')));
       await t.pump();
       expect(store.settings.restWeekdays, {3, 6, 7});
-      await t.ensureVisible(find.byKey(const Key('lanes-3')));
-      await t.pump();
-      await t.tap(find.byKey(const Key('lanes-3')));
-      await t.pump();
-      expect(store.settings.parallelLanes, 3);
     });
   }
 

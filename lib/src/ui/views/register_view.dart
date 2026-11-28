@@ -288,6 +288,7 @@ class _RegisterViewState extends State<RegisterView> {
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
       initialDate: due ? (_due ?? _kickoff) : _kickoff,
+      title: due ? S.pickDue.t : S.pickKickoff.t,
     );
     if (d == null || !mounted) return;
     setState(() => due ? _due = d : _kickoff = d);
@@ -470,14 +471,21 @@ class _RegisterViewState extends State<RegisterView> {
                   : [
                       if (_work != null)
                         for (final x in await r.searchEpisodes(_work!.value, q))
-                          (value: x.id, title: x.number, note: x.title),
+                          (
+                            value: x.id,
+                            title: episodeLabel(x.number),
+                            note: x.title,
+                          ),
                     ],
               onPicked: _pickEpisode,
               onCreate: widget.onCreateEpisode == null
                   ? null
                   : (name) async => (
-                      value: widget.onCreateEpisode!(_work!.value, name),
-                      title: name,
+                      value: widget.onCreateEpisode!(
+                        _work!.value,
+                        episodeNumberOf(name),
+                      ),
+                      title: episodeLabel(episodeNumberOf(name)),
                       note: null,
                     ),
             ),

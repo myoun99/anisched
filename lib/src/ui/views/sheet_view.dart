@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../instant.dart';
 
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../theme.dart';
 import '../part_line.dart';
@@ -31,15 +30,21 @@ class SheetView extends StatefulWidget {
     this.onReorder,
     this.onTaskTap,
     this.onDue,
-    this.onTaskDue,
     this.onHold,
+    this.onKickoff,
+    this.onPlan,
     this.revisionsOf,
     this.onEditRevision,
   });
 
   /// Sets a unit's deadline / one cut's own deadline.
   final void Function(PartGroup group, DateTime due)? onDue;
-  final void Function(TaskRow task, DateTime due)? onTaskDue;
+
+  /// Sets a unit's production start (착수).
+  final void Function(PartGroup group, DateTime kickoff)? onKickoff;
+
+  /// Sets a unit's own work start and end (one may be the old one).
+  final void Function(PartGroup group, DateTime start, DateTime end)? onPlan;
 
   /// Puts a whole unit on hold, or takes it off.
   final void Function(PartGroup group)? onHold;
@@ -125,7 +130,7 @@ class _SheetViewState extends State<SheetView> {
             ? widget.parts
             : [
                 for (final p in widget.parts)
-                  if ((_showDone || p.status != TaskStatus.done) &&
+                  if ((_showDone || !p.status.isHanded) &&
                       (_work == null || p.workId == _work))
                     p,
               ]
@@ -205,7 +210,24 @@ class _SheetViewState extends State<SheetView> {
                         onDue: widget.onDue == null
                             ? null
                             : (d) => widget.onDue!(p, d),
-                        onTaskDue: widget.onTaskDue,
+                        onTaskLongPress: sel?.toggleTask,
+                        onKickoff: widget.onKickoff == null
+                            ? null
+                            : (d) => widget.onKickoff!(p, d),
+                        onPlanStart: widget.onPlan == null
+                            ? null
+                            : (d) => widget.onPlan!(
+                                p,
+                                d,
+                                p.planEndAt ?? p.dueAt ?? d,
+                              ),
+                        onPlanEnd: widget.onPlan == null
+                            ? null
+                            : (d) => widget.onPlan!(
+                                p,
+                                p.planStartAt ?? p.kickoffAt ?? d,
+                                d,
+                              ),
                         onHold: widget.onHold == null
                             ? null
                             : () => widget.onHold!(p),

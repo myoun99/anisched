@@ -28,9 +28,9 @@ void main() {
       expect(dueLabel(on(25), now, t).tone, DueTone.late);
     });
 
-    test('handed-over work never looks late', () {
-      expect(dueLabel(on(25), now, s).tone, DueTone.quiet);
-      expect(dueLabel(on(25), now, d), (text: '—', tone: DueTone.none));
+    test('handed-in work never looks late; done but kept still does', () {
+      expect(dueLabel(on(25), now, s), (text: '—', tone: DueTone.none));
+      expect(dueLabel(on(25), now, d).tone, DueTone.late);
       expect(dueLabel(null, now, w).text, '—');
     });
 
@@ -69,5 +69,14 @@ void main() {
     expect(groupCount(conte), '1건');
     final part = groups.firstWhere((g) => g.kind == GroupKind.part);
     expect(groupTitle(part), endsWith('파트'));
+  });
+
+  test('an episode number reads with #; a name stays; # is not stored', () {
+    expect(episodeLabel('07'), '#07');
+    expect(episodeLabel('#07'), '#07');
+    expect(episodeLabel('극장판'), '극장판');
+    expect(episodeNumberOf('#07'), '07');
+    expect(episodeNumberOf(' 12 '), '12');
+    expect(episodeNumberOf('#SP'), '#SP');
   });
 }

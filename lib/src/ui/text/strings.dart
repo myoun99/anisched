@@ -133,15 +133,15 @@ enum S {
   fWithin3('Within 3 days', '3日以内', '3일 안', 'Sous 3 jours', '3天内'),
   fWithin14('Within 2 weeks', '2週間以内', '2주 안', 'Sous 2 semaines', '2周内'),
   fLater('Later', 'それ以降', '그 뒤', 'Plus tard', '之后'),
-  fWithDone('With done', '完了含む', '완료 포함', 'Avec terminés', '含已完成'),
+  fWithDone('With submitted', '提出済み含む', '제출 포함', 'Avec remis', '含已提交'),
   fPeriod('Period', '期間', '기간', 'Période', '期间'),
   client('Client', '会社', '회사', 'Client', '公司'),
   allClients('All clients', 'すべての会社', '모든 회사', 'Tous les clients', '所有公司'),
   title('Title', '作品', '작품', 'Titre', '作品'),
   allTitles('All titles', 'すべての作品', '모든 작품', 'Tous les titres', '所有作品'),
-  showDone('Show done', '完了も表示', '완료도 보기', 'Afficher terminés', '显示已完成'),
-  doneShown('Done shown', '完了表示', '완료 보임', 'Terminés visibles', '显示已完成'),
-  doneHidden('Done hidden', '完了非表示', '완료 숨김', 'Terminés masqués', '隐藏已完成'),
+  showDone('Show submitted', '提出済みも表示', '제출한 것도 보기', 'Afficher remis', '显示已提交'),
+  doneShown('Submitted shown', '提出済み表示', '제출 보임', 'Remis visibles', '显示已提交'),
+  doneHidden('Submitted hidden', '提出済み非表示', '제출 숨김', 'Remis masqués', '隐藏已提交'),
 
   // File menu.
   fileNew('New', '新規', '새로', 'Nouveau', '新建'),
@@ -170,6 +170,9 @@ enum S {
     '今天 {a} / {b}',
   ),
   overflow('Over', 'あふれ', '넘침', 'Excès', '溢出'),
+  laneHead('Lanes', 'ライン', '라인', 'Lignes', '通道'),
+  addLane('Add a lane', 'ラインを追加', '라인 추가', 'Ajouter une ligne', '添加通道'),
+  deleteLane('Delete lane', 'ラインを削除', '라인 삭제', 'Supprimer la ligne', '删除通道'),
   laneN('Lane {n}', 'ライン {n}', '라인 {n}', 'Ligne {n}', '通道 {n}'),
 
   // Part line and details.
@@ -209,7 +212,6 @@ enum S {
   daysOff('Days off', '休み', '쉬는 날', 'Congés', '休息日'),
   remove('Remove', '削除', '지우기', 'Supprimer', '删除'),
   add('Add', '追加', '추가', 'Ajouter', '添加'),
-  lanes('Parallel work', '並行数', '병행 수', 'En parallèle', '并行数'),
   dayStart('Day starts at', '1日の始まり', '하루 시작', 'Début de journée', '一天开始于'),
   rounding(
     'Per-second rate rounding',
@@ -372,6 +374,21 @@ enum S {
     'Aucune donnée sur cette période',
     '此期间无数据',
   ),
+
+  zoomDrag(
+    'Drag sideways to zoom',
+    '左右にドラッグでズーム',
+    '좌우로 끌어 확대·축소',
+    'Glisser pour zoomer',
+    '左右拖动缩放',
+  ),
+
+  // Date picker headings: what is being picked.
+  pickDue('Deadline', '締切日', '마감 날짜', 'Échéance', '截止日期'),
+  pickKickoff('Start date', '着手日', '착수일', 'Date de début', '开工日期'),
+  pickPlanStart('Work starts', '作業開始日', '작업 시작', 'Début du travail', '开始工作'),
+  pickPlanEnd('Work ends', '作業終了日', '작업 끝', 'Fin du travail', '结束工作'),
+  pickHoldUntil('Expected back', '待ち明け予定', '대기 예상일', 'Retour prévu', '预计恢复'),
 
   // On hold (waiting on someone else's material).
   hold('On hold', '待ち', '대기', 'En attente', '等待'),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'instant.dart';
 
-import '../models/catalogue.dart';
 import '../models/progress.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -73,7 +72,8 @@ class ViewFilter {
     Map<int, int?> clientOf, {
     int dayStartMinutes = 0,
   }) {
-    if (!showDone && g.status == TaskStatus.done) return false;
+    // Handed in (submitted) work leaves the list unless asked for.
+    if (!showDone && g.status.isHanded) return false;
     if (workId != null && g.workId != workId) return false;
     if (clientId != null && clientOf[g.workId] != clientId) return false;
     if (range == DueRange.all) return true;
