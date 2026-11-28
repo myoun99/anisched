@@ -3,6 +3,7 @@ import 'package:sqlite3/common.dart';
 import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/cut_numbers.dart';
+import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
 import '../models/progress.dart';
@@ -2162,8 +2163,26 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     dayStartMinutes: settings.dayStartMinutes,
     restWeekdays: settings.restWeekdays,
     daysOff: daysOff().map((d) => d.range),
+    isHoliday: restHoliday(),
     endAt: settings.paceEnd,
   );
+
+  /// The public-holiday test when the user rests on holidays, else null.
+  bool Function(DateTime)? restHoliday() =>
+      settings.restOnHolidays ? holidayTest(settings.holidayCountry) : null;
+
+  /// [settings.holidayCountry]'s holidays on the local days from [from] up
+  /// to (not including) [to] — for showing them; empty for none.
+  List<Holiday> holidays({required DateTime from, required DateTime to}) {
+    final start = DateTime.utc(from.year, from.month, from.day);
+    final end = DateTime.utc(to.year, to.month, to.day);
+    final country = settings.holidayCountry;
+    return [
+      for (var y = start.year; y <= end.year; y++)
+        for (final h in holidaysOf(country, y))
+          if (!h.date.isBefore(start) && h.date.isBefore(end)) h,
+    ];
+  }
 
   /// The usual pace per stage name: cuts handed over (submitted, or done
   /// without a submission) in the last [days] days up to today, divided
@@ -2183,6 +2202,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       today.start,
       restWeekdays: settings.restWeekdays,
       daysOff: daysOff(from: from).map((d) => d.range),
+      isHoliday: restHoliday(),
     );
     return [
       for (final r in db.select(
@@ -2212,6 +2232,7 @@ GROUP BY s.name ORDER BY s.name;''',
     final today = dayRange(now, settings.dayStartMinutes);
     final rest = settings.restWeekdays;
     final off = [for (final d in daysOff()) d.range];
+    final holiday = restHoliday();
     final overall = <String, UsualPace>{};
     for (final r in db.select(
       '''
@@ -2237,6 +2258,7 @@ GROUP BY s.name;''',
           today.start,
           restWeekdays: rest,
           daysOff: off,
+          isHoliday: holiday,
         ),
       );
     }
@@ -2270,11 +2292,12 @@ GROUP BY s.name;''',
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
     final off = [for (final d in daysOff(from: now)) d.range];
+    final holiday = restHoliday();
     final paceEnd = settings.paceEnd;
     final recent = recentPerDay();
     return {
       for (final g in partGroups(includeDone: includeDone))
-        g.key: _signals(g, now, dayStart, rest, off, paceEnd, recent),
+        g.key: _signals(g, now, dayStart, rest, off, holiday, paceEnd, recent),
     };
   }
 
@@ -2284,6 +2307,7 @@ GROUP BY s.name;''',
     int dayStart,
     Set<int> rest,
     List<DaysOff> off,
+    bool Function(DateTime)? holiday,
     PaceEnd paceEnd,
     Map<String, double?> recent,
   ) {
@@ -2293,6 +2317,7 @@ GROUP BY s.name;''',
       dayStartMinutes: dayStart,
       restWeekdays: rest,
       daysOff: off,
+      isHoliday: holiday,
       endAt: paceEnd,
     );
     return GroupSignals(
@@ -2362,6 +2387,7 @@ GROUP BY s.name;''',
     final rest = settings.restWeekdays;
     final paceEnd = settings.paceEnd;
     final off = [for (final d in daysOff(from: now)) d.range];
+    final holiday = restHoliday();
     final recent = recentPerDay();
     int? left(DateTime? due) =>
         due == null ? null : dueInDays(due, now, dayStart);
@@ -2380,7 +2406,16 @@ GROUP BY s.name;''',
           if (d != null && d < 0) late++;
         }
       }
-      final sig = _signals(g, now, dayStart, rest, off, paceEnd, recent);
+      final sig = _signals(
+        g,
+        now,
+        dayStart,
+        rest,
+        off,
+        holiday,
+        paceEnd,
+        recent,
+      );
       final pace = sig.pace;
       if (pace != null) cutsToday += pace.today;
       final due = days != null && days <= horizonDays;

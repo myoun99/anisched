@@ -612,22 +612,40 @@ class DaysOff {
   static DateTime _date(DateTime t) => DateTime.utc(t.year, t.month, t.day);
 }
 
+/// Whether the (local) date [d] is a day off — the one judgment for every
+/// count of working days: a rest weekday ([DateTime.weekday], 1 = Monday
+/// … 7 = Sunday), a day in [daysOff], or a public holiday when
+/// [isHoliday] is given (the user chose to rest on holidays).
+bool isRestDay(
+  DateTime d, {
+  Set<int> restWeekdays = const {},
+  Iterable<DaysOff> daysOff = const [],
+  bool Function(DateTime date)? isHoliday,
+}) =>
+    restWeekdays.contains(d.weekday) ||
+    daysOff.any((r) => r.contains(d)) ||
+    (isHoliday?.call(d) ?? false);
+
 /// The pace for [group] as of [now], or null when it has no end date.
 /// Days count from the planned start (else the production kickoff) if
 /// later than today, to the planned end (else the deadline) — or always
 /// to the deadline with [PaceEnd.due].
-/// [restWeekdays] uses [DateTime.weekday] (1 = Monday … 7 = Sunday);
-/// [daysOff] adds specific days. Both are skipped when counting days.
+/// Days off ([isRestDay]) are skipped when counting days.
 Pace? paceFor(
   PartGroup group,
   DateTime now, {
   int dayStartMinutes = 0,
   Set<int> restWeekdays = const {},
   Iterable<DaysOff> daysOff = const [],
+  bool Function(DateTime date)? isHoliday,
   PaceEnd endAt = PaceEnd.plan,
 }) {
-  bool off(DateTime d) =>
-      restWeekdays.contains(d.weekday) || daysOff.any((r) => r.contains(d));
+  bool off(DateTime d) => isRestDay(
+    d,
+    restWeekdays: restWeekdays,
+    daysOff: daysOff,
+    isHoliday: isHoliday,
+  );
 
   final endTime = switch (endAt) {
     PaceEnd.plan => group.planEndAt ?? group.dueAt,
@@ -756,12 +774,13 @@ PaceLevel paceLevel(Pace pace, double? usual) {
 }
 
 /// Working days in local `[from, to]` (both dates included), skipping
-/// [restWeekdays] and [daysOff].
+/// days off ([isRestDay]).
 int workDaysBetween(
   DateTime from,
   DateTime to, {
   Set<int> restWeekdays = const {},
   Iterable<DaysOff> daysOff = const [],
+  bool Function(DateTime date)? isHoliday,
 }) {
   var n = 0;
   for (
@@ -769,8 +788,12 @@ int workDaysBetween(
     !d.isAfter(DateTime.utc(to.year, to.month, to.day));
     d = d.add(const Duration(days: 1))
   ) {
-    if (!restWeekdays.contains(d.weekday) &&
-        !daysOff.any((r) => r.contains(d))) {
+    if (!isRestDay(
+      d,
+      restWeekdays: restWeekdays,
+      daysOff: daysOff,
+      isHoliday: isHoliday,
+    )) {
       n++;
     }
   }
