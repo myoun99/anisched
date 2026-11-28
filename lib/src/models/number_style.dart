@@ -39,21 +39,37 @@ String _format(int number, NumberStyle style) =>
 final _typedValue = RegExp(r'^0*(\d{1,9})([A-Za-z]*)$');
 final _storedValue = RegExp(r'^(0|[1-9]\d{0,8})([A-Z]*)$');
 
-/// What to store for [typed]: `C012A`, `c12a` → `12A`, `012` → `12` (the
-/// style's prefix in any case, or none; letters after the number in
-/// capitals); anything else as typed, trimmed.
+/// What to store for [typed] (유저 2026-11-28 — a number is its value,
+/// however it was typed): spaces dropped; a leading `C`, `#` or the
+/// style's own prefix (any case) dropped when a number follows; leading
+/// zeros dropped; letters after the number in capitals — `C012`, `c12`,
+/// `012`, `12` → `12`; `12a` → `12A`. Anything that is not a number so
+/// read (`BANK1`, `SP`) is kept as typed, trimmed.
 String storedNumber(String typed, NumberStyle style) {
-  final t = typed.trim();
-  final p = style.prefix;
-  final body =
-      p.isNotEmpty &&
-          t.length > p.length &&
-          t.substring(0, p.length).toLowerCase() == p.toLowerCase()
-      ? t.substring(p.length)
-      : t;
-  final m = _typedValue.firstMatch(body);
-  return m == null ? t : '${int.parse(m[1]!)}${m[2]!.toUpperCase()}';
+  final t = typed.replaceAll(RegExp(r'\s+'), '');
+  final m = _typedValue.firstMatch(_withoutPrefix(t, style.prefix));
+  return m == null ? typed.trim() : '${int.parse(m[1]!)}${m[2]!.toUpperCase()}';
 }
+
+/// [t] without the first of [prefix], `C` and `#` it starts with (any
+/// case) that leaves a number.
+String _withoutPrefix(String t, String prefix) {
+  for (final p in {prefix, 'C', '#'}) {
+    if (p.isEmpty || t.length <= p.length) continue;
+    if (t.substring(0, p.length).toLowerCase() != p.toLowerCase()) continue;
+    final rest = t.substring(p.length);
+    if (_typedValue.hasMatch(rest)) return rest;
+  }
+  return t;
+}
+
+/// A cut number as typed → its stored value ([storedNumber]).
+String parseCutInput(String typed, NumberStyle style) =>
+    storedNumber(typed, style);
+
+/// An episode number as typed → its stored value ([storedNumber]).
+String parseEpisodeInput(String typed, NumberStyle style) =>
+    storedNumber(typed, style);
 
 /// How a [stored] number reads in [style]: `12A` → `C012A`; a typed name
 /// stays as it is.

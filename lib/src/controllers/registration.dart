@@ -3,6 +3,7 @@
 library;
 
 import '../models/cut_numbers.dart';
+import '../models/number_style.dart';
 import '../services/catalogue_store.dart';
 
 /// The cut grid before it is saved. Cells are a numbered run plus cuts
@@ -63,17 +64,20 @@ class CutDraft {
   ].fold(0, (a, b) => a + b);
 
   /// Cells whose name is used twice on the grid or already [taken]; names
-  /// are compared by [key] (the store compares stored values).
+  /// (and [taken], as the screens show them) are compared by [key] — by default their values in the default cut
+  /// style (`C012` and `12` are one); the store compares in the
+  /// document's style (`CatalogueStore.cutKey`).
   Set<String> clashes([
     Set<String> taken = const {},
-    String Function(String name) key = _same,
+    String Function(String name) key = _defaultKey,
   ]) {
     final seen = <String, String>{};
     final out = <String>{};
+    final takenKeys = {for (final t in taken) key(t)};
     for (final c in cells) {
       if (removed.contains(c)) continue;
       final n = key(nameOf(c));
-      if (taken.contains(n)) out.add(c);
+      if (takenKeys.contains(n)) out.add(c);
       final other = seen[n];
       if (other != null) out.addAll([c, other]);
       seen[n] = c;
@@ -284,4 +288,4 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
   return tasks;
 }
 
-String _same(String name) => name;
+String _defaultKey(String name) => parseCutInput(name, defaultCutStyle);

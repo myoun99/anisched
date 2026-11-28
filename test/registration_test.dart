@@ -38,6 +38,21 @@ void main() {
     expect(c.clashes({'C002'}), containsAll(['C002']));
   });
 
+  test('C012 registered, then 12 is the same cut: refused (유저 2026-11-28 '
+      'bug)', () {
+    final store = fresh();
+    final w = store.createWork('W');
+    final ep = store.addEpisode(w, '#01');
+    RegistrationDraft draft(CutDraft cuts) =>
+        RegistrationDraft(workId: w, episodeId: ep, stages: ['LO'], cuts: cuts);
+    register(store, draft(CutDraft(start: 12, count: 1)));
+    final again = CutDraft(start: 12, count: 1, prefix: '', width: 1);
+    // The grid sees it before saving, and the store refuses it.
+    expect(again.clashes({'C012'}), {'12'});
+    expect(() => register(store, draft(again)), throwsA(isA<CutNameClash>()));
+    expect(store.cuts(ep).map((c) => c.number), ['C012']);
+  });
+
   test('register writes a part, cuts, tasks per stage, splits and pairs', () {
     final store = fresh();
     final w = store.createWork('새벽의 정원');
