@@ -195,6 +195,7 @@ class PartLine extends StatelessWidget {
                       alignment: Alignment.centerRight,
                       child: DueButton(
                         key: Key('due-${g.key}'),
+                        title: S.pickDue.t,
                         due: g.dueAt,
                         onPicked: onDue,
                         child: Padding(
@@ -263,6 +264,9 @@ class PartDetails extends StatelessWidget {
     this.isPicked,
     this.onDue,
     this.onTaskLongPress,
+    this.onKickoff,
+    this.onPlanStart,
+    this.onPlanEnd,
     this.onHold,
     this.loadRevisions,
     this.onEditRevision,
@@ -301,6 +305,13 @@ class PartDetails extends StatelessWidget {
   /// Sets the unit's deadline (tap on the 마감 fact).
   final ValueChanged<DateTime>? onDue;
 
+  /// Sets the production start (착수); null keeps it fixed.
+  final ValueChanged<DateTime>? onKickoff;
+
+  /// Sets the user's own work start and end.
+  final ValueChanged<DateTime>? onPlanStart;
+  final ValueChanged<DateTime>? onPlanEnd;
+
   /// Long press on a cut: picks it for the bar's actions.
   final ValueChanged<TaskRow>? onTaskLongPress;
 
@@ -310,14 +321,64 @@ class PartDetails extends StatelessWidget {
     final g = group;
     final slack = g.slackDays;
     final perDay = pace?.perDay;
-    String range(DateTime? a, DateTime? b, String open) =>
-        a == null && b == null
-        ? '—'
-        : '${formatDate(a)} – ${b == null ? open : formatDate(b)}';
+    // Each date is its own button, titled with what it picks.
+    Widget date(
+      String key,
+      DateTime? d,
+      ValueChanged<DateTime>? onPicked,
+      String title, {
+      String empty = '—',
+    }) => DueButton(
+      key: Key('$key-${g.key}'),
+      title: title,
+      due: d,
+      onPicked: onPicked,
+      child: Text(
+        d == null ? empty : formatDate(d),
+        style: onPicked == null
+            ? null
+            : TextStyle(
+                decoration: TextDecoration.underline,
+                decorationColor: c.faint,
+              ),
+      ),
+    );
+    Widget fact(String label, List<Widget> value) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$label  ', style: TextStyle(fontSize: 12, color: c.muted)),
+        ...value,
+      ],
+    );
+    const dash = Text(' – ');
+    final dates = [
+      fact(S.due.t, [
+        date('details-due', g.dueAt, onDue, S.pickDue.t),
+        RoundBadge(g.dueRevision),
+      ]),
+      fact(S.production.t, [
+        date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
+        dash,
+        Text(formatDate(g.dueAt)),
+      ]),
+      fact(S.ownWork.t, [
+        date(
+          'details-plan-start',
+          g.planStartAt,
+          onPlanStart,
+          S.pickPlanStart.t,
+        ),
+        dash,
+        date(
+          'details-plan-end',
+          g.planEndAt,
+          onPlanEnd,
+          S.pickPlanEnd.t,
+          empty: S.due.t,
+        ),
+      ]),
+    ];
     final facts = <(String, String)>[
-      (S.due.t, formatDate(g.dueAt)),
-      (S.production.t, range(g.kickoffAt, g.dueAt, '—')),
-      (S.ownWork.t, range(g.planStartAt, g.planEndAt, S.due.t)),
       (S.slack.t, slack == null ? '—' : S.days.f({'n': slack})),
       (S.perDay.t, perDay == null ? '—' : '${perDay.toStringAsFixed(1)} cut'),
       (S.rate.t, formatMoney(g.currency, g.pay)),
@@ -357,31 +418,17 @@ class PartDetails extends StatelessWidget {
                 spacing: 20,
                 runSpacing: 6,
                 children: [
+                  ...dates,
                   for (final (k, v) in facts)
-                    DueButton(
-                      key: k == S.due.t ? Key('details-due-${g.key}') : null,
-                      due: g.dueAt,
-                      onPicked: k == S.due.t ? onDue : null,
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '$k  ',
-                              style: TextStyle(fontSize: 12, color: c.muted),
-                            ),
-                            TextSpan(
-                              text: v,
-                              style: k == S.due.t && onDue != null
-                                  ? TextStyle(
-                                      decoration: TextDecoration.underline,
-                                      decorationColor: c.faint,
-                                    )
-                                  : null,
-                            ),
-                            if (k == S.due.t && g.dueRevision > 1)
-                              WidgetSpan(child: RoundBadge(g.dueRevision)),
-                          ],
-                        ),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$k  ',
+                            style: TextStyle(fontSize: 12, color: c.muted),
+                          ),
+                          TextSpan(text: v),
+                        ],
                       ),
                     ),
                 ],

@@ -373,6 +373,13 @@ enum S {
     '此期间无数据',
   ),
 
+  // Date picker headings: what is being picked.
+  pickDue('Deadline', '締切日', '마감 날짜', 'Échéance', '截止日期'),
+  pickKickoff('Start date', '着手日', '착수일', 'Date de début', '开工日期'),
+  pickPlanStart('Work starts', '作業開始日', '작업 시작', 'Début du travail', '开始工作'),
+  pickPlanEnd('Work ends', '作業終了日', '작업 끝', 'Fin du travail', '结束工作'),
+  pickHoldUntil('Expected back', '待ち明け予定', '대기 예상일', 'Retour prévu', '预计恢复'),
+
   // On hold (waiting on someone else's material).
   hold('On hold', '待ち', '대기', 'En attente', '等待'),
   unhold('Resume', '待ち解除', '대기 해제', 'Reprendre', '解除等待'),

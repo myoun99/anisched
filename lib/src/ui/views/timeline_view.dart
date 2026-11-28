@@ -249,6 +249,7 @@ class _TimelineLabel extends StatelessWidget {
           ),
           DueButton(
             key: Key('tl-due-${g.key}'),
+            title: S.pickDue.t,
             due: g.dueAt,
             onPicked: onDue == null ? null : (d) => onDue!(g, d),
             child: Padding(

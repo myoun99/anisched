@@ -65,6 +65,7 @@ class _HoldDialogState extends State<_HoldDialog> {
           ),
           DueButton(
             key: const Key('hold-until'),
+            title: S.pickHoldUntil.t,
             due: _until,
             onPicked: (d) => setState(() => _until = d),
             child: Padding(
@@ -215,6 +216,7 @@ class _DueRevisionListState extends State<DueRevisionList> {
         for (final r in _rounds)
           DueButton(
             key: Key('due-round-${r.revision}'),
+            title: '${dueRoundLabel(r.revision)} · ${S.pickDue.t}',
             due: r.dueAt,
             onPicked: widget.onEdit == null
                 ? null

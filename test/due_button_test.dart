@@ -1,3 +1,4 @@
+import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
@@ -112,5 +113,34 @@ void main() {
     await t.pump();
     expect(find.byType(DatePickerDialog), findsNothing);
     expect(find.byKey(Key('details-${g.key}')), findsOneWidget);
+  });
+
+  testWidgets('the details dates each open a titled picker and save', (
+    t,
+  ) async {
+    final store = await pumpShell(t, AppView.list);
+    final g = store.partGroups().firstWhere((g) => g.partId != null);
+    PartGroup latest() => store.partGroups().firstWhere((x) => x.key == g.key);
+    await t.tap(find.byKey(Key('line-${g.key}')));
+    await t.pump();
+
+    await t.tap(find.byKey(Key('details-kickoff-${g.key}')));
+    await t.pump();
+    expect(find.text('착수일'), findsOneWidget);
+    await pickDay(t, '20');
+    expect(latest().kickoffAt!.toLocal().day, 20);
+
+    await t.tap(find.byKey(Key('details-plan-end-${g.key}')));
+    await t.pump();
+    expect(find.text('작업 끝'), findsOneWidget);
+    await pickDay(t, '29');
+    expect(latest().planEndAt!.toLocal().day, 29);
+
+    await t.tap(find.byKey(Key('details-plan-start-${g.key}')));
+    await t.pump();
+    expect(find.text('작업 시작'), findsOneWidget);
+    await pickDay(t, '28');
+    expect(latest().planStartAt!.toLocal().day, 28);
+    expect(latest().planEndAt!.toLocal().day, 29, reason: 'the end stays');
   });
 }

@@ -97,6 +97,7 @@ class _SettingsViewState extends State<SettingsView> {
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
+      title: S.daysOff.t,
     );
     if (r == null || !mounted) return;
     _set((s) => s.addDaysOff(r.start, end: r.end));

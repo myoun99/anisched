@@ -377,10 +377,23 @@ class _AppShellState extends State<AppShell> {
     ];
   }
 
+  /// The production start (착수) picked in the details.
+  void _setKickoff(PartGroup g, DateTime kickoff) => _write((store) {
+    final k = _startOf(kickoff);
+    if (g.kind == GroupKind.part) {
+      store.setPartKickoff(g.partId!, g.stageId, k);
+    } else {
+      for (final t in g.tasks) {
+        store.setTaskKickoff(t.id, k);
+      }
+    }
+  });
+
   /// A work bar's end dragged: the user's own start and end.
   void _plan(PartGroup g, DateTime start, DateTime end) => _write((store) {
     final a = _startOf(start);
-    final b = _endOf(end);
+    // An end picked before the start ends on the start day.
+    final b = _endOf(end.isBefore(a) ? start : end);
     if (g.kind == GroupKind.part) {
       store.setPartPlan(g.partId!, g.stageId, start: a, end: b);
     } else {
@@ -415,6 +428,8 @@ class _AppShellState extends State<AppShell> {
         onReorder: writable ? _reorder : null,
         onDue: writable ? _setDue : null,
         onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
+        onKickoff: writable ? _setKickoff : null,
+        onPlan: writable ? _plan : null,
         revisionsOf: widget.reader == null ? null : _revisions,
         onEditRevision: writable ? _editRevision : null,
         onTaskTap: widget.timer == null

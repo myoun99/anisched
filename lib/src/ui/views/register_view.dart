@@ -288,6 +288,7 @@ class _RegisterViewState extends State<RegisterView> {
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
       initialDate: due ? (_due ?? _kickoff) : _kickoff,
+      title: due ? S.pickDue.t : S.pickKickoff.t,
     );
     if (d == null || !mounted) return;
     setState(() => due ? _due = d : _kickoff = d);
