@@ -1,4 +1,5 @@
 import 'package:anisched/src/controllers/registration.dart';
+import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -195,5 +196,48 @@ void main() {
     expect(c.removed, {'C001', 'C002'});
     c.toggleRemoved(['C001', 'C002']);
     expect(c.removed, isEmpty);
+  });
+
+  test('each stage keeps its own dates; one left out takes the draft\'s', () {
+    final store = fresh();
+    final w = store.createWork('새벽의 정원');
+    final ep = store.addEpisode(w, '#02');
+    final loDue = DateTime(2026, 12, 10, 23, 59);
+    final gengaDue = DateTime(2026, 12, 20, 23, 59);
+    final gengaStart = DateTime(2026, 12, 8);
+    for (final part in ['A', null]) {
+      register(
+        store,
+        RegistrationDraft(
+          workId: w,
+          episodeId: ep,
+          partLabel: part,
+          stages: ['LO', '원화', '동화'],
+          cuts: CutDraft(start: part == null ? 50 : 1, count: 3),
+          dueAt: loDue,
+          schedules: {
+            'LO': (kickoffAt: null, dueAt: loDue),
+            '원화': (kickoffAt: gengaStart, dueAt: gengaDue),
+          },
+        ),
+      );
+    }
+    for (final kind in [GroupKind.part, GroupKind.noPart]) {
+      final groups = store.partGroups().where((g) => g.kind == kind);
+      DateTime? dueOf(String stage) =>
+          groups.firstWhere((g) => g.stageName == stage).dueAt;
+      bool same(DateTime? a, DateTime b) => a!.isAtSameMomentAs(b);
+      expect(same(dueOf('LO'), loDue), isTrue, reason: '$kind');
+      expect(same(dueOf('원화'), gengaDue), isTrue, reason: '$kind');
+      expect(same(dueOf('동화'), loDue), isTrue, reason: '$kind: the draft\'s');
+      expect(
+        same(
+          groups.firstWhere((g) => g.stageName == '원화').kickoffAt,
+          gengaStart,
+        ),
+        isTrue,
+        reason: '$kind',
+      );
+    }
   });
 }

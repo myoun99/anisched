@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../controllers/unit_bundles.dart';
 import '../../core/size_class.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
@@ -17,7 +18,10 @@ import '../fit_text.dart';
 
 /// The production schedule only: one bar per unit from kickoff to
 /// deadline, the deadline's D-day on the right of the name. Dragging a
-/// bar's end moves the kickoff or the deadline.
+/// bar's end moves the kickoff or the deadline. Units bundled in the list
+/// (one part's LO and 原画, [bundleUnits]) share one row, every stage's
+/// bar on it named by its stage; opened, the row lists its stages as rows
+/// of their own, as the list does.
 class TimelineView extends StatefulWidget {
   const TimelineView({
     super.key,
@@ -32,6 +36,7 @@ class TimelineView extends StatefulWidget {
     this.onDue,
     this.details,
     this.events = const {},
+    this.cardEvents = const {},
     this.onNewEvent,
     this.onEvent,
     this.onRulerPress,
@@ -41,6 +46,9 @@ class TimelineView extends StatefulWidget {
   /// Dated events by episode (null: on no episode), shown on that
   /// episode's rows.
   final Map<int?, List<EventRow>> events;
+
+  /// Events of one card, by its key, shown on that card's bar alone.
+  final Map<String, List<EventRow>> cardEvents;
 
   /// A long press on a row's day: a new event there.
   final void Function(PartGroup group, DateTime day)? onNewEvent;
@@ -86,12 +94,48 @@ class TimelineView extends StatefulWidget {
   State<TimelineView> createState() => _TimelineViewState();
 }
 
+/// One timeline row: a unit, a bundle of a unit's stages, or one stage of
+/// an opened bundle ([inner]).
+class _Row {
+  const _Row(this.group, {this.bundle, this.inner = false});
+
+  /// The unit (a bundle's lead: its D).
+  final PartGroup group;
+  final UnitBundle? bundle;
+  final bool inner;
+
+  String get key => bundle?.key ?? group.key;
+
+  /// What a pick on the row takes: every stage of a bundle.
+  PartGroup get whole => bundle?.together ?? group;
+}
+
 class _TimelineViewState extends State<TimelineView> {
   /// The unit opened under its row, if any.
   String? _open;
 
+  /// Bundles opened into their stages' rows.
+  final _expanded = <String>{};
+
   void _toggle(PartGroup g) =>
       setState(() => _open = _open == g.key ? null : g.key);
+
+  void _toggleBundle(String key) => setState(
+    () => _expanded.contains(key) ? _expanded.remove(key) : _expanded.add(key),
+  );
+
+  /// [parts] as rows: bundled as the list bundles them, an opened
+  /// bundle's stages under it.
+  List<_Row> _rowsOf(List<PartGroup> parts) => [
+    for (final b in bundleUnits(parts))
+      if (b.single)
+        _Row(b.lead)
+      else ...[
+        _Row(b.lead, bundle: b),
+        if (_expanded.contains(b.key))
+          for (final s in b.stages) _Row(s, inner: true),
+      ],
+  ];
 
   /// The running view's days; only the board's date parts follow it.
   late final _window = RunningWindow(widget.now, widget.layout.size);
@@ -117,7 +161,7 @@ class _TimelineViewState extends State<TimelineView> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final rows = widget.parts;
+    final rows = _rowsOf(widget.parts);
     return ColoredBox(
       color: c.panel,
       child: Column(
@@ -145,10 +189,15 @@ class _TimelineViewState extends State<TimelineView> {
                   ? MonthStack(
                       first: _firstMonth,
                       last: _lastMonth,
-                      month: (context, w) => _board(context, FixedWindow(w), [
-                        for (final g in rows)
-                          if (_inWindow(g, w)) g,
-                      ], month: true),
+                      month: (context, w) => _board(
+                        context,
+                        FixedWindow(w),
+                        _rowsOf([
+                          for (final g in widget.parts)
+                            if (_inWindow(g, w)) g,
+                        ]),
+                        month: true,
+                      ),
                     )
                   : ValueListenableBuilder<ChartWindow>(
                       valueListenable: _window,
@@ -172,7 +221,7 @@ class _TimelineViewState extends State<TimelineView> {
   Widget _board(
     BuildContext context,
     ValueListenable<ChartWindow> window,
-    List<PartGroup> rows, {
+    List<_Row> rows, {
     required bool month,
   }) => ChartBoard(
     window: window,
@@ -187,25 +236,56 @@ class _TimelineViewState extends State<TimelineView> {
     onReorder: month || widget.onReorder == null
         ? null
         : (from, to) {
-            final keys = [for (final r in rows) r.key];
-            keys.insert(to, keys.removeAt(from));
-            widget.onReorder!(keys);
+            // A bundle moves all its stages; an opened bundle's stage
+            // rows go with it.
+            final moved = [...rows];
+            moved.insert(to, moved.removeAt(from));
+            widget.onReorder!([
+              for (final r in moved)
+                if (!r.inner)
+                  for (final s in r.bundle?.stages ?? [r.group]) s.key,
+            ]);
           },
-    label: (context, i) => _TimelineLabel(
-      index: month || widget.onReorder == null ? null : i,
-      group: rows[i],
-      now: widget.now,
-      narrow: widget.layout.size == SizeClass.narrow,
-      onDue: widget.onDue,
-      selection: widget.selection,
-      open: _open == rows[i].key,
-      onOpen: widget.details == null ? null : () => _toggle(rows[i]),
-    ),
-    bars: (context, i, window) => _bars(context, rows[i], window),
+    label: (context, i) {
+      final r = rows[i];
+      return _TimelineLabel(
+        index: month || widget.onReorder == null || r.inner ? null : i,
+        group: r.group,
+        bundle: r.bundle,
+        inner: r.inner,
+        now: widget.now,
+        narrow: widget.layout.size == SizeClass.narrow,
+        onDue: widget.onDue,
+        selection: widget.selection,
+        open: r.bundle != null ? _expanded.contains(r.key) : _open == r.key,
+        onOpen: r.bundle != null
+            ? () => _toggleBundle(r.key)
+            : (widget.details == null ? null : () => _toggle(r.group)),
+      );
+    },
+    bars: (context, i, window) {
+      final r = rows[i];
+      final b = r.bundle;
+      if (b == null) return _bars(context, r.group, window);
+      // Every stage's bar on the one row, in stage order (the later on
+      // top), each named by its stage; the episode's events once.
+      return [
+        for (final (n, s) in b.stages.indexed)
+          ..._bars(
+            context,
+            s,
+            window,
+            stage: true,
+            events: n == 0,
+            onTap: () => _toggleBundle(b.key),
+          ),
+      ];
+    },
     below: widget.details == null
         ? null
-        : (context, i) =>
-              _open == rows[i].key ? widget.details!(rows[i]) : null,
+        : (context, i) => rows[i].bundle == null && _open == rows[i].key
+              ? widget.details!(rows[i].group)
+              : null,
   );
 
   /// The unit's bar falls in [w] (the month view's rows).
@@ -229,7 +309,16 @@ class _TimelineViewState extends State<TimelineView> {
     return last;
   }
 
-  List<Widget> _bars(BuildContext context, PartGroup g, ChartWindow window) {
+  /// [g]'s bar, its episode's events and its own. On a bundle's row the
+  /// bar is named by its [stage] and a tap opens the bundle ([onTap]).
+  List<Widget> _bars(
+    BuildContext context,
+    PartGroup g,
+    ChartWindow window, {
+    bool stage = false,
+    bool events = true,
+    VoidCallback? onTap,
+  }) {
     final start = g.kickoffAt;
     final end = g.dueAt;
     final dated = start != null && end != null && !end.isBefore(start);
@@ -241,26 +330,44 @@ class _TimelineViewState extends State<TimelineView> {
         !chartDay(d).isBefore(chartDay(start)) &&
         !chartDay(d).isAfter(chartDay(end));
     return [
-      // A long press on the row's days puts an event there.
-      if (onNew != null)
-        ChartDayPress(window: window, onLongPress: (d) => onNew(g, d)),
       if (dated)
         ChartBar(
-          key: Key('tl-bar-${g.key}'),
+          key: Key(stage ? 'tl-stage-bar-${g.key}' : 'tl-bar-${g.key}'),
           window: window,
           start: start,
           end: end,
           color: stageColor(g.stageName),
           textColor: barInk,
+          label: stage ? stageText(g.stageName) : null,
           faded: handed || (g.waiting > 0 && g.inHand == 0),
           onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
+          // A tap on the bar opens the row (as the work tab's bars do).
+          onTap:
+              onTap ??
+              (widget.details == null
+                  ? null
+                  : () => setState(() => _open = g.key)),
+          // A long press on the bar puts an event on that day, for this
+          // card; the row's days off the bar do nothing.
+          onLongPressDay: onNew == null ? null : (d) => onNew(g, d),
         ),
-      for (final e in widget.events[g.episodeId] ?? const <EventRow>[])
+      // The episode's own events (once on a bundle's row), then this
+      // card's alone.
+      for (final e in [
+        if (events) ...?widget.events[g.episodeId],
+        ...?widget.cardEvents[g.key],
+      ])
         ChartDayBox(
           key: Key('tl-event-${g.key}-${e.id}'),
           window: window,
           day: e.date,
           minWidth: 72,
+          // Over the bar, the bar's long press (an event) goes on.
+          onLongPressDay: onNew == null
+              ? null
+              : (d) {
+                  if (onBar(d)) onNew(g, d);
+                },
           child: EventMark(
             event: e,
             onBar: onBar(e.date),
@@ -291,6 +398,8 @@ class EventMark extends StatelessWidget {
     final ink = onBar ? barInk : Theme.of(context).colorScheme.onSurface;
     final time = event.timeMinutes;
     return Tooltip(
+      // Hover only: a long press belongs to the bar under it (an event).
+      triggerMode: TooltipTriggerMode.manual,
       message: [
         if (time != null) eventTimeLabel(time),
         event.title,
@@ -343,7 +452,15 @@ class _TimelineLabel extends StatelessWidget {
     this.onDue,
     this.open = false,
     this.onOpen,
+    this.bundle,
+    this.inner = false,
   });
+
+  /// The row is this bundle's: its stages named, a pick takes them all.
+  final UnitBundle? bundle;
+
+  /// One stage of an opened bundle, set in under it.
+  final bool inner;
 
   final void Function(PartGroup group, DateTime due)? onDue;
 
@@ -364,10 +481,17 @@ class _TimelineLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
+    final whole = bundle?.together ?? g;
     final due = dueLabel(g.dueAt, now, g.status);
     final sel = selection;
+    final stages = bundle == null
+        ? stageText(g.stageName)
+        : [for (final s in bundle!.stages) stageText(s.stageName)].join(' · ');
     final Widget label = Padding(
-      padding: EdgeInsets.only(left: index == null ? 10 : 0, right: 10),
+      padding: EdgeInsets.only(
+        left: inner ? 26 : (index == null ? 10 : 0),
+        right: 10,
+      ),
       child: Row(
         spacing: 6,
         children: [
@@ -398,7 +522,7 @@ class _TimelineLabel extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       TextSpan(
-                        text: stageText(g.stageName),
+                        text: stages,
                         style: TextStyle(color: c.muted),
                       ),
                     ],
@@ -472,15 +596,15 @@ class _TimelineLabel extends StatelessWidget {
     return ListenableBuilder(
       listenable: sel ?? const _Quiet(),
       builder: (context, child) => Material(
-        color: sel != null && sel.of(g) != Picked.none
+        color: sel != null && sel.of(whole) != Picked.none
             ? c.selected
             : (opened ? c.hover : Colors.transparent),
         child: InkWell(
-          key: Key('tl-label-${g.key}'),
-          onLongPress: sel == null ? null : () => sel.toggleGroup(g),
+          key: Key('tl-label-${bundle?.key ?? g.key}'),
+          onLongPress: sel == null ? null : () => sel.toggleGroup(whole),
           // A tap picks while picking; otherwise it opens the details.
           onTap: sel != null && !sel.isEmpty
-              ? () => sel.toggleGroup(g)
+              ? () => sel.toggleGroup(whole)
               : onOpen,
           child: child,
         ),

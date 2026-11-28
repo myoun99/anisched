@@ -31,13 +31,6 @@ Future<void> pumpBar(
 );
 
 void main() {
-  test('a grip is at most 16, and at most half a day', () {
-    expect(BarGrip.widthFor(50), 16);
-    expect(BarGrip.widthFor(32), 16);
-    expect(BarGrip.widthFor(20), 10);
-    expect(BarGrip.widthFor(6), 3);
-  });
-
   testWidgets('a fixed bar has no grips; its label gets the whole bar', (
     t,
   ) async {
@@ -65,19 +58,24 @@ void main() {
     }
   });
 
-  testWidgets('zoomed out, a one-day bar is just its two grips', (t) async {
-    // 20 a day: grips of 10, nothing left for the label.
+  // Zoomed out a grip stays 16 wide: on a bar too short for two inside,
+  // they sit outside its ends, so it can always be dragged.
+  testWidgets('zoomed out, the grips sit outside a short bar', (t) async {
+    // 20 a day: a one-day bar is 20, less than two grips of 16.
     await pumpBar(t, days: 1, width: 200);
     final grips = find.byType(BarGrip);
     expect(grips, findsNWidgets(2));
-    expect(t.getSize(grips.first).width, 10);
+    expect(t.getSize(grips.first).width, 16);
     expect(find.byType(FitText), findsNothing);
     final bar = t.getTopLeft(find.byType(ChartBar)).dx + 20;
-    expect(t.getTopLeft(grips.first).dx, bar);
-    expect(t.getTopRight(grips.last).dx, bar + 20);
-    // Two days leave 20: enough for the label.
+    expect(t.getTopRight(grips.first).dx, bar, reason: 'left of the bar');
+    expect(t.getTopLeft(grips.last).dx, bar + 20, reason: 'right of it');
+    // Still draggable out there.
+    expect(find.byKey(const Key('bar-end')).hitTestable(), findsOneWidget);
+    // Two days are 40: room for both grips inside, 8 left for the label.
     await pumpBar(t, days: 2, width: 200);
-    expect(t.getSize(find.byType(FitText)).width, 20);
+    expect(t.getTopLeft(find.byType(BarGrip).first).dx, bar);
+    expect(t.getSize(find.byType(FitText)).width, 8);
   });
 
   testWidgets('under 8 px between the grips, the label hides', (t) async {
@@ -93,5 +91,12 @@ void main() {
     await t.drag(find.byKey(const Key('bar-end')), const Offset(100, 0));
     await t.pump();
     expect((end!.month, end!.day), (11, 25));
+  });
+
+  testWidgets('a bar fills its row but for a hair', (t) async {
+    await pumpBar(t, days: 3);
+    final h = t.getSize(find.byType(BarGrip).first).height;
+    expect(h, greaterThanOrEqualTo(ChartBoard.rowExtent - 4));
+    expect(h, lessThan(ChartBoard.rowExtent), reason: 'the row shows a hair');
   });
 }

@@ -195,7 +195,7 @@ enum S {
   progress('Progress', '進捗', '진행', 'Avancement', '进度'),
   due('Due', '締切', '마감', 'Échéance', '截止'),
   production('Production', '制作', '제작', 'Production', '制作'),
-  ownWork('My work', '作業', '실 작업', 'Mon travail', '实际工作'),
+  ownWork('My work', '作業', '작업', 'Mon travail', '我的工作'),
   slack('Slack', '余裕', '여유', 'Marge', '余量'),
   perDay('Per day', '1日', '하루', 'Par jour', '每天'),
   rate('Rate', '単価', '단가', 'Tarif', '单价'),
@@ -311,6 +311,7 @@ enum S {
   shared('Shared', '兼用', '겸용', 'Partagé', '兼用'),
   name('Name', '名前', '이름', 'Nom', '名称'),
   register('Add', '登録', '등록', 'Ajouter', '登记'),
+  resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
   savedCuts(
     '{title} cuts {n}',
     '{title} 登録済み {n}',
@@ -490,6 +491,80 @@ enum S {
     '빠진 것도 보기',
     'Afficher retirés',
     '显示已收回',
+  ),
+
+  // Editing a picked bundle (work, episode, part) and adding cuts to it.
+  edit('Edit', '編集', '편집', 'Modifier', '编辑'),
+  subtitle('Subtitle', 'サブタイトル', '부제', 'Sous-titre', '副标题'),
+  editWorkWide(
+    'Title and client apply to every episode of the title.',
+    '作品名と会社は、その作品の全話に適用されます。',
+    '작품 이름과 회사는 그 작품의 모든 화에 적용돼요.',
+    'Le titre et le client valent pour tous ses épisodes.',
+    '作品名和公司适用于该作品的所有集数。',
+  ),
+  cutsTaken(
+    'Already there: {names}',
+    'すでにあります：{names}',
+    '이미 있음: {names}',
+    'Déjà là : {names}',
+    '已存在：{names}',
+  ),
+
+  // Undo and redo of the document's writes, and their keys.
+  undo('Undo', '元に戻す', '실행 취소', 'Annuler', '撤销'),
+  redo('Redo', 'やり直す', '다시 실행', 'Rétablir', '重做'),
+  shortcuts('Shortcuts', 'ショートカット', '단축키', 'Raccourcis', '快捷键'),
+  pressKeys(
+    'Press keys…',
+    'キーを押してください…',
+    '키를 누르세요…',
+    'Appuyez sur des touches…',
+    '请按键…',
+  ),
+  keysDefault('Default', '既定', '기본값', 'Par défaut', '默认'),
+
+  // Put away (보관) and deleted for good (완전 삭제).
+  archive('Archive', 'アーカイブ', '보관', 'Archiver', '归档'),
+  unarchive('Unarchive', 'アーカイブ解除', '되돌리기', 'Désarchiver', '取消归档'),
+  showArchived(
+    'Show archived',
+    'アーカイブも表示',
+    '보관한 것 보기',
+    'Afficher archivés',
+    '显示已归档',
+  ),
+  deleteForever('Delete', '完全に削除', '완전 삭제', 'Supprimer', '彻底删除'),
+  deleteAsk(
+    'Delete for good?',
+    '完全に削除しますか？',
+    '완전히 삭제할까요?',
+    'Supprimer définitivement ?',
+    '要彻底删除吗？',
+  ),
+  deleteCuts('{n} cuts', 'カット {n}', '컷 {n}', '{n} plans', '镜头 {n}'),
+  deleteEpisodes('{n} episodes', '話数 {n}', '화 {n}', '{n} épisodes', '集数 {n}'),
+  deleteWorks('{n} titles', '作品 {n}', '작품 {n}', '{n} titres', '作品 {n}'),
+  deleteTime(
+    'Timer time {t} goes too',
+    '作業時間 {t} も消えます',
+    '작업 시간 {t}도 지워짐',
+    'Le temps chronométré {t} aussi',
+    '计时 {t} 也会删除',
+  ),
+  deleteFinal(
+    'This cannot be undone.',
+    '元に戻せません。',
+    '되돌릴 수 없습니다.',
+    'Action irréversible.',
+    '无法撤销。',
+  ),
+  restoreBlocked(
+    'Cannot unarchive: the same cut and stage is in work again.',
+    '戻せません：同じカット・工程の作業がすでにあります。',
+    '되돌릴 수 없음: 같은 컷·공정의 작업이 이미 있어요.',
+    'Impossible : ce plan et cette étape sont déjà repris.',
+    '无法取消归档：相同镜头和工序已有任务。',
   ),
 
   // Deadline rounds (1st, 2nd … extensions).

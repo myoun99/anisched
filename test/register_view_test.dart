@@ -99,6 +99,15 @@ void main() {
       ),
       findsOneWidget,
     );
+    // No scrollbar under it, though the app's lists show theirs.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('roles-row')),
+        matching: find.byWidgetPredicate((w) => w is RawScrollbar),
+      ),
+      findsNothing,
+    );
+    expect(find.byWidgetPredicate((w) => w is RawScrollbar), findsWidgets);
   });
 
   testWidgets('pick a work, make an episode, edit the grid, register', (
@@ -212,5 +221,140 @@ void main() {
     await t.tap(find.byKey(const Key('name-ok')));
     await t.pumpAndSettle();
     expect(store.cuts(ep.id).map((c) => c.number), contains('C012X'));
+  });
+
+  // LO and 原画 rarely share dates: each checked stage has its own row,
+  // the stage above's dates copied down until set.
+  testWidgets('each stage gets its own deadline row; set apart, kept apart', (
+    t,
+  ) async {
+    final store = await pumpRegister(t, const Size(1440, 900));
+    await t.tap(find.byKey(const Key('role-작감')));
+    await t.pump();
+    final rows = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('reg-stage-dates-'),
+    );
+    expect(rows.evaluate().length, greaterThanOrEqualTo(2));
+    String stageOf(int i) => (t.widget(rows.at(i)).key! as ValueKey<String>)
+        .value
+        .substring('reg-stage-dates-'.length);
+    final first = stageOf(0);
+    final second = stageOf(1);
+    Future<void> pickDue(String stage, String day) async {
+      await t.tap(find.byKey(Key('reg-due-$stage')));
+      await t.pumpAndSettle();
+      await t.tap(find.text(day).last);
+      await t.tap(find.text('OK'));
+      await t.pumpAndSettle();
+    }
+
+    await pickDue(first, '10');
+    // Copied down to the second stage, faint.
+    Text dueText(String stage) => t.widget<Text>(
+      find.descendant(
+        of: find.byKey(Key('reg-due-$stage')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(dueText(second).data, dueText(first).data);
+    await pickDue(second, '20');
+    expect(dueText(second).data, isNot(dueText(first).data));
+
+    await t.tap(find.byKey(const Key('pick-work')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('별빛 정류장').last);
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pick-episode')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('pick-search')), '#98');
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pick-create')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('reg-count')), '2');
+    await t.pump();
+    await t.tap(find.byKey(const Key('register')));
+    await t.pump();
+    await t.pump();
+    final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
+    final ep = store.episodes(work.id).firstWhere((e) => e.number == '#98');
+    final cards = store.partGroups().where((g) => g.episodeId == ep.id);
+    DateTime dueOf(String stage) =>
+        cards.firstWhere((g) => g.stageName == stage).dueAt!.toLocal();
+    expect(dueOf(first).day, 10);
+    expect(dueOf(second).day, 20);
+  });
+
+  /// The work picker's shown value: the picked work, or none.
+  bool workPicked(WidgetTester t, String title) => find
+      .descendant(
+        of: find.byKey(const Key('pick-work')),
+        matching: find.text(title),
+      )
+      .evaluate()
+      .isNotEmpty;
+
+  Future<void> pickWork(WidgetTester t) async {
+    await t.tap(find.byKey(const Key('pick-work')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('별빛 정류장').last);
+    await t.pumpAndSettle();
+  }
+
+  testWidgets('the foot: reset on the left, register on the right', (
+    t,
+  ) async {
+    await pumpRegister(t, const Size(390, 844));
+    final reset = t.getRect(find.byKey(const Key('register-reset')));
+    final add = t.getRect(find.byKey(const Key('register')));
+    final tabs = t.getRect(find.byKey(const Key('view-switch')));
+    expect(reset.left, lessThan(60));
+    expect(add.right, greaterThan(390 - 60));
+    expect((reset.center.dy - add.center.dy).abs(), lessThan(2));
+    expect(add.bottom, lessThanOrEqualTo(tabs.top), reason: 'above the tabs');
+    // Nothing to register yet: greyed.
+    expect(
+      t.widget<FilledButton>(find.byKey(const Key('register'))).onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('reset empties the form; its undo puts it back', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await pickWork(t);
+    await t.enterText(find.byKey(const Key('reg-count')), '12');
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isTrue);
+    await t.tap(find.byKey(const Key('register-reset')));
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isFalse);
+    expect(find.text('100'), findsOneWidget, reason: 'the count as at first');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.byKey(const Key('reset-undo')));
+    await t.pump();
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isTrue);
+    expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('a register starts the form over, with a note', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await pickWork(t);
+    await t.tap(find.byKey(const Key('pick-episode')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('pick-search')), '#97');
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pick-create')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('reg-count')), '3');
+    await t.pump();
+    await t.tap(find.byKey(const Key('register')));
+    await t.pump();
+    await t.pump();
+    expect(find.byKey(const Key('registered-snack')), findsOneWidget);
+    expect(find.textContaining('3 cut'), findsWidgets);
+    expect(workPicked(t, '별빛 정류장'), isFalse);
+    expect(find.text('100'), findsOneWidget);
   });
 }

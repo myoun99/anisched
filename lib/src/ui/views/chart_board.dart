@@ -124,8 +124,10 @@ class ChartBoard extends StatefulWidget {
   final void Function(int from, int to)? onReorder;
 
   static const rowExtent = 46.0;
-  static const barTop = 12.0;
-  static const barHeight = 22.0;
+  // A bar fills its row but for a hair above and below, where the row's
+  // background (stripes, days off) just shows.
+  static const barTop = 2.0;
+  static const barHeight = 42.0;
 
   @override
   State<ChartBoard> createState() => _ChartBoardState();

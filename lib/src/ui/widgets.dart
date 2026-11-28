@@ -432,24 +432,29 @@ class MenuLine extends StatelessWidget {
     required this.icon,
     required this.label,
     this.enabled = true,
+    this.color,
   });
 
   final IconData icon;
   final String label;
   final bool enabled;
 
+  /// Icon and words in this colour (a dangerous action's), when enabled.
+  final Color? color;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final ink = enabled ? color : c.faint;
     return Row(
       spacing: 10,
       children: [
-        Icon(icon, size: 18, color: enabled ? c.muted : c.faint),
+        Icon(icon, size: 18, color: ink ?? c.muted),
         Flexible(
           child: Text(
             label,
             overflow: TextOverflow.ellipsis,
-            style: enabled ? null : TextStyle(color: c.faint),
+            style: ink == null ? null : TextStyle(color: ink),
           ),
         ),
       ],

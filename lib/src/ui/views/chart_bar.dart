@@ -23,16 +23,12 @@ class BarGrip extends StatelessWidget {
   /// The grip's width, which is also its drag area.
   final double width;
 
-  /// The widest a grip gets; on narrow days, half a day ([widthFor]).
+  /// A grip's width, whatever the zoom: on a bar too short for two, they
+  /// sit outside its ends, so a grip is always there to drag.
   static const maxWidth = 16.0;
 
   /// The least room a label needs between two grips; less hides it.
   static const minLabel = 8.0;
-
-  /// A grip's width for days [dayWidth] wide: at most half a day, so a
-  /// one-day bar is just its two grips however far out the zoom goes.
-  static double widthFor(double dayWidth) =>
-      dayWidth / 2 < maxWidth ? dayWidth / 2 : maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +73,17 @@ class ChartBar extends StatefulWidget {
     this.faded = false,
     this.wrapBody,
     this.outline,
+    this.onTap,
+    this.onLongPressDay,
   });
+
+  /// A long press on the bar, with the day under the finger (an event
+  /// for this bar's card there); null: none.
+  final ValueChanged<DateTime>? onLongPressDay;
+
+  /// A tap anywhere on the drawn bar — face, label, grips — (grips keep
+  /// only their drag); null: taps pass through.
+  final VoidCallback? onTap;
 
   /// A border round the bar (e.g. red for work past the lanes).
   final Color? outline;
@@ -221,66 +227,91 @@ class _ChartBarState extends State<ChartBar> {
           final cutStart = left < lo - 0.5;
           final cutEnd = left + width > hi + 0.5;
           final grips = widget.onDates != null;
-          final grip = BarGrip.widthFor(dw);
-          // A sliver at an edge (mid-slide) is too thin for its ends: the
-          // colour alone then.
-          final ends = to - from >= 2 * grip;
-          final startEnd = !ends
-              ? null
-              : cutStart
-              ? CutMark(edge: BarEdge.start, width: grip, ink: _ink(context))
+          const grip = BarGrip.maxWidth;
+          // Too short for two grips inside: they sit outside its ends,
+          // the label hides, and a cut end shows no mark (no room).
+          final inside = to - from >= 2 * grip;
+          Widget? endOf(BarEdge edge, bool cut) => cut
+              ? (inside
+                    ? CutMark(edge: edge, width: grip, ink: _ink(context))
+                    : null)
               : grips
-              ? _handle(BarEdge.start, grip)
+              ? _handle(edge, grip)
               : null;
-          final endEnd = !ends
-              ? null
-              : cutEnd
-              ? CutMark(edge: BarEdge.end, width: grip, ink: _ink(context))
-              : grips
-              ? _handle(BarEdge.end, grip)
-              : null;
+          final startEnd = endOf(BarEdge.start, cutStart);
+          final endEnd = endOf(BarEdge.end, cutEnd);
+          final before = !inside && startEnd != null ? grip : 0.0;
+          final after = !inside && endEnd != null ? grip : 0.0;
           // The label takes every pixel between the ends, or hides.
           final room =
               to -
               from -
               (startEnd == null ? 0 : grip) -
               (endEnd == null ? 0 : grip);
-          final showLabel = room >= BarGrip.minLabel;
+          final showLabel = inside && room >= BarGrip.minLabel;
           const r = Radius.circular(4);
+          final coloured = DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.color,
+              // A cut end is square: the bar goes on past it.
+              borderRadius: BorderRadius.horizontal(
+                left: cutStart ? Radius.zero : r,
+                right: cutEnd ? Radius.zero : r,
+              ),
+              // A faint edge keeps near-white bars (LO) visible.
+              border: widget.outline == null
+                  ? Border.all(color: barInk.withValues(alpha: 0.18))
+                  : Border.all(color: widget.outline!, width: 1.5),
+            ),
+            child: inside
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ?startEnd,
+                      Expanded(child: _face(label: showLabel)),
+                      ?endEnd,
+                    ],
+                  )
+                : _face(label: false),
+          );
           final bar = Opacity(
             opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: widget.color,
-                // A cut end is square: the bar goes on past it.
-                borderRadius: BorderRadius.horizontal(
-                  left: cutStart ? Radius.zero : r,
-                  right: cutEnd ? Radius.zero : r,
-                ),
-                // A faint edge keeps near-white bars (LO) visible.
-                border: widget.outline == null
-                    ? Border.all(color: barInk.withValues(alpha: 0.18))
-                    : Border.all(color: widget.outline!, width: 1.5),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ?startEnd,
-                  Expanded(child: _face(label: showLabel)),
-                  ?endEnd,
-                ],
-              ),
-            ),
+            child: inside
+                ? coloured
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ?startEnd,
+                      Expanded(child: coloured),
+                      ?endEnd,
+                    ],
+                  ),
           );
+          final x0 = from - before;
+          final press = widget.onLongPressDay;
           return Stack(
             clipBehavior: Clip.hardEdge,
             children: [
               Positioned(
-                left: from,
-                width: to - from,
+                left: x0,
+                width: to - from + before + after,
                 top: ChartBoard.barTop,
                 height: ChartBoard.barHeight,
-                child: bar,
+                child: widget.onTap == null && press == null
+                    ? bar
+                    : GestureDetector(
+                        key: const Key('bar-tap'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onTap,
+                        onLongPressStart: press == null
+                            ? null
+                            : (d) => press(
+                                widget.window.dayAt(
+                                  ((x0 + d.localPosition.dx) / dw).floor(),
+                                ),
+                              ),
+                        child: bar,
+                      ),
               ),
             ],
           );
@@ -332,31 +363,6 @@ class CutMark extends StatelessWidget {
   );
 }
 
-/// A row's empty date area answering a long press with the day under the
-/// finger (a new event there). Goes first among a row's bars, so bars and
-/// marks stay on top.
-class ChartDayPress extends StatelessWidget {
-  const ChartDayPress({
-    super.key,
-    required this.window,
-    required this.onLongPress,
-  });
-
-  final ChartWindow window;
-  final ValueChanged<DateTime> onLongPress;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onLongPressStart: (d) {
-        final i = (d.localPosition.dx / (box.maxWidth / window.days)).floor();
-        onLongPress(window.dayAt(i.clamp(0, window.days - 1)));
-      },
-    ),
-  );
-}
-
 /// Something placed in one day's cell of a row, at bar height (an
 /// event's mark); nothing when the day is out of the window.
 class ChartDayBox extends StatelessWidget {
@@ -366,11 +372,17 @@ class ChartDayBox extends StatelessWidget {
     required this.day,
     required this.child,
     this.minWidth = 0,
+    this.onLongPressDay,
   });
 
   final ChartWindow window;
   final DateTime day;
   final Widget child;
+
+  /// A long press on the box, with the day under the finger (the box can
+  /// run over several): it lies over a bar, so the bar's own long press
+  /// goes on through it.
+  final ValueChanged<DateTime>? onLongPressDay;
 
   /// At least this wide, running on over the next days (a title to read).
   final double minWidth;
@@ -395,7 +407,15 @@ class ChartDayBox extends StatelessWidget {
               width: width,
               top: ChartBoard.barTop,
               height: ChartBoard.barHeight,
-              child: child,
+              child: switch (onLongPressDay) {
+                null => child,
+                final press => GestureDetector(
+                  onLongPressStart: (d) => press(
+                    window.dayAt(i + (d.localPosition.dx / dw).floor()),
+                  ),
+                  child: child,
+                ),
+              },
             ),
           ],
         );
