@@ -22,7 +22,7 @@ Future<void> main() async {
   final path = '${dir.path}${Platform.pathSeparator}anisched.db';
   final db = openAppDatabase(path);
   // This device's own look (not in the document): theme and language.
-  final device = DeviceSettings.load(dir.path);
+  final device = loadDeviceSettings(dir.path);
   languageSetting.value = device.language;
   appLang.value = resolveLang(
     device.language,

@@ -1,4 +1,4 @@
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
@@ -16,7 +16,7 @@ class CatalogueStore {
   CatalogueStore(this.db, {this.clock = systemClock})
     : settings = SettingsStore(db);
 
-  final Database db;
+  final CommonDatabase db;
 
   final SettingsStore settings;
 
