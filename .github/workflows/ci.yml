@@ -81,6 +81,35 @@ jobs:
           name: anisched-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
+  # Web preview on GitHub Pages: rebuilt on every main landing so the user
+  # can check the latest build from any browser. Same ubuntu runner class as
+  # the APK; no extra runs (it rides the existing push).
+  web:
+    needs: analyze-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build web --release --no-web-resources-cdn --base-href /anisched/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
   linux:
     needs: analyze-test
     if: github.event_name == 'workflow_dispatch' && inputs.desktop
