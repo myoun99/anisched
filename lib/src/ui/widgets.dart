@@ -423,3 +423,36 @@ class Panel extends StatelessWidget {
     );
   }
 }
+
+/// A menu item's icon and words: every pop-up menu of the app (the file
+/// menu, the picked-task bar's ⋯) draws its lines with this.
+class MenuLine extends StatelessWidget {
+  const MenuLine({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Row(
+      spacing: 10,
+      children: [
+        Icon(icon, size: 18, color: enabled ? c.muted : c.faint),
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: enabled ? null : TextStyle(color: c.faint),
+          ),
+        ),
+      ],
+    );
+  }
+}

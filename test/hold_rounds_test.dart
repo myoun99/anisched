@@ -151,6 +151,11 @@ void main() {
     );
     await t.longPress(find.byKey(Key('line-${g.key}')));
     await t.pump();
+    // Pull waits behind ⋯ when the bar is short of room.
+    if (find.byKey(const Key('pick-drop')).evaluate().isEmpty) {
+      await t.tap(find.byKey(const Key('pick-more')));
+      await t.pump();
+    }
     await t.tap(find.byKey(const Key('pick-drop')));
     await t.pump();
     await t.pump();
