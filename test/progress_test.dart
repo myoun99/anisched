@@ -23,13 +23,22 @@ void main() {
     const d = TaskStatus.done;
 
     test('follows the design rules', () {
+      expect(deriveStatus(c([s, s])), s); // all handed in
+      expect(deriveStatus(c([s, t, w])), t); // a retake came back
+      expect(deriveStatus(c([s, d])), d); // all finished, not all handed
       expect(deriveStatus(c([d, d])), d);
-      expect(deriveStatus(c([d, t, w])), t);
-      expect(deriveStatus(c([s, d])), s);
       expect(deriveStatus(c([r, r])), r);
       expect(deriveStatus(c([r, w])), w);
       expect(deriveStatus(c([r, d])), w);
       expect(deriveStatus(c([])), r);
+    });
+
+    test('done is in hand, submitted is not; pace counts neither', () {
+      expect(TaskStatus.done.isOpen, isTrue);
+      expect(TaskStatus.done.needsWork, isFalse);
+      expect(TaskStatus.submitted.isOpen, isFalse);
+      expect(TaskStatus.submitted.isHanded, isTrue);
+      expect(TaskStatus.done.isHanded, isFalse);
     });
   });
 
@@ -109,7 +118,7 @@ void main() {
       expect(g.stageName, '원화');
       expect(g.kind, GroupKind.part);
       expect(g.total, 4);
-      expect(g.handed, 3);
+      expect(g.handed, 1); // done cuts are still in hand
       expect(g.status, TaskStatus.inProgress);
       expect(g.counts, {
         TaskStatus.submitted: 1,
@@ -588,29 +597,31 @@ void main() {
       });
     });
 
-    test('done hides only finished units; done cuts still count inside', () {
+    test('submitted units hide; submitted cuts still count inside', () {
       final part = partWithCuts('B', ['C1', 'C2'], lo, 3);
       final ids = tasksOf(part, lo);
-      store.setStatus(ids[0], TaskStatus.done);
-      // Part-less: one done, one open → the bundle stays with both.
+      store.setStatus(ids[0], TaskStatus.submitted);
+      // Part-less: one submitted, one open → the bundle stays with both.
       final a = store.addTask(lo, cutId: store.addCut(ep, 'C8'));
       store
         ..addTask(lo, cutId: store.addCut(ep, 'C9'))
-        ..setStatus(a, TaskStatus.done);
+        ..setStatus(a, TaskStatus.submitted);
       // A finished storyboard disappears.
       final conte = store.stages(work).first.id;
       final sb = store.addTask(
         conte,
         storyboardId: store.addStoryboard(ep, '콘티'),
       );
-      store.setStatus(sb, TaskStatus.done);
+      store.setStatus(sb, TaskStatus.submitted);
 
       var groups = store.partGroups();
       expect(groups.map((g) => '${g.kind.name} ${g.handed}/${g.total}'), [
         'part 1/2',
         'noPart 1/2',
       ]);
-      store.setStatus(ids[1], TaskStatus.done);
+      store.setStatus(ids[1], TaskStatus.done); // finished, still in hand
+      expect(store.partGroups(), hasLength(2));
+      store.setStatus(ids[1], TaskStatus.submitted);
       groups = store.partGroups();
       expect(groups.map((g) => g.kind), [GroupKind.noPart]);
       expect(store.partGroups(includeDone: true), hasLength(3));
