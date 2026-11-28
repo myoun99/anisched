@@ -130,6 +130,24 @@ void main() {
     expect(d.lastWeek.worked, const Duration(hours: 1));
   });
 
+  test('a late card with nothing left to work on is neither due soon nor '
+      'late (유저 2026-11-28)', () {
+    final before = store.dashboard();
+    // Every cut of the late card C done, none submitted: the card stays
+    // open, with 0 cuts to work on.
+    for (final t
+        in store.partGroups().firstWhere((g) => g.partId == partC).tasks) {
+      store.setStatus(t.id, TaskStatus.done);
+    }
+    final d = store.dashboard();
+    expect(d.dueSoon.map((x) => x.group.partId), [partA]);
+    expect(d.late, before.late - 1);
+    expect(store.today().late, d.late);
+    // A card that still has work is late as before.
+    store.setStatus(b[1], TaskStatus.retake);
+    expect(store.dashboard().late, d.late);
+  });
+
   test('the reader answers the same in one round trip', () async {
     final d = await SyncCatalogueReader(store).dashboard(dueLimit: 1);
     expect(d.dueSoon.single.group.partId, partC);
