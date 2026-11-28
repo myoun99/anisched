@@ -32,7 +32,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v12)
+## 구조 (v13)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -212,6 +212,14 @@
 - **보유 = 열린 컷 중 대기 아닌 것**(`TaskRow.inHand`, `PartGroup.inHand`, 전체 `holding()` → `(inHand, waiting)`, 리더에도). 대기 수는 `PartGroup.waiting`.
 - **하루 몇 컷엔 대기 컷도 넣는다**(마감은 그대로 — 해야 할 양). `paceFor` 는 바뀌지 않음.
 
+## 빠짐(이관) (v13, 유저 2026-11-28)
+
+- 작업자가 바뀌어 내가 안 하게 된 작업(컷×공정). 삭제(휴지통)와 별개, 상태 5단계와 별개 축. `tasks.handed_off_at`(빠진 시각) · `handed_off_note`(메모, 선택).
+- `handOffPart(part, stage, note:)` → 그 파트×공정의 작업 id 들 · `handOff(ids, note:)` 한 트랜잭션 · `undoHandOff(ids)`.
+- 빠지는 곳: `taskRows`/`partGroups`(→ today · signals · 달력 · 하루 몇 컷 · 보유), 평소 속도, 월 합계. `includeHandedOff: true` 로 다시 보임(`TaskRow.handedOff` · `handedOffNote`, 리더 `partGroups` 에도).
+- 통계: **시간은 남김**(작업 시간 · 히트맵 · 공정·작품별 시간), **결과는 뺌**(넘김 · 완료 · 금액 · 시급 · 마감 준수 · 테이크 · 진행률 · 계획 동시 진행). `Stats.handedOff` = 범위 안에 빠진 작업 수.
+- 같은 컷의 다른 공정 작업은 그대로.
+
 ## 타이머 = 작업 시간 기록 (유저 2026-11-27)
 
 - 일시정지/시작 토글만 — 정지·리셋 없음. `WorkTimerStore.toggle(taskId:)`: 같은 작업이면 멈춤, 다른 작업이 돌고 있으면 그쪽을 멈추고 이 작업으로.
@@ -221,7 +229,7 @@
 
 ## 통계 (`stats(from, to, bucket)` — 리더에서)
 
-`models/stats.dart` 의 `computeStats` 가 작업 사실 + 타이머 구간을 한 번에 접는다. 범위는 로컬 작업일(하루 시작 설정) `[from, to)`.
+`models/stats.dart` 의 `computeStats` 가 작업 사실 + 타이머 구간을 한 번에 접는다. 범위는 로컬 작업일(하루 시작 설정) `[from, to)`. 필터 `clientId` · `workId`(선택, 목록 공통 필터와 같은 범위 — 직전 기간에도 같이 적용, 작업 없는 타이머 시간은 빠짐).
 
 | 항목 | 정의 |
 |---|---|

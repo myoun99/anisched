@@ -31,6 +31,7 @@ abstract interface class CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
+    bool includeHandedOff = false,
   });
 
   /// See [CatalogueStore.today].
@@ -68,6 +69,8 @@ abstract interface class CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   });
 
   /// Pickers for the input screens: see [CatalogueStore.works],
@@ -145,7 +148,14 @@ class SyncCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _run(() => store.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _run(
+    () => store.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
@@ -190,7 +200,17 @@ class SyncCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _run(() => store.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _run(
+    () => store.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
@@ -397,7 +417,14 @@ class BackgroundCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _ask((s) => s.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _ask(
+    (s) => s.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
@@ -442,7 +469,17 @@ class BackgroundCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
-  }) => _ask((s) => s.stats(from: from, to: to, bucket: bucket));
+    int? clientId,
+    int? workId,
+  }) => _ask(
+    (s) => s.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    ),
+  );
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>

@@ -30,6 +30,7 @@ class StatsFact {
     this.submittedDueAt,
     this.firstDueAt,
     this.dueExtensions = 0,
+    this.handedOffAt,
     this.planStartAt,
     this.planEndAt,
     this.pay,
@@ -65,6 +66,10 @@ class StatsFact {
   /// extended since.
   final DateTime? firstDueAt;
   final int dueExtensions;
+
+  /// Handed off to someone else: its timer time counts, its results
+  /// (hand-ins, completions, pay, deadlines, progress) do not.
+  final DateTime? handedOffAt;
   final DateTime? planStartAt;
   final DateTime? planEndAt;
 
@@ -146,6 +151,11 @@ class Stats {
   final StatsBucket bucket;
 
   final StatsSlice total;
+
+  /// Tasks handed off to someone else in the range. Their timer time is in
+  /// the time figures; their results are in none.
+  int handedOff = 0;
+
   final List<StatsPeriod> periods = [];
   final List<StatsSlice> stages = [];
   final List<StatsSlice> works = [];
@@ -271,6 +281,12 @@ Stats computeStats({
         () => StatsSlice(f.clientId, f.clientName),
       ),
     ];
+    // Handed off: the slices exist (its time is counted below), its
+    // results are not.
+    if (f.handedOffAt != null) {
+      if (inRange(f.handedOffAt)) s.handedOff++;
+      continue;
+    }
     for (final x in slices) {
       x.cuts++;
       if (f.submittedAt != null || f.doneAt != null) x.finished++;
@@ -377,6 +393,7 @@ Stats computeStats({
   // Concurrency per work day.
   final plans = <String, ({DateTime start, DateTime end})>{};
   for (final f in facts) {
+    if (f.handedOffAt != null) continue;
     final a = f.planStartAt;
     final b = f.planEndAt;
     if (a == null || b == null) continue;

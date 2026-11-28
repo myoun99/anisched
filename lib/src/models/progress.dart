@@ -62,7 +62,16 @@ class TaskRow {
     this.partWaiting = false,
     this.partWaitReason,
     this.partWaitUntil,
+    this.handedOffAt,
+    this.handedOffNote,
   });
+
+  /// Handed off to someone else (빠짐) — only in lists asked with
+  /// `includeHandedOff`.
+  final DateTime? handedOffAt;
+  final String? handedOffNote;
+
+  bool get handedOff => handedOffAt != null;
 
   final int id;
   final TaskStatus status;
