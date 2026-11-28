@@ -236,6 +236,23 @@ final scenarios = <String, (AppView, Scenario)>{
   'r10-timeline': (AppView.timeline, (t, size) async {}),
   'r10-work': (AppView.work, (t, size) async {}),
   'r10-list': (AppView.list, (t, size) async {}),
+  // Round 10: the month view — each month a band, the next under it.
+  'r10-month-timeline': (
+    AppView.timeline,
+    (t, size) async {
+      chartMonthView.value = true;
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  'r10-month-work': (
+    AppView.work,
+    (t, size) async {
+      chartMonthView.value = true;
+      await t.pump();
+      await t.pump();
+    },
+  ),
   'r10-settings': (
     AppView.settings,
     (t, size) async {
@@ -395,6 +412,7 @@ void main() {
           Folds.cutsInDetails.value = false;
           Folds.dueRounds.value = false;
           chartView.value = const ChartView();
+          chartMonthView.value = false;
           appLang.value = Lang.ko;
           addTearDown(() => appLang.value = Lang.ko);
           // A scenario that only switches the language does so up front.

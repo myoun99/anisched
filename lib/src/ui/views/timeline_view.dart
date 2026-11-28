@@ -127,51 +127,97 @@ class _TimelineViewState extends State<TimelineView> {
                   S.items.f({'n': rows.length}),
                   style: TextStyle(color: c.muted),
                 ),
-              ChartPager(days: window.days),
+              ValueListenableBuilder<bool>(
+                valueListenable: chartMonthView,
+                builder: (context, month, _) => month
+                    ? const SizedBox.shrink()
+                    : ChartPager(days: window.days),
+              ),
+              const MonthViewToggle(),
             ],
           ),
           Expanded(
-            child: ChartViewport(
-              days: window.days,
-              labelWidth: _labelWidth,
-              child: ChartBoard(
-                window: window,
-                today: widget.now,
-                days: widget.days,
-                labelWidth: _labelWidth,
-                rowCount: rows.length,
-                rowKey: (i) => ValueKey(rows[i].key),
-                onReorder: widget.onReorder == null
-                    ? null
-                    : (from, to) {
-                        final keys = [for (final r in rows) r.key];
-                        keys.insert(to, keys.removeAt(from));
-                        widget.onReorder!(keys);
-                      },
-                label: (context, i) => _TimelineLabel(
-                  index: widget.onReorder == null ? null : i,
-                  group: rows[i],
-                  now: widget.now,
-                  narrow: widget.layout.size == SizeClass.narrow,
-                  onDue: widget.onDue,
-                  selection: widget.selection,
-                  open: _open == rows[i].key,
-                  onOpen: widget.details == null
-                      ? null
-                      : () => _toggle(rows[i]),
-                ),
-                bars: (context, i) => _bars(context, rows[i], window),
-                below: widget.details == null
-                    ? null
-                    : (context, i) => _open == rows[i].key
-                          ? widget.details!(rows[i])
-                          : null,
-              ),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: chartMonthView,
+              builder: (context, month, _) => month
+                  ? MonthStack(
+                      first: _firstMonth,
+                      last: _lastMonth,
+                      month: (context, w) => _board(context, w, [
+                        for (final g in rows)
+                          if (_inWindow(g, w)) g,
+                      ], month: true),
+                    )
+                  : ChartViewport(
+                      days: window.days,
+                      labelWidth: _labelWidth,
+                      child: _board(context, window, rows, month: false),
+                    ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// One board of [rows] over [window]: the running view's, or one
+  /// month's in the month view (shrink-wrapped, not reordered).
+  Widget _board(
+    BuildContext context,
+    ChartWindow window,
+    List<PartGroup> rows, {
+    required bool month,
+  }) => ChartBoard(
+    window: window,
+    shrinkWrap: month,
+    today: widget.now,
+    days: widget.days,
+    labelWidth: _labelWidth,
+    rowCount: rows.length,
+    rowKey: (i) => ValueKey(rows[i].key),
+    onReorder: month || widget.onReorder == null
+        ? null
+        : (from, to) {
+            final keys = [for (final r in rows) r.key];
+            keys.insert(to, keys.removeAt(from));
+            widget.onReorder!(keys);
+          },
+    label: (context, i) => _TimelineLabel(
+      index: month || widget.onReorder == null ? null : i,
+      group: rows[i],
+      now: widget.now,
+      narrow: widget.layout.size == SizeClass.narrow,
+      onDue: widget.onDue,
+      selection: widget.selection,
+      open: _open == rows[i].key,
+      onOpen: widget.details == null ? null : () => _toggle(rows[i]),
+    ),
+    bars: (context, i) => _bars(context, rows[i], window),
+    below: widget.details == null
+        ? null
+        : (context, i) =>
+              _open == rows[i].key ? widget.details!(rows[i]) : null,
+  );
+
+  /// The unit's bar falls in [w] (the month view's rows).
+  static bool _inWindow(PartGroup g, ChartWindow w) {
+    final s = g.kickoffAt;
+    final e = g.dueAt;
+    if (s == null || e == null) return false;
+    return w.indexOf(e) >= 0 && w.indexOf(s) < w.days;
+  }
+
+  /// The month view runs from last month to the last deadline's month
+  /// (at least two months on).
+  DateTime get _firstMonth => DateTime(widget.now.year, widget.now.month - 1);
+
+  DateTime get _lastMonth {
+    var last = DateTime(widget.now.year, widget.now.month + 2);
+    for (final g in widget.parts) {
+      final d = g.dueAt?.toLocal();
+      if (d != null && d.isAfter(last)) last = DateTime(d.year, d.month);
+    }
+    return last;
   }
 
   List<Widget> _bars(BuildContext context, PartGroup g, ChartWindow window) {

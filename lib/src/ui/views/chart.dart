@@ -825,6 +825,7 @@ class ChartBoard extends StatefulWidget {
     this.onReorder,
     this.corner,
     this.below,
+    this.shrinkWrap = false,
   });
 
   /// What opens under a row, the full width of the board (label column
@@ -836,6 +837,10 @@ class ChartBoard extends StatefulWidget {
 
   /// Rest weekdays, days off and holidays, marked on the background.
   final ChartDays days;
+
+  /// As tall as its rows, not scrolling them itself: one of several
+  /// boards stacked in an outer list (the month view's months).
+  final bool shrinkWrap;
   final double labelWidth;
   final int rowCount;
 
@@ -904,9 +909,11 @@ class _ChartBoardState extends State<ChartBoard> {
         ],
       ),
     );
-    if (widget.below != null) {
+    if (widget.below != null || widget.shrinkWrap) {
       // No fixed extent then: each row keeps its own height.
       row = SizedBox(height: ChartBoard.rowExtent, child: row);
+    }
+    if (widget.below != null) {
       if (widget.below!(context, i) case final open?) {
         row = Column(
           key: widget.rowKey?.call(i),
@@ -926,9 +933,64 @@ class _ChartBoardState extends State<ChartBoard> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final reorder = widget.onReorder;
+    final layers = Padding(
+      padding: EdgeInsets.only(left: widget.labelWidth),
+      child: _DayLayers(
+        window: widget.window,
+        today: widget.today,
+        days: widget.days,
+      ),
+    );
+    final rows = RepaintBoundary(
+      child: OwnScroll(
+        builder: (controller) => Scrollbar(
+          controller: controller,
+          child: reorder == null
+              ? ListView.builder(
+                  controller: controller,
+                  itemCount: widget.rowCount,
+                  // Rows can open (below): heights vary then.
+                  itemExtent: widget.below == null
+                      ? ChartBoard.rowExtent
+                      : null,
+                  itemBuilder: _row,
+                )
+              : ReorderableListView.builder(
+                  scrollController: controller,
+                  buildDefaultDragHandles: false,
+                  itemCount: widget.rowCount,
+                  itemExtent: widget.below == null
+                      ? ChartBoard.rowExtent
+                      : null,
+                  onReorderItem: reorder,
+                  itemBuilder: _row,
+                ),
+        ),
+      ),
+    );
+    final preview = Padding(
+      padding: EdgeInsets.only(left: widget.labelWidth),
+      child: IgnorePointer(
+        child: ClipRect(
+          child: RepaintBoundary(
+            child: CustomPaint(
+              key: _previewKey,
+              painter: _PreviewPainter(
+                _drag,
+                () =>
+                    _previewKey.currentContext?.findRenderObject()
+                        as RenderBox?,
+                Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     return _DragScope(
       drag: _drag,
       child: Column(
+        mainAxisSize: widget.shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DecoratedBox(
@@ -948,67 +1010,27 @@ class _ChartBoardState extends State<ChartBoard> {
               ],
             ),
           ),
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
+          if (widget.shrinkWrap)
+            Stack(
               children: [
-                Padding(
-                  padding: EdgeInsets.only(left: widget.labelWidth),
-                  child: _DayLayers(
-                    window: widget.window,
-                    today: widget.today,
-                    days: widget.days,
-                  ),
+                Positioned.fill(child: layers),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < widget.rowCount; i++) _row(context, i),
+                  ],
                 ),
-                RepaintBoundary(
-                  child: OwnScroll(
-                    builder: (controller) => Scrollbar(
-                      controller: controller,
-                      child: reorder == null
-                          ? ListView.builder(
-                              controller: controller,
-                              itemCount: widget.rowCount,
-                              // Rows can open (below): heights vary then.
-                              itemExtent: widget.below == null
-                                  ? ChartBoard.rowExtent
-                                  : null,
-                              itemBuilder: _row,
-                            )
-                          : ReorderableListView.builder(
-                              scrollController: controller,
-                              buildDefaultDragHandles: false,
-                              itemCount: widget.rowCount,
-                              itemExtent: widget.below == null
-                                  ? ChartBoard.rowExtent
-                                  : null,
-                              onReorderItem: reorder,
-                              itemBuilder: _row,
-                            ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: EdgeInsets.only(left: widget.labelWidth),
-                  child: IgnorePointer(
-                    child: ClipRect(
-                      child: RepaintBoundary(
-                        child: CustomPaint(
-                          key: _previewKey,
-                          painter: _PreviewPainter(
-                            _drag,
-                            () =>
-                                _previewKey.currentContext?.findRenderObject()
-                                    as RenderBox?,
-                            Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                Positioned.fill(child: preview),
               ],
+            )
+          else
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [layers, rows, preview],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1156,6 +1178,9 @@ class _ChartBarState extends State<ChartBar> {
     context.getInheritedWidgetOfExactType<_DragScope>()?.drag.value = null;
   }
 
+  Color _ink(BuildContext context) =>
+      widget.textColor ?? Theme.of(context).colorScheme.onSurface;
+
   Widget _handle(BarEdge edge, double width) => GestureDetector(
     key: Key('bar-${edge.name}'),
     behavior: HitTestBehavior.opaque,
@@ -1185,11 +1210,7 @@ class _ChartBarState extends State<ChartBar> {
     },
     child: MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
-      child: BarGrip(
-        edge: edge,
-        width: width,
-        ink: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
-      ),
+      child: BarGrip(edge: edge, width: width, ink: _ink(context)),
     ),
   );
 
@@ -1227,41 +1248,64 @@ class _ChartBarState extends State<ChartBar> {
         final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
+        // The part inside the window; an end past it is cut (the bar
+        // goes on in the next window or month).
+        final from = left < 0 ? 0.0 : left;
+        final to = left + width > box.maxWidth ? box.maxWidth : left + width;
+        if (to <= from) return const SizedBox.shrink();
+        final cutStart = left < -0.5;
+        final cutEnd = left + width > box.maxWidth + 0.5;
         final grips = widget.onDates != null;
         final grip = BarGrip.widthFor(dw);
-        // The label gets the room between the grips, or none at all.
-        final room = grips ? width - 2 * grip : width;
+        final startEnd = cutStart
+            ? CutMark(edge: BarEdge.start, width: grip, ink: _ink(context))
+            : grips
+            ? _handle(BarEdge.start, grip)
+            : null;
+        final endEnd = cutEnd
+            ? CutMark(edge: BarEdge.end, width: grip, ink: _ink(context))
+            : grips
+            ? _handle(BarEdge.end, grip)
+            : null;
+        // The label takes every pixel between the ends, or hides.
+        final room =
+            to -
+            from -
+            (startEnd == null ? 0 : grip) -
+            (endEnd == null ? 0 : grip);
         final showLabel = room >= BarGrip.minLabel;
+        const r = Radius.circular(4);
         final bar = Opacity(
           opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: widget.color,
-              borderRadius: BorderRadius.circular(4),
+              // A cut end is square: the bar goes on past it.
+              borderRadius: BorderRadius.horizontal(
+                left: cutStart ? Radius.zero : r,
+                right: cutEnd ? Radius.zero : r,
+              ),
               // A faint edge keeps near-white bars (LO) visible.
               border: widget.outline == null
                   ? Border.all(color: barInk.withValues(alpha: 0.18))
                   : Border.all(color: widget.outline!, width: 1.5),
             ),
-            // The label takes every pixel between the grips.
-            child: grips
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _handle(BarEdge.start, grip),
-                      Expanded(child: _face(label: showLabel)),
-                      _handle(BarEdge.end, grip),
-                    ],
-                  )
-                : _face(label: showLabel),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ?startEnd,
+                Expanded(child: _face(label: showLabel)),
+                ?endEnd,
+              ],
+            ),
           ),
         );
         return Stack(
           clipBehavior: Clip.hardEdge,
           children: [
             Positioned(
-              left: left,
-              width: width,
+              left: from,
+              width: to - from,
               top: ChartBoard.barTop,
               height: ChartBoard.barHeight,
               child: bar,
@@ -1271,6 +1315,34 @@ class _ChartBarState extends State<ChartBar> {
       },
     );
   }
+}
+
+/// Where a bar is cut by its window's edge (it goes on in the next
+/// window or month): a faint ⋯ in place of that end's grip.
+class CutMark extends StatelessWidget {
+  const CutMark({
+    super.key,
+    required this.edge,
+    required this.width,
+    required this.ink,
+  });
+
+  final BarEdge edge;
+  final double width;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    key: Key('bar-cut-${edge.name}'),
+    width: width,
+    child: Center(
+      child: Icon(
+        Icons.more_horiz,
+        size: 12,
+        color: ink.withValues(alpha: 0.55),
+      ),
+    ),
+  );
 }
 
 /// A row's empty date area answering a long press with the day under the
@@ -1341,6 +1413,76 @@ class ChartDayBox extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The month view: each month a band of its own (1st to last day across
+/// the width), the next one under it. A device choice; the main file
+/// remembers it.
+final chartMonthView = ValueNotifier<bool>(false);
+
+/// The toolbar's switch between the running view and the month view.
+class MonthViewToggle extends StatelessWidget {
+  const MonthViewToggle({super.key});
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: chartMonthView,
+    builder: (context, month, _) => IconButton(
+      key: const Key('chart-month'),
+      tooltip: month ? S.viewRunning.t : S.viewMonths.t,
+      isSelected: month,
+      onPressed: () => chartMonthView.value = !month,
+      icon: Icon(
+        month ? Icons.view_timeline_outlined : Icons.calendar_view_month,
+        size: 20,
+      ),
+    ),
+  );
+}
+
+/// The window of [month]'s days, 1st to last.
+ChartWindow monthWindow(DateTime month) => ChartWindow(
+  chartDay(DateTime(month.year, month.month)),
+  DateUtils.getDaysInMonth(month.year, month.month),
+);
+
+/// The months from [first] to [last] (inclusive), each built by [month]
+/// as a shrink-wrapped [ChartBoard] for its window, stacked and scrolled
+/// together; only the months on screen are built.
+class MonthStack extends StatelessWidget {
+  const MonthStack({
+    super.key,
+    required this.first,
+    required this.last,
+    required this.month,
+  });
+
+  final DateTime first;
+  final DateTime last;
+  final Widget Function(BuildContext context, ChartWindow window) month;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = (last.year - first.year) * 12 + last.month - first.month + 1;
+    return OwnScroll(
+      builder: (controller) => Scrollbar(
+        controller: controller,
+        child: ListView.builder(
+          key: const Key('month-stack'),
+          controller: controller,
+          itemCount: count < 1 ? 1 : count,
+          itemBuilder: (context, i) {
+            final m = DateTime(first.year, first.month + i);
+            return Padding(
+              key: Key('month-${m.year}-${m.month}'),
+              padding: const EdgeInsets.only(bottom: 14),
+              child: month(context, monthWindow(m)),
+            );
+          },
+        ),
+      ),
     );
   }
 }

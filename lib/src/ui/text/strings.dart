@@ -232,6 +232,8 @@ enum S {
     '每周休息日',
   ),
   daysOff('Days off', '休み', '쉬는 날', 'Congés', '休息日'),
+  viewMonths('By month', '月ごと', '달 보기', 'Par mois', '按月'),
+  viewRunning('Running days', '日の流れ', '날 흐름 보기', 'Jours en continu', '连续日期'),
   holidays('Holidays', '祝日', '공휴일', 'Jours fériés', '节假日'),
   showHolidays(
     'Show holidays',
