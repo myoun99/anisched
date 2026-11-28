@@ -55,6 +55,28 @@ void main() {
     });
   });
 
+  test('ruler rows per chart: year off, month and weekday on, a choice '
+      'kept per tab', () {
+    final s = loadDeviceSettings(tmp.path);
+    for (final tab in RulerTab.values) {
+      expect(s.rulerRows(tab), (year: false, month: true, weekday: true));
+    }
+    s
+      ..setRulerRow(RulerTab.timeline, RulerRow.year, true)
+      ..setRulerRow(RulerTab.work, RulerRow.weekday, false);
+    final again = loadDeviceSettings(tmp.path);
+    expect(again.rulerRows(RulerTab.timeline), (
+      year: true,
+      month: true,
+      weekday: true,
+    ));
+    expect(again.rulerRows(RulerTab.work), (
+      year: false,
+      month: true,
+      weekday: false,
+    ));
+  });
+
   test('a damaged file gives the defaults', () {
     File('${tmp.path}/device.json').writeAsStringSync('{nope');
     final s = loadDeviceSettings(tmp.path);

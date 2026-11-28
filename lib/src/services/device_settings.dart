@@ -50,6 +50,24 @@ Map<String, List<String>> defaultShortcuts({required bool apple}) => apple
         ShortcutAction.redo: ['Ctrl+Shift+Z', 'Ctrl+Y'],
       };
 
+/// The charts whose ruler rows can be shown or hidden.
+enum RulerTab { timeline, work }
+
+/// A row of a chart's date ruler.
+enum RulerRow {
+  year(false),
+  month(true),
+  weekday(true);
+
+  const RulerRow(this.shownByDefault);
+
+  /// Shown until this device chooses otherwise.
+  final bool shownByDefault;
+}
+
+/// Which ruler rows a chart shows.
+typedef RulerRows = ({bool year, bool month, bool weekday});
+
 /// Preferences of THIS device — kept on the device, never in the
 /// document, so opening the document elsewhere does not change how that
 /// device looks (docs/storage.md). Work rules (rounding, day start, rest
@@ -65,6 +83,7 @@ class DeviceSettings {
     this._language,
     this._monthView,
     this._shortcuts,
+    this._ruler,
   );
 
   /// Settings read from [json] (null, unreadable or partial gives the
@@ -91,6 +110,15 @@ class DeviceSettings {
                   if (v is String) v,
               ],
       },
+      {
+        if (m['rulerRows'] case final Map<Object?, Object?> tabs)
+          for (final tab in RulerTab.values)
+            if (tabs[tab.name] case final Map<Object?, Object?> rows)
+              tab: {
+                for (final row in RulerRow.values)
+                  if (rows[row.name] case final bool on) row: on,
+              },
+      },
     );
   }
 
@@ -99,6 +127,7 @@ class DeviceSettings {
   LanguageChoice _language;
   bool _monthView;
   final Map<String, List<String>> _shortcuts;
+  final Map<RulerTab, Map<RulerRow, bool>> _ruler;
 
   /// Default: [ThemeChoice.system].
   ThemeChoice get themeMode => _theme;
@@ -142,12 +171,37 @@ class DeviceSettings {
     _save();
   }
 
+  /// The ruler rows [tab] shows: this device's choices over the defaults
+  /// (year off, month and weekday on).
+  RulerRows rulerRows(RulerTab tab) {
+    bool on(RulerRow r) => _ruler[tab]?[r] ?? r.shownByDefault;
+    return (
+      year: on(RulerRow.year),
+      month: on(RulerRow.month),
+      weekday: on(RulerRow.weekday),
+    );
+  }
+
+  /// Shows or hides [row] of [tab]'s ruler.
+  void setRulerRow(RulerTab tab, RulerRow row, bool on) {
+    (_ruler[tab] ??= {})[row] = on;
+    _save();
+  }
+
   void _save() => _write(
     jsonEncode({
       'themeMode': _theme.name,
       if (_language.tag != null) 'language': _language.tag,
       if (_monthView) 'monthView': true,
       if (_shortcuts.isNotEmpty) 'shortcuts': _shortcuts,
+      if (_ruler.isNotEmpty)
+        'rulerRows': {
+          for (final MapEntry(key: tab, value: rows) in _ruler.entries)
+            tab.name: {
+              for (final MapEntry(key: row, value: on) in rows.entries)
+                row.name: on,
+            },
+        },
     }),
   );
 }
