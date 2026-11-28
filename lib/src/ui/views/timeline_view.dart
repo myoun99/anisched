@@ -4,6 +4,7 @@ import '../../core/size_class.dart';
 import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
+import '../hold.dart';
 import '../format.dart';
 import '../selection.dart';
 import '../theme.dart';
@@ -162,7 +163,7 @@ class _TimelineViewState extends State<TimelineView> {
           c.panel,
           0.38,
         )!,
-        faded: handed,
+        faded: handed || (g.waiting > 0 && g.inHand == 0),
         onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
       ),
     ];
@@ -253,15 +254,23 @@ class _TimelineLabel extends StatelessWidget {
             onPicked: onDue == null ? null : (d) => onDue!(g, d),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Text(
-                due.text,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: due.tone == DueTone.late
-                      ? Theme.of(context).colorScheme.error
-                      : c.muted,
-                  fontWeight: due.tone == DueTone.late ? FontWeight.w700 : null,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    due.text,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: due.tone == DueTone.late
+                          ? Theme.of(context).colorScheme.error
+                          : c.muted,
+                      fontWeight: due.tone == DueTone.late
+                          ? FontWeight.w700
+                          : null,
+                    ),
+                  ),
+                  RoundBadge(g.dueRevision),
+                ],
               ),
             ),
           ),

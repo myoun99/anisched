@@ -5,6 +5,9 @@ import 'theme.dart';
 /// Open/closed state of the cut blocks, kept while the app runs and shared
 /// by every unit (open one list's cuts and the next opens the same way).
 abstract final class Folds {
+  /// The deadline's rounds under a unit's details (folded at first).
+  static final dueRounds = ValueNotifier<bool>(false);
+
   /// The cut chips under an opened list line. Closed by default: the
   /// line's facts come first.
   static final cutsInDetails = ValueNotifier<bool>(false);

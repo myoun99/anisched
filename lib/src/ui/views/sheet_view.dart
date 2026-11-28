@@ -32,11 +32,24 @@ class SheetView extends StatefulWidget {
     this.onTaskTap,
     this.onDue,
     this.onTaskDue,
+    this.onHold,
+    this.revisionsOf,
+    this.onEditRevision,
   });
 
   /// Sets a unit's deadline / one cut's own deadline.
   final void Function(PartGroup group, DateTime due)? onDue;
   final void Function(TaskRow task, DateTime due)? onTaskDue;
+
+  /// Puts a whole unit on hold, or takes it off.
+  final void Function(PartGroup group)? onHold;
+
+  /// A unit's deadline rounds; null hides the list.
+  final Future<List<DueRevision>> Function(PartGroup group)? revisionsOf;
+
+  /// Corrects one round of a unit's deadline.
+  final void Function(PartGroup group, int revision, DateTime due)?
+  onEditRevision;
 
   /// A cut tapped in the opened details (starts the timer, or picks it
   /// while picking); null: taps pick.
@@ -193,6 +206,17 @@ class _SheetViewState extends State<SheetView> {
                             ? null
                             : (d) => widget.onDue!(p, d),
                         onTaskDue: widget.onTaskDue,
+                        onHold: widget.onHold == null
+                            ? null
+                            : () => widget.onHold!(p),
+                        loadRevisions:
+                            widget.revisionsOf == null ||
+                                p.kind == GroupKind.noPart
+                            ? null
+                            : () => widget.revisionsOf!(p),
+                        onEditRevision: widget.onEditRevision == null
+                            ? null
+                            : (n, d) => widget.onEditRevision!(p, n, d),
                       ),
                   ],
                 );

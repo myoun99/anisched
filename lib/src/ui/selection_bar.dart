@@ -14,7 +14,16 @@ class SelectionBar extends StatelessWidget {
     super.key,
     required this.selection,
     required this.onApply,
+    this.onHold,
+    this.allWaiting,
   });
+
+  /// Puts the picked tasks on hold (or takes them off); null hides it.
+  final VoidCallback? onHold;
+
+  /// Whether every picked open task already waits (the button then
+  /// releases them).
+  final bool Function()? allWaiting;
 
   final TaskSelection selection;
 
@@ -52,6 +61,15 @@ class SelectionBar extends StatelessWidget {
                 label: s.label,
                 onTap: on ? () => onApply!(s) : null,
               ),
+            if (onHold != null)
+              _ActionButton(
+                key: const Key('pick-hold'),
+                icon: (allWaiting?.call() ?? false)
+                    ? Icons.play_circle_outline
+                    : Icons.pause_circle_outline,
+                label: (allWaiting?.call() ?? false) ? S.unhold.t : S.hold.t,
+                onTap: n > 0 ? onHold : null,
+              ),
             _ActionButton(
               key: const Key('pick-clear'),
               label: S.clear.t,
@@ -65,9 +83,10 @@ class SelectionBar extends StatelessWidget {
 }
 
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({super.key, required this.label, this.onTap});
+  const _ActionButton({super.key, required this.label, this.onTap, this.icon});
 
   final String label;
+  final IconData? icon;
   final VoidCallback? onTap;
 
   @override
@@ -88,9 +107,21 @@ class _ActionButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Center(
               widthFactor: 1,
-              child: Text(
-                label,
-                style: TextStyle(color: enabled ? null : c.faint),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 4,
+                children: [
+                  if (icon != null)
+                    Icon(
+                      icon,
+                      size: 16,
+                      color: enabled ? c.submitted : c.faint,
+                    ),
+                  Text(
+                    label,
+                    style: TextStyle(color: enabled ? null : c.faint),
+                  ),
+                ],
               ),
             ),
           ),

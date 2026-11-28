@@ -16,6 +16,7 @@ import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'document_menu.dart';
 import 'filter.dart';
+import 'hold.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
@@ -296,21 +297,93 @@ class _AppShellState extends State<AppShell> {
         }
       });
 
-  /// A deadline picked (D label, details or timeline): the part's for a
-  /// part, each task's for loose cuts and storyboards.
+  /// Where a unit's deadline lives: the part × stage, or each task's own
+  /// (loose cuts, a storyboard).
+  static List<DueTarget> _dueTargets(PartGroup g) => g.kind == GroupKind.part
+      ? [DueTarget.part(g.partId!, g.stageId)]
+      : [for (final t in g.tasks) DueTarget.task(t.id)];
+
+  /// A deadline picked (D label, details or timeline): a new round — the
+  /// deadline was extended (2차 …), or the 1st when there was none.
   void _setDue(PartGroup g, DateTime due) => _write((store) {
-    if (g.kind == GroupKind.part) {
-      store.setPartDue(g.partId!, g.stageId, due);
-    } else {
-      for (final t in g.tasks) {
-        store.setTaskDue(t.id, due);
-      }
+    for (final target in _dueTargets(g)) {
+      store.extendDue(target, due);
     }
   });
 
-  /// One cut's own deadline.
+  /// One cut's own deadline, as a new round of it.
   void _setTaskDue(TaskRow t, DateTime due) =>
-      _write((store) => store.setTaskDue(t.id, due));
+      _write((store) => store.extendDue(DueTarget.task(t.id), due));
+
+  /// The rounds of a unit's deadline (one target: a part or storyboard).
+  Future<List<DueRevision>> _revisions(PartGroup g) async {
+    final reader = widget.reader;
+    final targets = _dueTargets(g);
+    if (reader == null || targets.length != 1) return const [];
+    return reader.dueRevisions(targets.single);
+  }
+
+  /// Corrects one round of a unit's deadline.
+  void _editRevision(PartGroup g, int revision, DateTime due) =>
+      _write((store) {
+        for (final target in _dueTargets(g)) {
+          store.editDueRevision(target, revision, due);
+        }
+      });
+
+  /// Puts [tasks] on hold, asking why and until when — or, when every open
+  /// one already waits, takes them off. Whole parts are held as parts, so
+  /// cuts added later follow.
+  Future<void> _toggleHold(List<TaskRow> tasks) async {
+    final open = [
+      for (final t in tasks)
+        if (t.status.isOpen) t,
+    ];
+    if (widget.store == null || open.isEmpty) return;
+    final release = open.every((t) => t.waiting);
+    final note = release ? null : await askHold(context);
+    if (!release && note == null) return;
+    final picked = {for (final t in open) t.id};
+    _write((store) {
+      final loose = <int>{...picked};
+      for (final g in _groups) {
+        if (g.kind != GroupKind.part) continue;
+        final ids = [
+          for (final t in g.tasks)
+            if (t.status.isOpen) t.id,
+        ];
+        if (ids.isEmpty || !ids.every(picked.contains)) continue;
+        store.setPartWaiting(
+          g.partId!,
+          g.stageId,
+          waiting: !release,
+          reason: note?.reason,
+          until: note?.until,
+        );
+        store.followPartWaiting(ids);
+        loose.removeAll(ids);
+      }
+      if (loose.isNotEmpty) {
+        store.setWaitingMany(
+          loose,
+          waiting: !release,
+          reason: note?.reason,
+          until: note?.until,
+        );
+      }
+    });
+    _selection.clear();
+  }
+
+  /// The picked tasks, for the selection bar's hold button.
+  List<TaskRow> get _pickedTasks {
+    final ids = _selection.ids;
+    return [
+      for (final g in _groups)
+        for (final t in g.tasks)
+          if (ids.contains(t.id)) t,
+    ];
+  }
 
   /// A work bar's end dragged: the user's own start and end.
   void _plan(PartGroup g, DateTime start, DateTime end) => _write((store) {
@@ -350,6 +423,9 @@ class _AppShellState extends State<AppShell> {
         onReorder: writable ? _reorder : null,
         onDue: writable ? _setDue : null,
         onTaskDue: writable ? _setTaskDue : null,
+        onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
+        revisionsOf: widget.reader == null ? null : _revisions,
+        onEditRevision: writable ? _editRevision : null,
         onTaskTap: widget.timer == null
             ? null
             : (t) => _selection.isEmpty
@@ -450,6 +526,13 @@ class _AppShellState extends State<AppShell> {
         final selectionBar = SelectionBar(
           selection: _selection,
           onApply: widget.store == null ? null : _apply,
+          onHold: widget.store == null
+              ? null
+              : () => unawaited(_toggleHold(_pickedTasks)),
+          allWaiting: () {
+            final open = _pickedTasks.where((t) => t.status.isOpen);
+            return open.isNotEmpty && open.every((t) => t.waiting);
+          },
         );
         final switcher = ViewSwitcher(
           key: Key(narrow ? 'view-switch-bottom' : 'view-switch-top'),
