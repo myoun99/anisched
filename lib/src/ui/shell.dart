@@ -19,6 +19,7 @@ import 'document_menu.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
+import 'part_line.dart';
 import 'pick_field.dart';
 import 'time_editor.dart';
 import 'selection.dart';
@@ -547,28 +548,32 @@ class _AppShellState extends State<AppShell> {
     final writable = widget.store != null;
     final shown = _visible(now);
     final toolbar = _toolbar(shown.length);
+    // One wiring for every view that opens a unit's details.
+    final wiring = UnitWiring(
+      signals: _signals,
+      paces: _paces,
+      selection: _selection,
+      onDue: writable ? _setDue : null,
+      onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
+      onKickoff: writable ? _setKickoff : null,
+      onPlan: writable ? _plan : null,
+      revisionsOf: widget.reader == null ? null : _revisions,
+      onEditRevision: writable ? _editRevision : null,
+      onTaskTap: widget.timer == null
+          ? null
+          : (t) => _selection.isEmpty
+                ? _pickForTimer(t.id)
+                : _selection.toggleTask(t),
+    );
     return switch (v) {
       AppView.list => SheetView(
         parts: shown,
         now: now,
         layout: layout,
         showDone: _filter.showDone,
-        signals: _signals,
-        paces: _paces,
-        selection: _selection,
+        wiring: wiring,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
-        onDue: writable ? _setDue : null,
-        onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
-        onKickoff: writable ? _setKickoff : null,
-        onPlan: writable ? _plan : null,
-        revisionsOf: widget.reader == null ? null : _revisions,
-        onEditRevision: writable ? _editRevision : null,
-        onTaskTap: widget.timer == null
-            ? null
-            : (t) => _selection.isEmpty
-                  ? _pickForTimer(t.id)
-                  : _selection.toggleTask(t),
       ),
       AppView.timeline => TimelineView(
         parts: shown,
@@ -580,6 +585,7 @@ class _AppShellState extends State<AppShell> {
         restWeekdays: rest,
         selection: _selection,
         onSchedule: writable ? _schedule : null,
+        details: wiring.details,
       ),
       AppView.work => WorkView(
         lanes: _lanes,

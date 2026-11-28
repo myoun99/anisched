@@ -735,7 +735,12 @@ class ChartBoard extends StatefulWidget {
     this.rowTint,
     this.onReorder,
     this.corner,
+    this.below,
   });
+
+  /// What opens under a row, the full width of the board (label column
+  /// and dates); null when the row is closed.
+  final Widget? Function(BuildContext context, int row)? below;
 
   final ChartWindow window;
   final DateTime today;
@@ -808,6 +813,20 @@ class _ChartBoardState extends State<ChartBoard> {
         ],
       ),
     );
+    if (widget.below != null) {
+      // No fixed extent then: each row keeps its own height.
+      row = SizedBox(height: ChartBoard.rowExtent, child: row);
+      if (widget.below!(context, i) case final open?) {
+        row = Column(
+          key: widget.rowKey?.call(i),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [row, open],
+        );
+      } else if (widget.rowKey != null) {
+        row = KeyedSubtree(key: widget.rowKey!(i), child: row);
+      }
+    }
     if (widget.rowWrap case final wrap?) row = wrap(i, row);
     return row;
   }
@@ -858,14 +877,19 @@ class _ChartBoardState extends State<ChartBoard> {
                           ? ListView.builder(
                               controller: controller,
                               itemCount: widget.rowCount,
-                              itemExtent: ChartBoard.rowExtent,
+                              // Rows can open (below): heights vary then.
+                              itemExtent: widget.below == null
+                                  ? ChartBoard.rowExtent
+                                  : null,
                               itemBuilder: _row,
                             )
                           : ReorderableListView.builder(
                               scrollController: controller,
                               buildDefaultDragHandles: false,
                               itemCount: widget.rowCount,
-                              itemExtent: ChartBoard.rowExtent,
+                              itemExtent: widget.below == null
+                                  ? ChartBoard.rowExtent
+                                  : null,
                               onReorderItem: reorder,
                               itemBuilder: _row,
                             ),
