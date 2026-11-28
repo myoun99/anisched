@@ -120,6 +120,9 @@ class BrowserDocumentSession implements DocumentSessionBase {
   Future<bool> restoreLastWritten(DocumentRef ref) async => false;
 
   @override
+  bool hasLastWritten(DocumentRef ref) => false;
+
+  @override
   Future<void> startUntitled() async {
     _replaceWith(null, 'new');
     _ref = null;

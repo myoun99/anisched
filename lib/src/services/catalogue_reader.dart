@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/catalogue.dart';
+import '../models/dashboard.dart';
 import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
@@ -40,6 +41,13 @@ abstract interface class CatalogueReader {
 
   /// See [CatalogueStore.today].
   Future<TodayView> today({int horizonDays = 4});
+
+  /// See [CatalogueStore.dashboard].
+  Future<Dashboard> dashboard({
+    int horizonDays = 4,
+    int dueWithinDays = 7,
+    int dueLimit = 8,
+  });
 
   /// See [CatalogueStore.monthlyTotals].
   Future<MonthlyTotals> monthlyTotals(int year, int month);
@@ -196,6 +204,19 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
       _run(() => store.today(horizonDays: horizonDays));
+
+  @override
+  Future<Dashboard> dashboard({
+    int horizonDays = 4,
+    int dueWithinDays = 7,
+    int dueLimit = 8,
+  }) => _run(
+    () => store.dashboard(
+      horizonDays: horizonDays,
+      dueWithinDays: dueWithinDays,
+      dueLimit: dueLimit,
+    ),
+  );
 
   @override
   Future<MonthlyTotals> monthlyTotals(int year, int month) =>

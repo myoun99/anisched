@@ -154,10 +154,12 @@ void main() {
         ),
       ),
     );
+    expect(session.hasLastWritten(doc()), isTrue);
     expect(await session.restoreLastWritten(doc()), isTrue);
     expect(CatalogueStore(db).clients().single.name, '회사');
     expect(session.document, doc());
     final other = DocumentRef(location: '${tmp.path}/x.anisched', name: 'x');
+    expect(session.hasLastWritten(other), isFalse);
     expect(await session.restoreLastWritten(other), isFalse);
     await stop(db, session);
   });

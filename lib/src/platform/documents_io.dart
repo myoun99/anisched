@@ -55,10 +55,8 @@ Future<DocumentRef?> placeNewDocument(
     suggestedName: fileName,
   );
   if (where == null) return null;
-  var path = where.path;
-  if (!path.toLowerCase().endsWith('.$documentExtension')) {
-    path = '$path.$documentExtension';
-  }
+  // The dialog may hand back the name with the extension taken out.
+  final path = withDocumentExtension(where.path);
   final ref = DocumentRef(location: path, name: _baseName(path));
   await const PathDocumentFiles().replaceFrom(stagedPath, ref);
   return ref;
