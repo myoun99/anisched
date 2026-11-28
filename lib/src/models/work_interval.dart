@@ -20,8 +20,6 @@ class WorkInterval {
   /// UTC instant the timer stopped, or null while it is still running.
   final DateTime? stop;
 
-  bool get isRunning => stop == null;
-
   /// Time worked in this interval as of [now]. A running interval counts up
   /// to [now]. Never negative, even if the clock moved backwards.
   Duration elapsed(DateTime now) => elapsedWithin(start, now, now);

@@ -890,6 +890,9 @@ ORDER BY sort_key, id;''')) {
   static DateTime _utc(int ms) =>
       DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
 
+  static DateTime? _utcOrNull(Object? ms) =>
+      ms == null ? null : _utc(ms as int);
+
   /// Adds a client; [closingDay] null closes at month end.
   int addClient(String name, {int? closingDay}) {
     db.execute('INSERT INTO clients (name, closing_day) VALUES (?, ?);', [
@@ -1106,10 +1109,7 @@ ORDER BY sort_key, id;''',
     final r = rows.first;
     return WorkInterval(
       id: r['id'] as int,
-      start: DateTime.fromMillisecondsSinceEpoch(
-        r['started_at'] as int,
-        isUtc: true,
-      ),
+      start: _utc(r['started_at'] as int),
       taskId: r['task_id'] as int?,
     );
   }
@@ -1149,9 +1149,6 @@ ORDER BY sort_key, id;''',
     int? workId,
   ) {
     final filtered = clientId != null || workId != null;
-    DateTime? at(Object? ms) => ms == null
-        ? null
-        : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
     final extra = {
       for (final r in db.select('''
 SELECT t.id, t.submitted_at, t.submitted_due_at, t.done_at, w.client_id,
@@ -1180,10 +1177,10 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               clientId: x['client_id'] as int?,
               clientName: x['client'] as String?,
               take: t.take,
-              submittedAt: at(x['submitted_at']),
-              doneAt: at(x['done_at']),
+              submittedAt: _utcOrNull(x['submitted_at']),
+              doneAt: _utcOrNull(x['done_at']),
               dueAt: t.dueAt,
-              submittedDueAt: at(x['submitted_due_at']),
+              submittedDueAt: _utcOrNull(x['submitted_due_at']),
               firstDueAt: t.firstDueAt,
               dueExtensions: t.dueExtensions,
               handedOffAt: t.handedOffAt,
@@ -1213,8 +1210,8 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
       ))
         WorkInterval(
           id: r['id'] as int,
-          start: at(r['started_at'])!,
-          stop: at(r['stopped_at']),
+          start: _utc(r['started_at'] as int),
+          stop: _utcOrNull(r['stopped_at']),
           taskId: r['task_id'] as int?,
         ),
     ].where((i) => !filtered || taskIds.contains(i.taskId)).toList();
@@ -1282,13 +1279,11 @@ WHERE i.started_at < ? AND (i.stopped_at IS NULL OR i.stopped_at > ?)
 ORDER BY i.started_at;''',
       [_ms(to), _ms(from)],
     );
-    DateTime utc(int ms) =>
-        DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
     return [
       for (final r in rows)
         if (_clip(
-              utc(r['started_at'] as int),
-              r['stopped_at'] == null ? now : utc(r['stopped_at'] as int),
+              _utc(r['started_at'] as int),
+              r['stopped_at'] == null ? now : _utc(r['stopped_at'] as int),
               from,
               to,
             )
@@ -1322,16 +1317,8 @@ ORDER BY i.started_at;''',
     ))
       WorkInterval(
         id: r['id'] as int,
-        start: DateTime.fromMillisecondsSinceEpoch(
-          r['started_at'] as int,
-          isUtc: true,
-        ),
-        stop: r['stopped_at'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(
-                r['stopped_at'] as int,
-                isUtc: true,
-              ),
+        start: _utc(r['started_at'] as int),
+        stop: r['stopped_at'] == null ? null : _utc(r['stopped_at'] as int),
         taskId: r['task_id'] as int?,
       ),
   ];
@@ -1400,10 +1387,7 @@ ORDER BY 4 DESC, 1, 2;''');
           kind: ArchiveKind.values.byName(r['kind'] as String),
           id: r['id'] as int,
           label: r['label'] as String,
-          archivedAt: DateTime.fromMillisecondsSinceEpoch(
-            r['archived_at'] as int,
-            isUtc: true,
-          ),
+          archivedAt: _utc(r['archived_at'] as int),
         ),
     ];
   }
@@ -1508,12 +1492,7 @@ ORDER BY 4 DESC, 1, 2;''');
       [taskId],
     ).first;
     final ms = r['due_at'] as int?;
-    return (
-      dueAt: ms == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true),
-      fromPart: r['from_part'] == 1,
-    );
+    return (dueAt: ms == null ? null : _utc(ms), fromPart: r['from_part'] == 1);
   }
 
   int addStoryboard(int episodeId, String label) {
@@ -1828,9 +1807,6 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
       [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
     );
-    DateTime? utc(Object? ms) => ms == null
-        ? null
-        : DateTime.fromMillisecondsSinceEpoch(ms as int, isUtc: true);
     final sharedLabels = _sharedLabels();
     return [
       for (final r in rows)
@@ -1853,17 +1829,17 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           partId: r['part_id'] as int?,
           partLabel: r['part_label'] as String?,
           plannedCutCount: r['planned_cut_count'] as int?,
-          receivedAt: utc(r['received_at']),
-          ownDueAt: utc(r['own_due']),
-          partDueAt: utc(r['part_due']),
-          ownPlanStartAt: utc(r['own_plan_start']),
-          ownPlanEndAt: utc(r['own_plan_end']),
-          partPlanStartAt: utc(r['part_plan_start']),
-          partPlanEndAt: utc(r['part_plan_end']),
-          ownKickoffAt: utc(r['own_kickoff']),
+          receivedAt: _utcOrNull(r['received_at']),
+          ownDueAt: _utcOrNull(r['own_due']),
+          partDueAt: _utcOrNull(r['part_due']),
+          ownPlanStartAt: _utcOrNull(r['own_plan_start']),
+          ownPlanEndAt: _utcOrNull(r['own_plan_end']),
+          partPlanStartAt: _utcOrNull(r['part_plan_start']),
+          partPlanEndAt: _utcOrNull(r['part_plan_end']),
+          ownKickoffAt: _utcOrNull(r['own_kickoff']),
           sharedHeadCutId: r['shared_head'] as int?,
           sharedLabel: sharedLabels[r['shared_head']],
-          partKickoffAt: utc(r['part_kickoff']),
+          partKickoffAt: _utcOrNull(r['part_kickoff']),
           pay: _pay(
             r['unit'] as String?,
             r['amount'] as int?,
@@ -1874,15 +1850,15 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           worked: Duration(milliseconds: r['worked_ms'] as int),
           ownDueRevisions: r['own_revs'] as int,
           partDueRevisions: r['part_revs'] as int,
-          ownFirstDueAt: utc(r['own_first']),
-          partFirstDueAt: utc(r['part_first']),
+          ownFirstDueAt: _utcOrNull(r['own_first']),
+          partFirstDueAt: _utcOrNull(r['part_first']),
           ownWaitState: r['wait_state'] as int?,
           ownWaitReason: r['wait_reason'] as String?,
-          ownWaitUntil: utc(r['wait_until']),
+          ownWaitUntil: _utcOrNull(r['wait_until']),
           partWaiting: r['part_waiting'] == 1,
           partWaitReason: r['part_wait_reason'] as String?,
-          partWaitUntil: utc(r['part_wait_until']),
-          handedOffAt: utc(r['handed_off_at']),
+          partWaitUntil: _utcOrNull(r['part_wait_until']),
+          handedOffAt: _utcOrNull(r['handed_off_at']),
           handedOffNote: r['handed_off_note'] as String?,
         ),
     ];
@@ -2052,7 +2028,7 @@ GROUP BY s.name;''',
       [_ms(today.end)],
     )) {
       final first = dayRange(
-        DateTime.fromMillisecondsSinceEpoch(r['first_at'] as int),
+        _utc(r['first_at'] as int),
         settings.dayStartMinutes,
       ).start;
       final name = r['stage_name'] as String;

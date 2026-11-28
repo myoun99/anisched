@@ -34,12 +34,6 @@ class DocumentRef {
 
   final String? bookmark;
 
-  /// A local path (not a provider URI).
-  bool get isPath => !location.startsWith('content://');
-
-  DocumentRef withBookmark(String? bookmark) =>
-      DocumentRef(location: location, name: name, bookmark: bookmark);
-
   Map<String, Object?> toJson() => {
     'location': location,
     'name': name,
