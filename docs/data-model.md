@@ -297,7 +297,7 @@
 | 쉬는 날 | `addDaysOff` · `removeDaysOff` | `daysOff`(스토어) |
 | 거래처·작품·화 고치기 | `renameClient` · `setClientClosingDay` · `renameWork` · `setWorkClient` · `setWorkCurrency` · `renameEpisode(번호, title:)` | |
 | 한 번에 등록 | `createWorkWithCuts(제목, 화, 컷 입력, partLabel:)` · `addEpisodeWithCuts(작품, 화, 컷 입력, partLabel:)` — 입력 오류면 아무것도 안 만듦 | |
-| 컷 대량 손보기 | 시작 번호 + 개수 `cutNumberRun(start:, count:, prefix:, width:)` → `addCuts` · 결번 `removeCuts(화, 번호들)` / 격자에서 고른 컷 `removeCutIds(컷들)`(보관) · 분할 `splitCut(컷, ['A','B','C'])`(같은 공정 작업 생성) · 겸용 `linkSharedCuts(컷들)` / `unlinkSharedCut(컷)` · `renumberCuts({컷: 새 번호})`(맞바꾸기 가능) | |
+| 컷 대량 손보기 | 시작 번호 + 개수 `cutNumberRun(start:, count:, prefix:, width:)` → `addCuts` · 결번 `removeCuts(화, 번호들)` / 격자에서 고른 컷 `removeCutIds(컷들)`(보관) · 겸용 `linkSharedCuts(컷들)` / `unlinkSharedCut(컷)` · `renumberCuts({컷: 새 번호})`(맞바꾸기 가능) | |
 | 공정으로 등록 | 체크한 공정들 `addTasksForStages(공정 id들, partId: 또는 cutIds:)` · 역할 = 체크 바로가기 `roleStageIds(역할, 작품)`(작품에 없는 공정은 끝에 추가) · `applyRole` = 둘을 한 번에 · 역할 편집 `createRole` · `renameRole` · `setRoleStages` · `deleteRole` | `roles()` |
 | 번호 = 값 (v16) | 컷 · 화수 번호는 **값으로 저장**(`C012A` → `12A`, `#07` → `7`), 화면에는 지금 표기로만(`shownNumber`). 입력은 표기의 앞 글자(대소문자 무관)나 앞 글자 없이 · 앞 0 무시 · 꼬리 글자는 대문자(`storedNumber`, 스토어 `cutKey` · `episodeKey`). 숫자로 못 읽는 이름(`BANK1` · `SP`)은 친 그대로. 중복 · 정렬 · 검색 · 겸용 라벨 · 휴지통 라벨 모두 값 기준, 표기를 바꾸면 모든 읽기가 바로 새 표기 | — |
 | 컷 · 화수 표기 (v15) | **문서 설정 하나씩**(작품별 없음): `settings.cutStyle`(기본 `C`·3) · `settings.episodeStyle`(기본 `#`·2), 자릿수 1~8 · 입력 숫자 → `cutNumberFor(1)` = `C001` · `episodeNumberFor(7)` = `#07` · `addCutRun(화, start:, count:)` · 표시 함수 `formatCutNumber` · `formatEpisodeNumber`(models/number_style.dart) | `numberStyles()` |

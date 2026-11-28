@@ -391,43 +391,6 @@ class CatalogueStore {
         return missing;
       });
 
-  /// Splits a cut into lettered cuts: `C012` with `['A', 'B', 'C']`
-  /// becomes `C012A` (the same cut, keeping its tasks) plus new `C012B`
-  /// and `C012C` in the same part with the same length and a task for
-  /// each stage the original has. Returns every resulting cut id.
-  List<int> splitCut(int cutId, List<String> suffixes) => _transaction(() {
-    if (suffixes.isEmpty) throw ArgumentError('No suffixes to split into.');
-    final c = db.select(
-      'SELECT episode_id, number, length_ms, part_id FROM cuts WHERE id = ?;',
-      [cutId],
-    ).first;
-    final number = c['number'] as String;
-    final episode = c['episode_id'] as int;
-    _rename(cutId, '$number${suffixes.first}');
-    final added = addCuts(
-      episode,
-      [for (final s in suffixes.skip(1)) '$number$s'],
-      partId: c['part_id'] as int?,
-      lengthMs: c['length_ms'] as int?,
-    );
-    if (added.skipped.isNotEmpty) {
-      throw StateError('Cut numbers already in use: ${added.skipped}.');
-    }
-    final stages = [
-      for (final r in db.select(
-        'SELECT stage_id FROM tasks WHERE cut_id = ? AND archived_at IS NULL;',
-        [cutId],
-      ))
-        r['stage_id'] as int,
-    ];
-    for (final id in added.added) {
-      for (final s in stages) {
-        addTask(s, cutId: id);
-      }
-    }
-    return [cutId, ...added.added];
-  });
-
   /// Marks cuts of one episode as one shared cut (겸용). Every cut keeps
   /// its own row, length (per-second pay counts each) and tasks; the views
   /// label them together as `C012-014`. A cut already in another shared

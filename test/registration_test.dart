@@ -10,15 +10,14 @@ CatalogueStore fresh() =>
     CatalogueStore(openAppDatabase(':memory:'), clock: () => now);
 
 void main() {
-  test('a shared pair stays two cuts; splits and missing count', () {
+  test('a shared pair stays two cuts; missing numbers count', () {
     final c = CutDraft(count: 10)
       ..toggleRemoved(['C003'])
-      ..toggleSplit(['C005'])
       ..toggleShared(['C008', 'C007']);
     expect(c.cells.length, 10);
     expect(c.label('C007'), 'C007-008');
     expect(c.partner('C008'), 'C007');
-    expect(c.total, 10 - 1 + 1);
+    expect(c.total, 10 - 1);
     expect(c.canShare(['C007']), isTrue);
     expect(c.canShare(['C007', 'C001']), isFalse);
     c.toggleShared(['C008']);
@@ -54,13 +53,12 @@ void main() {
     expect(store.cuts(ep).map((c) => c.number), ['C012']);
   });
 
-  test('register writes a part, cuts, tasks per stage, splits and pairs', () {
+  test('register writes a part, cuts, tasks per stage and pairs', () {
     final store = fresh();
     final w = store.createWork('새벽의 정원');
     final ep = store.addEpisode(w, '#01');
     final cuts = CutDraft(count: 6)
       ..toggleRemoved(['C002'])
-      ..toggleSplit(['C004'])
       ..toggleShared(['C005', 'C006'])
       ..add('BANK1');
     final due = DateTime(2026, 12, 20, 23, 59);
@@ -78,14 +76,14 @@ void main() {
     final numbers = store.cuts(ep).map((c) => c.number).toList();
     expect(
       numbers,
-      containsAll(['C001', 'C003', 'C004A', 'C004B', 'C005', 'C006', 'BANK1']),
+      containsAll(['C001', 'C003', 'C004', 'C005', 'C006', 'BANK1']),
     );
     expect(numbers, isNot(contains('C002')));
     final groups = store.partGroups();
     expect(groups.map((g) => g.stageName).toSet(), {'LO', '원화'});
-    // Seven cuts, the shared pair C005-006 counting once (유저 2026-11-28).
-    expect(groups.every((g) => g.total == 6), isTrue);
-    expect(groups.every((g) => g.tasks.length == 7), isTrue);
+    // Six cuts, the shared pair C005-006 counting once (유저 2026-11-28).
+    expect(groups.every((g) => g.total == 5), isTrue);
+    expect(groups.every((g) => g.tasks.length == 6), isTrue);
     expect(groups.every((g) => g.dueAt!.isAtSameMomentAs(due)), isTrue);
   });
 
@@ -101,25 +99,18 @@ void main() {
       () => register(store, draft(CutDraft(count: 1)..rename('C001', '9'))),
       throwsA(isA<CutNameClash>()),
     );
-    // Typed 'c1' and 'c2' still split and pair as the grid said.
+    // Typed 'c1' and 'c2' still pair as the grid said.
     register(
       store,
       draft(
         CutDraft(count: 3)
           ..rename('C001', 'c1')
           ..rename('C002', 'c2')
-          ..toggleShared(['C001', 'C002'])
-          ..toggleSplit(['C003']),
+          ..toggleShared(['C001', 'C002']),
       ),
     );
     final rows = store.cuts(ep);
-    expect(rows.map((c) => c.number), [
-      'C001',
-      'C002',
-      'C003A',
-      'C003B',
-      'C009',
-    ]);
+    expect(rows.map((c) => c.number), ['C001', 'C002', 'C003', 'C009']);
     expect(rows.first.sharedLabel, 'C001-002');
   });
 
