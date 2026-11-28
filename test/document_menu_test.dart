@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  saveAsTests();
   testWidgets('untitled shows 무제; 저장 binds a file and shows its name', (
     t,
   ) async {
@@ -103,4 +104,77 @@ void main() {
       expect(find.text('열기'), browser ? findsNothing : findsOneWidget);
     });
   }
+}
+
+/// Remembers the name Save As was asked for.
+class _NamePicker implements DocumentPicker {
+  String? asked;
+
+  @override
+  Future<DocumentRef?> pickOpen(BuildContext context) async => null;
+
+  @override
+  Future<bool> saveAs(
+    BuildContext context,
+    DocumentSessionBase session,
+    String suggestedName,
+  ) async {
+    asked = suggestedName;
+    return false;
+  }
+}
+
+void saveAsTests() {
+  test('a typed name is the file\'s, its extension taken off', () {
+    expect(saveAsName(' abc.anisched '), 'abc');
+    expect(saveAsName('abc.ANISCHED'), 'abc');
+    expect(saveAsName('11월 일정'), '11월 일정');
+  });
+
+  testWidgets('Save As asks the name first: no extension in the field', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(1280, 800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final tmp = Directory.systemTemp.createTempSync('anisched-ui-');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final working = '${tmp.path}/anisched.db';
+    final db = openAppDatabase(working);
+    addTearDown(db.close);
+    final session = (await t.runAsync(
+      () => DocumentSession.open(
+        writer: db,
+        workingPath: working,
+        folder: tmp.path,
+        files: const PathDocumentFiles(),
+        autosaveDelay: const Duration(hours: 1),
+      ),
+    ))!;
+    final picker = _NamePicker();
+    final store = CatalogueStore(db);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          reader: SyncCatalogueReader(store),
+          store: store,
+          session: session,
+          picker: picker,
+        ),
+      ),
+    );
+    await t.pump();
+    await t.tap(find.byKey(const Key('file-menu')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('file-save-as')));
+    await t.pumpAndSettle();
+    final field = t.widget<TextField>(find.byKey(const Key('name-input')));
+    expect(field.controller!.text, '무제', reason: 'the name, no extension');
+    expect(field.decoration!.suffixText, '.anisched', reason: 'shown faint');
+    await t.enterText(find.byKey(const Key('name-input')), 'abc.anisched');
+    await t.tap(find.byKey(const Key('name-ok')));
+    await t.pumpAndSettle();
+    expect(picker.asked, 'abc.anisched', reason: 'one extension, not two');
+  });
 }

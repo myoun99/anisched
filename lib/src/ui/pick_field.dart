@@ -9,6 +9,7 @@ import 'palette.dart';
 import 'theme.dart';
 import 'text/strings.dart';
 import 'notice.dart';
+import 'widgets.dart';
 
 /// One choice in a [PickField] list.
 typedef PickOption<T> = ({T value, String title, String? note});
@@ -536,15 +537,33 @@ Future<String?> askName(
   required String title,
   String initial = '',
   String? prefix,
+  String? suffix,
+  IconData icon = Icons.edit_outlined,
 }) => showInstantDialog<String>(
   context: context,
-  builder: (_) => _NameDialog(title: title, initial: initial, prefix: prefix),
+  builder: (_) => _NameDialog(
+    title: title,
+    initial: initial,
+    prefix: prefix,
+    suffix: suffix,
+    icon: icon,
+  ),
 );
 
 class _NameDialog extends StatefulWidget {
-  const _NameDialog({required this.title, required this.initial, this.prefix});
+  const _NameDialog({
+    required this.title,
+    required this.initial,
+    required this.icon,
+    this.prefix,
+    this.suffix,
+  });
 
+  /// Faint words before and after the field (a cut's 「C」, a file's
+  /// 「.anisched」): shown, never part of what is typed.
   final String? prefix;
+  final String? suffix;
+  final IconData icon;
 
   final String title;
   final String initial;
@@ -564,7 +583,7 @@ class _NameDialogState extends State<_NameDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title, style: const TextStyle(fontSize: 15)),
+    title: DialogTitle(widget.icon, widget.title),
     content: TextField(
       onTapOutside: unfocusOutside,
       key: const Key('name-input'),
@@ -573,6 +592,8 @@ class _NameDialogState extends State<_NameDialog> {
       decoration: InputDecoration(
         prefixText: widget.prefix,
         prefixStyle: TextStyle(color: AppColors.of(context).faint),
+        suffixText: widget.suffix,
+        suffixStyle: TextStyle(color: AppColors.of(context).faint),
       ),
       onSubmitted: (v) => Navigator.of(context).pop(v),
     ),
