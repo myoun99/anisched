@@ -206,6 +206,12 @@ void main() {
     expect(session.document, isNull);
     expect(find.byKey(const Key('doc-trouble')), findsOneWidget);
     expect(find.text(DocumentTroubleKind.empty.text), findsOneWidget);
+    // This device never wrote that file: nothing of its own to put back.
+    expect(
+      session.hasLastWritten(DocumentRef(location: empty.path, name: 'e')),
+      isFalse,
+    );
+    expect(find.byKey(const Key('doc-trouble-restore')), findsNothing);
     expect(find.byType(SnackBar), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
     expect(find.byKey(const Key('doc-trouble-retry')), findsOneWidget);

@@ -232,18 +232,21 @@ void main() {
     expect(numbers, contains('BANK1'));
   });
 
-  test('a range adds its blocks once, either way round; delete takes pairs', () {
-    final d = CutDraft(count: 0);
-    expect(d.addRange(12, 7), 6);
-    expect(d.cells, ['C007', 'C008', 'C009', 'C010', 'C011', 'C012']);
-    expect(d.addRange(11, 13), 1, reason: 'only C013 is new');
-    d
-      ..toggleShared(['C007', 'C008'])
-      ..delete(['C008']);
-    expect(d.partner('C007'), isNull, reason: 'its pair went with it');
-    expect(d.cells.contains('C008'), isFalse);
-    expect(d.total, 6);
-  });
+  test(
+    'a range adds its blocks once, either way round; delete takes pairs',
+    () {
+      final d = CutDraft(count: 0);
+      expect(d.addRange(12, 7), 6);
+      expect(d.cells, ['C007', 'C008', 'C009', 'C010', 'C011', 'C012']);
+      expect(d.addRange(11, 13), 1, reason: 'only C013 is new');
+      d
+        ..toggleShared(['C007', 'C008'])
+        ..delete(['C008']);
+      expect(d.partner('C007'), isNull, reason: 'its pair went with it');
+      expect(d.cells.contains('C008'), isFalse);
+      expect(d.total, 6);
+    },
+  );
 
   test('a renamed cell moves to its new number', () {
     final draft = CutDraft(count: 3)..rename('C001', 'C010');
