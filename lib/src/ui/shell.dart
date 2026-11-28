@@ -617,6 +617,7 @@ class _AppShellState extends State<AppShell> {
       ),
       AppView.work => WorkView(
         lanes: _lanes,
+        wiring: wiring,
         parts: {for (final g in _groups) g.key: g},
         now: now,
         layout: layout,

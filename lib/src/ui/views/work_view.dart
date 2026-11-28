@@ -10,6 +10,23 @@ import '../widgets.dart';
 import '../text/strings.dart';
 import 'chart.dart';
 import '../fit_text.dart';
+import '../part_line.dart';
+
+/// Where a tapped bar opens its work — three proposals shown side by side
+/// until the user picks one (then the other two go).
+enum WorkOpenStyle {
+  /// Under the bar's lane, the board's full width (like the timeline).
+  below,
+
+  /// A card floating just under the bar, over the board.
+  floating,
+
+  /// A panel beside the board (landscape) or under it (portrait).
+  side,
+}
+
+/// The proposal in use (captures switch it).
+WorkOpenStyle workOpenStyle = WorkOpenStyle.side;
 
 /// The user's own work periods laid out on parallel lanes (「라인 1 · 2」).
 /// Bars past the lane count go to red 「넘침」 rows. A long press picks a
@@ -29,7 +46,12 @@ class WorkView extends StatefulWidget {
     this.laneNames = const [],
     this.onAddLane,
     this.onEditLane,
+    this.wiring,
   });
+
+  /// What a tapped bar's opened work acts through (the shell's); null
+  /// keeps bars closed.
+  final UnitWiring? wiring;
 
   /// The user's lane names (null = the number).
   final List<String?> laneNames;
@@ -62,6 +84,33 @@ class WorkView extends StatefulWidget {
 
 class _WorkViewState extends State<WorkView> {
   void _onView() => setState(() {});
+
+  /// The work whose bar was tapped open.
+  String? _open;
+  final _float = OverlayPortalController();
+  final _openBar = GlobalKey();
+  final _tapGroup = Object();
+
+  void _toggle(String key) {
+    setState(() => _open = _open == key ? null : key);
+    if (workOpenStyle != WorkOpenStyle.floating) return;
+    if (_open == null) {
+      _float.hide();
+    } else {
+      // Shown once the bar is laid out, so the card can sit under it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _open != null) _float.show();
+      });
+    }
+  }
+
+  void _close() {
+    if (_open == null) return;
+    setState(() => _open = null);
+    if (_float.isShowing) _float.hide();
+  }
+
+  PartGroup? get _openGroup => _open == null ? null : widget.parts[_open];
 
   @override
   void initState() {
@@ -130,42 +179,165 @@ class _WorkViewState extends State<WorkView> {
             ],
           ),
           Expanded(
-            child: ChartViewport(
-              days: window.days,
-              labelWidth: _labelWidth,
-              child: ChartBoard(
-                window: window,
-                today: widget.now,
-                restWeekdays: widget.restWeekdays,
+            child: _withSide(
+              context,
+              ChartViewport(
+                days: window.days,
                 labelWidth: _labelWidth,
-                rowCount: rowCount,
-                corner: _corner(context),
-                label: (context, r) => _laneLabel(context, lanes!, r),
-                bars: (context, r) => [
-                  for (final s in lanes!.spans)
-                    if (lanes.laneOf[s.key] == r)
-                      _bar(s, window, lanes.overflow, accent, red),
-                ],
-                rowTint: (r) =>
-                    r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
-                rowWrap: (r, child) => DragTarget<String>(
-                  key: Key('lane-$r'),
-                  onAcceptWithDetails: (d) => widget.onPin?.call(d.data, r),
-                  builder: (context, candidates, _) => candidates.isEmpty
-                      ? child
-                      : DecoratedBox(
-                          position: DecorationPosition.foreground,
-                          decoration: BoxDecoration(
-                            color: c.selected.withValues(alpha: 0.5),
+                child: ChartBoard(
+                  window: window,
+                  today: widget.now,
+                  restWeekdays: widget.restWeekdays,
+                  labelWidth: _labelWidth,
+                  rowCount: rowCount,
+                  corner: _corner(context),
+                  label: (context, r) => _laneLabel(context, lanes!, r),
+                  bars: (context, r) => [
+                    for (final s in lanes!.spans)
+                      if (lanes.laneOf[s.key] == r)
+                        _bar(s, window, lanes.overflow, accent, red),
+                  ],
+                  below:
+                      workOpenStyle == WorkOpenStyle.below &&
+                          widget.wiring != null
+                      ? (context, r) {
+                          final g = _openGroup;
+                          if (g == null || lanes!.laneOf[g.key] != r) {
+                            return null;
+                          }
+                          return widget.wiring!.details(g);
+                        }
+                      : null,
+                  rowTint: (r) =>
+                      r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
+                  rowWrap: (r, child) => DragTarget<String>(
+                    key: Key('lane-$r'),
+                    onAcceptWithDetails: (d) => widget.onPin?.call(d.data, r),
+                    builder: (context, candidates, _) => candidates.isEmpty
+                        ? child
+                        : DecoratedBox(
+                            position: DecorationPosition.foreground,
+                            decoration: BoxDecoration(
+                              color: c.selected.withValues(alpha: 0.5),
+                            ),
+                            child: child,
                           ),
-                          child: child,
-                        ),
+                  ),
                 ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// The opened work's head (its list line, a tap closes) and details.
+  Widget _openPanel(BuildContext context, PartGroup g, {double? maxHeight}) {
+    final w = widget.wiring!;
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PartLine(
+          group: g,
+          now: widget.now,
+          dayStartMinutes: 0,
+          expanded: true,
+          selected: false,
+          signals: w.signals[g.key],
+          onDue: w.onDue == null ? null : (d) => w.onDue!(g, d),
+          onTap: _close,
+        ),
+        Flexible(child: SingleChildScrollView(child: w.details(g))),
+      ],
+    );
+    return maxHeight == null
+        ? body
+        : ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: body,
+          );
+  }
+
+  /// The board, with the side proposal's panel beside or under it.
+  Widget _withSide(BuildContext context, Widget board) {
+    final g = _openGroup;
+    if (workOpenStyle != WorkOpenStyle.side ||
+        g == null ||
+        widget.wiring == null) {
+      return board;
+    }
+    final c = AppColors.of(context);
+    return LayoutBuilder(
+      builder: (context, box) {
+        final beside = box.maxWidth > box.maxHeight;
+        final panel = DecoratedBox(
+          key: const Key('work-open-panel'),
+          decoration: BoxDecoration(
+            color: c.panel,
+            border: beside
+                ? Border(left: BorderSide(color: c.line))
+                : Border(top: BorderSide(color: c.line)),
+          ),
+          child: _openPanel(context, g),
+        );
+        return beside
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: board),
+                  SizedBox(
+                    width: (box.maxWidth * 0.42).clamp(280.0, 420.0),
+                    child: panel,
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: board),
+                  SizedBox(height: box.maxHeight * 0.5, child: panel),
+                ],
+              );
+      },
+    );
+  }
+
+  /// The floating proposal's card, just under the open bar.
+  Widget _floatingCard(BuildContext context) {
+    final g = _openGroup;
+    final bar = _openBar.currentContext?.findRenderObject() as RenderBox?;
+    if (g == null || bar == null || !bar.attached) {
+      return const SizedBox.shrink();
+    }
+    final screen = MediaQuery.sizeOf(context);
+    final at = bar.localToGlobal(Offset.zero);
+    final width = (screen.width - 16).clamp(0.0, 420.0);
+    final left = at.dx.clamp(8.0, screen.width - width - 8);
+    final top = at.dy + bar.size.height + 6;
+    final room = screen.height - top - 8;
+    // Not enough room under the bar: over it instead.
+    final above = room < 220;
+    final c = AppColors.of(context);
+    final card = TapRegion(
+      groupId: _tapGroup,
+      onTapOutside: (_) => _close(),
+      child: Material(
+        key: const Key('work-open-card'),
+        color: c.panel,
+        elevation: 8,
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: _openPanel(context, g, maxHeight: above ? at.dy - 14 : room),
+      ),
+    );
+    return Positioned(
+      left: left,
+      width: width,
+      top: above ? null : top,
+      bottom: above ? screen.height - at.dy + 6 : null,
+      child: card,
     );
   }
 
@@ -303,26 +475,59 @@ class _WorkViewState extends State<WorkView> {
       onDates: g == null || widget.onPlan == null
           ? null
           : (a, b) => widget.onPlan!(g, a, b),
-      wrapBody: (face) => LongPressDraggable<String>(
-        data: s.key,
-        feedback: Material(
-          color: color,
-          borderRadius: BorderRadius.circular(5),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+      wrapBody: (face) {
+        final open = _open == s.key;
+        final ring = open
+            ? DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: face,
+              )
+            : face;
+        Widget body = LongPressDraggable<String>(
+          data: s.key,
+          feedback: Material(
+            color: color,
+            borderRadius: BorderRadius.circular(5),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
-        ),
-        childWhenDragging: Opacity(opacity: 0.4, child: face),
-        child: face,
-      ),
+          childWhenDragging: Opacity(opacity: 0.4, child: face),
+          child: ring,
+        );
+        if (g == null || widget.wiring == null) return body;
+        body = TapRegion(
+          groupId: _tapGroup,
+          child: GestureDetector(
+            key: Key('work-open-${s.key}'),
+            onTap: () => _toggle(s.key),
+            child: KeyedSubtree(key: open ? _openBar : null, child: body),
+          ),
+        );
+        if (open && workOpenStyle == WorkOpenStyle.floating) {
+          body = OverlayPortal(
+            controller: _float,
+            overlayChildBuilder: _floatingCard,
+            child: body,
+          );
+        }
+        return body;
+      },
     );
   }
 }

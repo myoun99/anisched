@@ -12,6 +12,8 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
+import 'package:anisched/src/ui/part_line.dart';
+import 'package:anisched/src/ui/views/work_view.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
@@ -179,6 +181,41 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 8: the same cuts at two stages, one line (「LO・原画」);
+  // progress as one bar per stage, or one bar for all.
+  'bundle': (AppView.list, (t, size) async {}),
+  'bundle-sum': (AppView.list, (t, size) async {}),
+  // …opened: its stages, the first one opened too.
+  'bundle-open': (
+    AppView.list,
+    (t, size) async {
+      final bundle = byKeyPrefix('line-bundle:').first;
+      await t.ensureVisible(bundle);
+      await t.pump();
+      await t.tap(bundle);
+      await t.pump();
+      final id = (t.widget(bundle).key! as ValueKey<String>).value.split(
+        ':',
+      )[2];
+      final stage = byKeyPrefix('line-part:$id:').last;
+      await t.ensureVisible(stage);
+      await t.pump();
+      await t.tap(stage);
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Round 8: a work bar tapped — three ways to open it.
+  for (final style in WorkOpenStyle.values)
+    'work-open-${style.name}': (
+      AppView.work,
+      (t, size) async {
+        await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
+        await t.pump();
+        await t.pump();
+        await t.pump();
+      },
+    ),
   // Round 7: the register screen's top (how many rows the roles take).
   'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
@@ -250,6 +287,7 @@ void main() {
   final out = Directory('build/captures')..createSync(recursive: true);
   setUpAll(loadFonts);
 
+
   final only = Platform.environment['CAPTURE']?.split(',').toSet();
   for (final dark in [false, true]) {
     for (final MapEntry(key: base, value: (view, act)) in scenarios.entries) {
@@ -272,10 +310,20 @@ void main() {
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
+          if (base.startsWith('bundle')) prepareBundles(store);
+          bundleProgress = base == 'bundle-sum'
+              ? BundleProgress.sum
+              : BundleProgress.perStage;
+          workOpenStyle = WorkOpenStyle.values.firstWhere(
+            (s) => base == 'work-open-${s.name}',
+            orElse: () => WorkOpenStyle.side,
+          );
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
           }
+          // Real shadows (tests draw them as solid outlines by default).
+          debugDisableShadows = false;
           final shot = GlobalKey();
           await t.pumpWidget(
             RepaintBoundary(
@@ -310,6 +358,7 @@ void main() {
             File('${out.path}/$name-$label.png')
                 .writeAsBytesSync(png!.buffer.asUint8List());
           });
+          debugDisableShadows = true;
         });
       }
     }
@@ -336,4 +385,21 @@ void prepareHolds(CatalogueStore store) {
     until: now.add(const Duration(days: 4)),
   );
   store.setTaskWaiting(a.tasks.last.id, waiting: true, reason: '修正待ち');
+}
+
+/// 별빛 #07 parts B and C get 原画 after their LO: two bundles.
+void prepareBundles(CatalogueStore store) {
+  final lo = [
+    for (final g in store.partGroups())
+      if (g.workTitle == '별빛 정류장' && g.stageName == 'LO') g,
+  ];
+  for (final (i, g) in lo.indexed) {
+    final genga = store.stages(g.workId).firstWhere((s) => s.name == '원화').id;
+    store.addTasksForPart(g.partId!, genga);
+    store.setPartDue(
+      g.partId!,
+      genga,
+      DateTime(now.year, now.month, now.day + 5 + i * 4, 23, 59),
+    );
+  }
 }

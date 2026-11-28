@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../controllers/unit_bundles.dart';
 import '../models/progress.dart';
 import 'due_button.dart';
 import 'fit_text.dart';
@@ -55,10 +56,24 @@ class PartHeader extends StatelessWidget {
 }
 
 /// Name, progress and the date signal for one group. Tapping opens it.
+/// How a bundle line shows its stages' progress — two proposals until
+/// the user picks one.
+enum BundleProgress {
+  /// One thin bar per stage, stacked.
+  perStage,
+
+  /// One bar of every stage's cuts together.
+  sum,
+}
+
+/// The proposal in use (captures switch it).
+BundleProgress bundleProgress = BundleProgress.perStage;
+
 class PartLine extends StatelessWidget {
   const PartLine({
     super.key,
     required this.group,
+    this.bundle,
     required this.now,
     required this.dayStartMinutes,
     required this.expanded,
@@ -75,7 +90,12 @@ class PartLine extends StatelessWidget {
   /// Sets the unit's deadline (tap on the D label); null keeps it fixed.
   final ValueChanged<DateTime>? onDue;
 
+  /// The unit (for a bundle, its [UnitBundle.lead]: the D shown).
   final PartGroup group;
+
+  /// Several stages of the same cuts on one line (「LO・原画」); null or
+  /// single for a plain unit's line.
+  final UnitBundle? bundle;
   final DateTime now;
   final int dayStartMinutes;
   final bool expanded;
@@ -102,6 +122,7 @@ class PartLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
+    final b = bundle == null || bundle!.single ? null : bundle;
     final fill = switch (picked) {
       Picked.all => c.selected,
       Picked.some => Color.lerp(c.panel, c.selected, 0.5)!,
@@ -110,7 +131,7 @@ class PartLine extends StatelessWidget {
     final line = Material(
       color: fill,
       child: InkWell(
-        key: Key('line-${g.key}'),
+        key: Key('line-${b?.key ?? g.key}'),
         onTap: onTap,
         onLongPress: onLongPress,
         hoverColor: c.hover,
@@ -149,10 +170,24 @@ class PartLine extends StatelessWidget {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              TextSpan(
-                                text: '  ${stageText(g.stageName)}',
-                                style: TextStyle(color: c.muted),
-                              ),
+                              if (b == null)
+                                TextSpan(
+                                  text: '  ${stageText(g.stageName)}',
+                                  style: TextStyle(color: c.muted),
+                                )
+                              else ...[
+                                const TextSpan(text: '  '),
+                                // The stage whose D is shown reads darker.
+                                for (final (i, s) in b.stages.indexed)
+                                  TextSpan(
+                                    text:
+                                        '${i == 0 ? '' : '・'}'
+                                        '${stageText(s.stageName)}',
+                                    style: TextStyle(
+                                      color: s == g ? null : c.muted,
+                                    ),
+                                  ),
+                              ],
                             ],
                           ),
                           tooltip: false,
@@ -170,19 +205,21 @@ class PartLine extends StatelessWidget {
                     child: Row(
                       spacing: 5,
                       children: [
-                        SizedBox(width: 40, child: PartProgress(g, height: 4)),
+                        SizedBox(width: 40, child: _progress(b)),
                         Flexible(
                           child: Text(
-                            '${g.handed}/${g.total}',
+                            b == null
+                                ? '${g.handed}/${g.total}'
+                                : '${b.handed}/${b.total}',
                             maxLines: 1,
                             overflow: TextOverflow.clip,
                             style: TextStyle(fontSize: 12, color: c.muted),
                           ),
                         ),
-                        if (g.waiting > 0)
+                        if (_waiting(b) > 0)
                           HoldMark(
-                            key: Key('hold-mark-${g.key}'),
-                            count: g.waiting,
+                            key: Key('hold-mark-${b?.key ?? g.key}'),
+                            count: _waiting(b),
                           ),
                       ],
                     ),
@@ -248,6 +285,21 @@ class PartLine extends StatelessWidget {
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
+  }
+
+  int _waiting(UnitBundle? b) =>
+      b == null ? group.waiting : b.stages.fold(0, (n, s) => n + s.waiting);
+
+  Widget _progress(UnitBundle? b) {
+    if (b == null) return PartProgress(group, height: 4);
+    return switch (bundleProgress) {
+      BundleProgress.perStage => Column(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 2,
+        children: [for (final s in b.stages) PartProgress(s, height: 3)],
+      ),
+      BundleProgress.sum => PartProgress(b.together, height: 4),
+    };
   }
 }
 
