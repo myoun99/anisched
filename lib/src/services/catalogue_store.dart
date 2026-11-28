@@ -2777,10 +2777,51 @@ GROUP BY s.name;''',
   int _depth = 0;
   bool _placesHeld = false;
 
-  /// Before a date changes: [holdPlaces], once per outermost transaction.
+  /// Before a date changes: [holdPlaces], once per outermost transaction —
+  /// unless everything is held already ([_placesHeldAlready]).
   void _holdBeforeDates() {
     if (_placesHeld) return;
     _placesHeld = true;
-    holdPlaces();
+    if (!placesHeld) holdPlaces();
   }
+
+  /// Whether everything is held already ([holdPlaces] would change
+  /// nothing that shows): see [_placesHeldAlready].
+  bool get placesHeld => _placesHeldAlready();
+
+  /// The cheap check that lets most date writes skip [holdPlaces]: every
+  /// open unit has a place in the row order, and every open unit that
+  /// could be on the calendar (some start and some end, at any level — a
+  /// superset of the bars actually placed, so a miss only costs time) is
+  /// pinned. One grouped query instead of the whole layout. The keys are
+  /// [TaskRow.groupKey]'s, written in SQL; a test holds the two together.
+  bool _placesHeldAlready() =>
+      db.select('''
+WITH units AS (
+  SELECT CASE WHEN t.storyboard_id IS NOT NULL THEN 'storyboard:' || t.id
+              WHEN c.part_id IS NULL
+                THEN 'nopart:' || c.episode_id || ':' || t.stage_id
+              ELSE 'part:' || c.part_id || ':' || t.stage_id END AS key,
+         MAX(t.kickoff_at IS NOT NULL OR t.plan_start_at IS NOT NULL
+             OR k.kickoff_at IS NOT NULL OR pl.start_at IS NOT NULL)
+           AND MAX(t.due_at IS NOT NULL OR t.plan_end_at IS NOT NULL
+             OR d.due_at IS NOT NULL OR pl.end_at IS NOT NULL) AS dated
+  FROM live_tasks t
+  LEFT JOIN cuts c ON c.id = t.cut_id
+  LEFT JOIN part_stage_dues d
+    ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+  LEFT JOIN part_stage_kickoffs k
+    ON k.part_id = c.part_id AND k.stage_id = t.stage_id
+  LEFT JOIN part_stage_plans pl
+    ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
+  WHERE t.handed_off_at IS NULL AND t.status <> 'submitted'
+  GROUP BY key
+)
+SELECT NOT EXISTS (
+  SELECT 1 FROM units u
+  WHERE NOT EXISTS (SELECT 1 FROM group_order o WHERE o.group_key = u.key)
+     OR (u.dated AND NOT EXISTS (
+           SELECT 1 FROM lane_pins l WHERE l.group_key = u.key))
+) AS held;''').first['held'] ==
+      1;
 }

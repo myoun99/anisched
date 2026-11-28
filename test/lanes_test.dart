@@ -244,6 +244,22 @@ void main() {
     // 「자동 정렬」 lays everything out afresh.
     store.clearLanePins();
     expect(lanes(), {'C': 0, 'B': 0, 'A': 1});
+    // The cheap check that lets date writes skip the work agrees with it:
+    // held after holding (its keys are the groups' keys), not after a new
+    // unit or a cleared pin.
+    expect(store.placesHeld, isFalse);
+    store.holdPlaces();
+    expect(store.placesHeld, isTrue);
+    final ep2 = store.addEpisode(w, '#2');
+    final d = store.addPart(ep2, 'D');
+    store
+      ..addCut(ep2, 'CD', partId: d)
+      ..addTasksForPart(d, lo);
+    expect(store.placesHeld, isFalse);
+    store.holdPlaces();
+    expect(store.placesHeld, isTrue);
+    store.unpinLane(store.partGroups().first.key);
+    expect(store.placesHeld, isFalse);
   });
 
   test('lines: add, rename, remove; pins follow the removal', () {
