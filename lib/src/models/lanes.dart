@@ -31,10 +31,15 @@ class LaneLayout {
     required this.lanes,
     required this.busyDays,
     this.pinned = const {},
+    this.overlapping = const {},
   });
 
   /// Bars the user pinned to a lane.
   final Set<String> pinned;
+
+  /// Pinned bars that overlap another bar in their lane — kept there all
+  /// the same (a bar never moves by itself); the view marks them.
+  final Set<String> overlapping;
 
   /// The bars laid out, in placement order.
   final List<Span> spans;
@@ -82,9 +87,11 @@ class LaneLayout {
 /// Lays [spans] out on lanes — the calendar's one placement rule (the
 /// views keep no copy):
 ///
-/// 1. Bars in [pinned] (key → lane, from the user dragging them) go to
-///    their lane first. A pin past the lane count, or one that overlaps
-///    another pinned bar there, overflows.
+/// 1. Bars in [pinned] (key → lane: dragged there, or held where they
+///    were placed) go to their lane first and stay there even when they
+///    overlap another pinned bar ([LaneLayout.overlapping] — 유저
+///    2026-11-28: a bar never moves by itself). Only a pin past the lane
+///    count overflows.
 /// 2. The rest, earliest start first (longer first, then key, on ties),
 ///    go into the first lane with room — no bar there overlapping it.
 ///    Without pins this is "after the lane's last bar ends".
@@ -133,9 +140,18 @@ LaneLayout layoutLanes(
     for (final s in spans)
       if (pinned.containsKey(s.key)) s,
   ]..sort(byStart);
+  final overlapping = <String>{};
   for (final s in pins) {
     final lane = pinned[s.key]!;
-    if (lane >= 0 && lane < lanes && fits(lane, s)) {
+    if (lane >= 0 && lane < lanes) {
+      if (!fits(lane, s)) {
+        overlapping.add(s.key);
+        for (final o in rows[lane]) {
+          if (!(o.end.isBefore(s.start) || o.start.isAfter(s.end))) {
+            overlapping.add(o.key);
+          }
+        }
+      }
       put(s, lane);
     } else {
       overflowPut(s);
@@ -184,6 +200,7 @@ LaneLayout layoutLanes(
     lanes: lanes,
     busyDays: busy,
     pinned: {for (final s in pins) s.key},
+    overlapping: overlapping,
   );
 }
 

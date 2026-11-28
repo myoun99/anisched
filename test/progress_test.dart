@@ -174,7 +174,7 @@ void main() {
       },
     );
 
-    test('groups come in deadline order, no deadline last', () {
+    test('sorted afresh, groups come in deadline order, no deadline last', () {
       partWithCuts('late', ['C1'], lo, 5);
       store.addPart(ep, 'empty-no-tasks');
       final noDue = store.addPart(ep, 'nodue');
@@ -182,6 +182,7 @@ void main() {
         ..addCut(ep, 'C2', partId: noDue)
         ..addTasksForPart(noDue, lo);
       partWithCuts('early', ['C3'], genga, 1);
+      store.clearGroupOrder(); // 「자동 정렬」
       final groups = store.partGroups();
       expect(groups.map((g) => g.partLabel), ['early', 'late', 'nodue']);
       expect(groups.first.tasks.single.dueFromPart, isTrue);
@@ -849,10 +850,23 @@ void main() {
         );
       });
 
+      test('changing a deadline keeps the rows where they are', () {
+        final a = partWithCuts('A', ['C1'], lo, 1);
+        partWithCuts('B', ['C2'], lo, 2);
+        List<String?> labels() =>
+            store.partGroups().map((g) => g.partLabel).toList();
+        expect(labels(), ['A', 'B']);
+        store.setPartDue(a, lo, now.add(const Duration(days: 9)));
+        expect(labels(), ['A', 'B']);
+        store.clearGroupOrder(); // 「자동 정렬」
+        expect(labels(), ['B', 'A']);
+      });
+
       test('drag order wins; new units follow by deadline; auto clears', () {
         partWithCuts('A', ['C1'], lo, 1);
         partWithCuts('B', ['C2'], lo, 2);
         partWithCuts('C', ['C3'], lo, 3);
+        store.clearGroupOrder();
         List<String?> labels() =>
             store.partGroups().map((g) => g.partLabel).toList();
         expect(labels(), ['A', 'B', 'C']);

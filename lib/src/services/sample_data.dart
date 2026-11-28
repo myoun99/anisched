@@ -135,4 +135,9 @@ void fillSample(CatalogueStore store, DateTime now) {
     )
     ..addEvent(episodeId: riko11, date: at(5), title: '납품')
     ..addEvent(episodeId: movie, date: at(1), title: '작화 회의');
+
+  // Shown as 「자동 정렬」 leaves it: rows by deadline, bars in free lanes.
+  store
+    ..clearGroupOrder()
+    ..clearLanePins();
 }
