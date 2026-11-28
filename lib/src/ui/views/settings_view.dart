@@ -16,6 +16,7 @@ import '../instant.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// The user's settings: rest weekdays, days off, parallel lanes, when a
 /// day starts, per-second rounding, usual speeds and this month's pay.
@@ -268,10 +269,8 @@ class _SettingsViewState extends State<SettingsView> {
                   _Line(
                     children: [
                       Expanded(
-                        child: Text(
+                        child: FitText(
                           p.stageName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -335,10 +334,8 @@ class _SettingsViewState extends State<SettingsView> {
                     ),
                     if (e.value.unpriced > 0)
                       Flexible(
-                        child: Text(
+                        child: FitText(
                           S.unpriced.f({'n': e.value.unpriced}),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.muted),
                         ),
                       ),
@@ -377,10 +374,8 @@ class _SettingsViewState extends State<SettingsView> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       Expanded(
-                        child: Text(
+                        child: FitText(
                           st.detail ?? DocumentMenu.displayName(doc.document),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.muted),
                         ),
                       ),
@@ -552,10 +547,8 @@ class _Field extends StatelessWidget {
           children: [
             Icon(icon, size: 15, color: c.muted),
             Expanded(
-              child: Text(
+              child: FitText(
                 label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),

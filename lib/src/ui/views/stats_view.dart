@@ -11,6 +11,7 @@ import '../instant.dart';
 import '../text/strings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../fit_text.dart';
 
 /// How far back the statistics look.
 enum StatsRange {
@@ -355,10 +356,8 @@ class _StatsViewState extends State<StatsView> {
       return Text('± 0 · ${S.vsPrev.t}', style: TextStyle(color: c.muted));
     }
     final better = (diff < 0) == lowerIsBetter;
-    return Text(
+    return FitText(
       '${diff > 0 ? '▲' : '▼'} ${diff.abs()}${points ? 'pt' : '%'} · ${S.vsPrev.t}',
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
       style: TextStyle(color: better ? c.done : c.retake),
     );
   }
@@ -637,12 +636,7 @@ class _Kpi extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 2,
         children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: c.muted),
-          ),
+          FitText(label, style: TextStyle(fontSize: 11, color: c.muted)),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -730,20 +724,13 @@ class _BarRow extends StatelessWidget {
       children: [
         SizedBox(
           width: 88,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
-          ),
+          child: FitText(label, style: const TextStyle(fontSize: 12)),
         ),
         Expanded(child: bar),
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: valueWidth),
-          child: Text(
+          child: FitText(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
             style: TextStyle(
               fontSize: 12,

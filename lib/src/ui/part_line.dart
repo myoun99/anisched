@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
 import 'due_button.dart';
+import 'fit_text.dart';
 import 'fold.dart';
 import 'hold.dart';
 import 'format.dart';
@@ -137,7 +138,9 @@ class PartLine extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       spacing: 2,
                       children: [
-                        Text.rich(
+                        // The line's long press picks it: no tooltips here;
+                        // the opened details show every word.
+                        FitText.rich(
                           TextSpan(
                             children: [
                               TextSpan(
@@ -152,14 +155,12 @@ class PartLine extends StatelessWidget {
                               ),
                             ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          tooltip: false,
                         ),
-                        Text(
+                        FitText(
                           '${g.workTitle} ${episodeLabel(g.episodeNumber)}',
                           style: TextStyle(fontSize: 12, color: c.muted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          tooltip: false,
                         ),
                       ],
                     ),
@@ -557,7 +558,8 @@ class _CutChip extends StatelessWidget {
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),
             Flexible(
-              child: Text.rich(
+              child: FitText.rich(
+                tooltip: false,
                 TextSpan(
                   children: [
                     TextSpan(

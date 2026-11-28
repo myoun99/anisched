@@ -7,6 +7,7 @@ import '../../core/size_class.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// Local calendar day as a UTC midnight, so day differences are exact.
 DateTime chartDay(DateTime t) {
@@ -1014,24 +1015,23 @@ class _ChartBarState extends State<ChartBar> {
   );
 
   Widget _face() {
+    // The label uses the bar's whole width, no padding; tight bars
+    // condense it (FitText). A bar that is a drag source keeps its long
+    // press, so no tooltip there.
     final face = SizedBox.expand(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: widget.label == null
-              ? null
-              : Text(
-                  widget.label!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: widget.textColor,
-                  ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: widget.label == null
+            ? null
+            : FitText(
+                widget.label!,
+                tooltip: widget.wrapBody == null,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: widget.textColor,
                 ),
-        ),
+              ),
       ),
     );
     return widget.wrapBody?.call(face) ?? face;

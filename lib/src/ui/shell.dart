@@ -30,6 +30,7 @@ import 'views/stats_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
 import 'text/strings.dart';
+import 'fit_text.dart';
 
 /// The app's views: the list, the production timeline, the user's own
 /// work on parallel lanes, registration and settings.
@@ -757,16 +758,12 @@ class _ViewButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Center(
                 widthFactor: 1,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    view.label,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: selected ? ink : c.muted,
-                    ),
+                child: FitText(
+                  view.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: selected ? ink : c.muted,
                   ),
                 ),
               ),

@@ -10,6 +10,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'chart.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// The production schedule only: one bar per unit from kickoff to
 /// deadline, the deadline's D-day on the right of the name. Dragging a
@@ -209,7 +210,8 @@ class _TimelineLabel extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text.rich(
+                FitText.rich(
+                  tooltip: false,
                   TextSpan(
                     children: [
                       if (!narrow)
@@ -226,14 +228,11 @@ class _TimelineLabel extends StatelessWidget {
                       ),
                     ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13),
                 ),
-                Text(
+                FitText(
                   '${g.stageName} · ${groupTitle(g)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  tooltip: false,
                   style: TextStyle(fontSize: 11, color: c.muted),
                 ),
               ],
