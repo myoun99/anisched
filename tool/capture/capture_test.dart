@@ -80,6 +80,16 @@ typedef Scenario = Future<void> Function(WidgetTester t, Size size);
 final scenarios = <String, (AppView, Scenario)>{
   // Round 2: an opened line (cuts folded, D label is a button) and a cut
   // on the time bar, paused.
+  // A card's cut chips: numbers in their status colours, a shared pair.
+  'cut-chips': (
+    AppView.list,
+    (t, size) async {
+      await t.tap(byKeyPrefix('line-').at(1));
+      await t.pump();
+      await t.tap(byKeyPrefix('fold-cuts-').first);
+      await t.pump();
+    },
+  ),
   'details-open': (
     AppView.list,
     (t, size) async {
