@@ -47,7 +47,7 @@ void main() {
     expect(store.works(), isEmpty);
   });
 
-  test('missing numbers out, A/B/C splits in, shared cuts, renumbering', () {
+  test('missing numbers out, shared cuts, renumbering', () {
     final w = store.createWork('W');
     final r = store.addEpisodeWithCuts(w, '#1', 'C010~C016', partLabel: 'B');
     final lo = stage(w, 'LO');
@@ -64,17 +64,6 @@ void main() {
       'C016',
     ]);
 
-    // C012 splits into A, B, C — new cuts get the same stages.
-    final c012 = store.cuts(r.episodeId)[2].id;
-    final split = store.splitCut(c012, ['A', 'B', 'C']);
-    expect(split.first, c012);
-    expect(numbers(r.episodeId), [
-      'C010', 'C011', 'C012A', 'C012B', 'C012C', 'C014', 'C015', 'C016', //
-    ]);
-    final g = store.partGroups().single;
-    expect(g.tasks.map((t) => t.unitLabel), contains('C012C'));
-    expect(g.total, 8);
-
     // C014–C016 are one shared cut: linked, each keeping its own row.
     final ids = {for (final c in store.cuts(r.episodeId)) c.number: c.id};
     final head = store.linkSharedCuts([
@@ -85,7 +74,7 @@ void main() {
     expect(head, ids['C014']);
     expect(numbers(r.episodeId).last, 'C016');
     final rows = store.partGroups().single.tasks;
-    expect(rows, hasLength(8));
+    expect(rows, hasLength(6));
     expect({
       for (final t in rows) t.unitLabel: t.sharedLabel,
     }, containsPair('C015', 'C014-016'));
@@ -99,7 +88,7 @@ void main() {
       ids['C011'],
     ); // the old C011 is now C010
     // A clash changes nothing.
-    expect(() => store.renumberCuts({ids['C010']!: 'C012A'}), throwsStateError);
+    expect(() => store.renumberCuts({ids['C010']!: 'C012'}), throwsStateError);
     expect(numbers(r.episodeId).first, 'C010');
   });
 

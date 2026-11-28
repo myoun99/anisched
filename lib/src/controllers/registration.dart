@@ -32,9 +32,6 @@ class CutDraft {
   /// Missing numbers (결번), kept on the grid crossed out.
   final removed = <String>{};
 
-  /// Cell → how many lettered cuts it becomes (2 = A/B).
-  final splits = <String, int>{};
-
   /// First cell → second cell of a shared pair (겸용).
   final shared = <String, String>{};
 
@@ -75,10 +72,7 @@ class CutDraft {
   String shown(String id) => shownNumber(valueOf(id), style);
 
   /// How many cuts will be saved.
-  int get total => [
-    for (final c in cells)
-      if (!removed.contains(c)) splits[c] ?? 1,
-  ].fold(0, (a, b) => a + b);
+  int get total => cells.where((c) => !removed.contains(c)).length;
 
   /// Cells whose name is used twice on the grid or already [taken]; names
   /// (and [taken], as the screens show them) are compared by [key] — by default their values in the default cut
@@ -150,7 +144,6 @@ class CutDraft {
     for (final id in ids.toList()) {
       if (!extras.remove(id)) removed.add(id);
       renames.remove(id);
-      splits.remove(id);
       shared.remove(id);
       shared.removeWhere((_, v) => v == id);
     }
@@ -170,14 +163,6 @@ class CutDraft {
     final all = picked.every(removed.contains);
     for (final n in picked) {
       all ? removed.remove(n) : removed.add(n);
-    }
-  }
-
-  /// Splits [picked] into A/B, or undoes it when all were split.
-  void toggleSplit(Iterable<String> picked) {
-    final all = picked.every(splits.containsKey);
-    for (final n in picked) {
-      all ? splits.remove(n) : splits[n] = 2;
     }
   }
 
@@ -246,8 +231,8 @@ class CutNameClash implements Exception {
   String toString() => 'CutNameClash: ${names.join(', ')}';
 }
 
-/// Saves [d]: the part, the cuts, a task per cut and stage, the splits
-/// and shared pairs, and the kickoff and deadline. Returns the new task
+/// Saves [d]: the part, the cuts, a task per cut and stage, the shared
+/// pairs, and the kickoff and deadline. Returns the new task
 /// ids. Clashing names change nothing and throw [CutNameClash].
 List<int> register(CatalogueStore store, RegistrationDraft d) {
   if (d.stages.isEmpty) throw ArgumentError('No stage picked.');
@@ -293,13 +278,6 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
       for (final c in added) store.addTask(stage, cutId: c),
     ];
     tasks.addAll(own);
-  }
-  for (final MapEntry(key: c, value: parts) in d.cuts.splits.entries) {
-    final id = cellId[c];
-    if (id == null || parts < 2) continue;
-    store.splitCut(id, [
-      for (var i = 0; i < parts; i++) String.fromCharCode(65 + i),
-    ]);
   }
   for (final MapEntry(key: a, value: b) in d.cuts.shared.entries) {
     final ia = cellId[a];
