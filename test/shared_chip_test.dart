@@ -3,6 +3,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -26,6 +27,9 @@ void main() {
     );
     final [a, b, ...] = g.tasks;
     store.linkSharedCuts([a.cutId!, b.cutId!]);
+    // The pair has no length: its chip shows none.
+    store.setCutLength(a.cutId!, null);
+    store.setCutLength(b.cutId!, null);
     await t.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -46,6 +50,43 @@ void main() {
       find.descendant(of: one, matching: find.textContaining('/')),
       findsOneWidget,
       reason: 'both numbers on it',
+    );
+    // Shared or not, a chip looks the same: no link mark, no accent edge,
+    // no status dot — the number itself takes the status colour.
+    const c = AppColors.light;
+    for (final chip in [one, find.byKey(Key('cut-${g.tasks[2].id}'))]) {
+      expect(
+        find.descendant(of: chip, matching: find.byIcon(Icons.link)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: chip, matching: find.byType(Dot)),
+        findsNothing,
+      );
+      final box = t.widget<DecoratedBox>(
+        find.descendant(of: chip, matching: find.byType(DecoratedBox)).first,
+      );
+      expect(
+        ((box.decoration as BoxDecoration).border! as Border).top.color,
+        c.line,
+      );
+    }
+    final rich = t.widget<RichText>(
+      find.descendant(of: one, matching: find.byType(RichText)).first,
+    );
+    TextSpan? number;
+    rich.text.visitChildren((span) {
+      if (span is TextSpan && (span.text?.contains('/') ?? false)) {
+        number = span;
+        return false;
+      }
+      return true;
+    });
+    expect(number!.style!.color, c.ink(a.status));
+    // A cut with no length shows nothing for it (no 「—」).
+    expect(
+      find.descendant(of: one, matching: find.textContaining('—')),
+      findsNothing,
     );
     await t.ensureVisible(one);
     await t.longPress(one);

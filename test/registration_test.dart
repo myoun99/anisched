@@ -30,7 +30,8 @@ void main() {
       ..add('BANK1')
       ..add('C002')
       ..rename('C001', 'C12A');
-    expect(c.cells, ['C001', 'C002', 'C003', 'BANK1']);
+    // Renamed C12A: placed by its new number (유저 2026-11-28).
+    expect(c.cells, ['C002', 'C003', 'C001', 'BANK1']);
     expect(c.nameOf('C001'), 'C12A');
     expect(c.clashes(), isEmpty);
     c.rename('C003', 'BANK1');

@@ -371,6 +371,7 @@ class ChartHeader extends StatelessWidget {
     final c = AppColors.of(context);
     final style = DefaultTextStyle.of(context).style;
     final at = layout(rows);
+    final slide = context.getInheritedWidgetOfExactType<_SlideScope>()?.slide;
     return SizedBox(
       height: at.height,
       child: Stack(
@@ -399,6 +400,7 @@ class ChartHeader extends StatelessWidget {
               child: CustomPaint(
                 painter: _SpanPainter(
                   window: window,
+                  slide: slide,
                   ink: style.color ?? c.muted,
                   line: c.line,
                   panel: c.panel,
@@ -460,11 +462,14 @@ class ChartHeader extends StatelessWidget {
 
 /// The ruler's year and month rows as a spreadsheet's merged cells: each
 /// year (month) one cell on plain ground — no bands, no day-off colour, no
-/// day lines inside — its name centred in the whole cell, a line only
-/// where a cell starts.
+/// day lines inside — its name centred in the whole cell, or, when that
+/// centre is out of sight, held at the cell's visible end so it always
+/// shows; a line only where a cell starts. Its own layer: a slide
+/// repaints it alone.
 class _SpanPainter extends CustomPainter {
   _SpanPainter({
     required this.window,
+    this.slide,
     required this.ink,
     required this.line,
     required this.panel,
@@ -472,9 +477,12 @@ class _SpanPainter extends CustomPainter {
     required this.lang,
     this.yearTop,
     this.monthTop,
-  });
+  }) : super(repaint: slide);
 
   final ChartWindow window;
+
+  /// The days' slide (part of a column): where the visible part starts.
+  final ValueListenable<double>? slide;
   final Color ink;
   final Color line;
 
@@ -490,6 +498,8 @@ class _SpanPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final dw = size.width / window.days;
+    final lo = (slide?.value ?? 0) * dw;
+    final hi = lo + window.shown * dw;
     final rule = Paint()
       ..color = line
       ..strokeWidth = 1;
@@ -519,9 +529,11 @@ class _SpanPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
           maxLines: 1,
         )..layout();
-        // Centred in the whole merged cell, as a spreadsheet centres
-        // merged cells: in sight or not.
-        t.paint(canvas, Offset((x0 + x1 - t.width) / 2, top));
+        // Never drawn past its own cell.
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(x0, top, x1, top + h));
+        t.paint(canvas, Offset(spanLabelX(x0, x1, t.width, lo, hi), top));
+        canvas.restore();
         t.dispose();
       }
     }
@@ -553,11 +565,26 @@ class _SpanPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SpanPainter old) =>
       old.window != window ||
+      old.slide != slide ||
       old.ink != ink ||
       old.panel != panel ||
       old.lang != lang ||
       old.yearTop != yearTop ||
       old.monthTop != monthTop;
+}
+
+/// Where a merged cell's name of [width] starts, the cell running from
+/// [x0] to [x1] and the days in sight from [lo] to [hi]: centred in the
+/// cell, but never cut by the edge of sight — held whole against the
+/// cell's visible end instead (and never past the cell's own edges).
+double spanLabelX(double x0, double x1, double width, double lo, double hi) {
+  const pad = 2.0;
+  // The part of the cell in sight; the name stays whole within it.
+  final from = (x0 > lo ? x0 : lo) + pad;
+  final to = (x1 < hi ? x1 : hi) - pad - width;
+  final x = (x0 + x1 - width) / 2;
+  if (to < from) return x0 + pad < from ? from : x0 + pad;
+  return x < from ? from : (x > to ? to : x);
 }
 
 /// The merged cells of a year or month row over [window]: for each year
