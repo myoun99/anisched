@@ -8,6 +8,7 @@ import '../services/schema.dart';
 import 'instant.dart';
 import 'text/strings.dart';
 import 'widgets.dart';
+import 'notice.dart';
 
 /// What went wrong with a document, as the user can act on it.
 enum DocumentTroubleKind {
@@ -105,11 +106,10 @@ Future<void> showDocumentTrouble(
       await retry?.call();
     case _TroubleAnswer.restore:
       if (await restore!() || !context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('doc-restore-none'),
-          content: Text(S.troubleNoCopy.t),
-        ),
+      showNotice(
+        context,
+        S.troubleNoCopy.t,
+        key: const Key('doc-restore-none'),
       );
     case null:
       break;
