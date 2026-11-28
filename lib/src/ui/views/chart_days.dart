@@ -281,13 +281,25 @@ class _DayLayers extends StatelessWidget {
   }
 }
 
-/// Month labels over day numbers, drawn in one painter.
+/// Which ruler rows each chart tab shows (this device's; the main file
+/// keeps them in DeviceSettings). The day numbers and the events' line
+/// always show.
+final rulerRows = {
+  for (final tab in RulerTab.values)
+    tab: ValueNotifier<RulerRows>((year: false, month: true, weekday: true)),
+};
+
+/// The date ruler, top to bottom: the year and the month (each run of
+/// days one cell, its name centred in the part in sight), the day
+/// numbers, the weekdays, then holidays' and events' names. Year, month
+/// and weekday rows show as [rows] says.
 class ChartHeader extends StatelessWidget {
   const ChartHeader({
     super.key,
     required this.window,
     required this.today,
     this.days = const ChartDays(),
+    this.rows = (year: false, month: true, weekday: true),
     this.onDayLongPress,
     this.onEvent,
   });
@@ -295,6 +307,7 @@ class ChartHeader extends StatelessWidget {
   final ChartWindow window;
   final DateTime today;
   final ChartDays days;
+  final RulerRows rows;
 
   /// A long press on a day of the ruler: a new event of no episode there
   /// (a day off, a note); null leaves the ruler read-only.
@@ -303,16 +316,50 @@ class ChartHeader extends StatelessWidget {
   /// A ruler event tapped: edit or remove it.
   final ValueChanged<EventRow>? onEvent;
 
-  /// The header's height: month, day numbers, and the line of names.
-  static const height = 58.0;
+  static const spanRow = 15.0;
+  static const dateRow = 17.0;
+  static const weekdayRow = 14.0;
+  static const noteRow = 16.0;
+
+  /// Where each row starts, and the whole height, for [rows].
+  static ({
+    double year,
+    double month,
+    double date,
+    double weekday,
+    double note,
+    double height,
+  })
+  layout(RulerRows rows) {
+    var y = 2.0;
+    final year = y;
+    if (rows.year) y += spanRow;
+    final month = y;
+    if (rows.month) y += spanRow;
+    final date = y;
+    y += dateRow;
+    final weekday = y;
+    if (rows.weekday) y += weekdayRow;
+    final note = y;
+    y += noteRow;
+    return (
+      year: year,
+      month: month,
+      date: date,
+      weekday: weekday,
+      note: note,
+      height: y,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final style = DefaultTextStyle.of(context).style;
     final slide = context.getInheritedWidgetOfExactType<_SlideScope>()?.slide;
+    final at = layout(rows);
     return SizedBox(
-      height: height,
+      height: at.height,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -324,31 +371,33 @@ class ChartHeader extends StatelessWidget {
                 today: window.indexOf(today),
                 days: days,
                 marks: dayMarkColors(context),
-                ink: style.color ?? c.muted,
                 muted: c.muted,
-                faint: c.faint,
                 red: Theme.of(context).colorScheme.error,
                 style: style,
                 lang: appLang.value,
                 numberWidth: chartNumberWidth(context),
-                pinned: slide != null,
+                dateTop: at.date,
+                weekdayTop: rows.weekday ? at.weekday : null,
               ),
             ),
           ),
-          if (slide != null)
+          if (rows.year || rows.month)
             RepaintBoundary(
               child: CustomPaint(
-                painter: _MonthPin(
+                painter: _SpanPainter(
                   window: window,
                   slide: slide,
                   ink: style.color ?? c.muted,
+                  line: c.line,
                   style: style,
                   lang: appLang.value,
+                  yearTop: rows.year ? at.year : null,
+                  monthTop: rows.month ? at.month : null,
                 ),
               ),
             ),
           // The ruler's long press, and its names: a holiday's, the
-          // events' titles — small, under the day number.
+          // events' titles — small, on the last line.
           LayoutBuilder(
             builder: (context, box) {
               final dw = box.maxWidth / window.days;
@@ -373,8 +422,8 @@ class ChartHeader extends StatelessWidget {
                           0.0,
                           box.maxWidth - i * dw,
                         ),
-                        top: 40,
-                        height: 16,
+                        top: at.note,
+                        height: noteRow,
                         child: _RulerNote(
                           key: Key('ruler-$i'),
                           note: n,
@@ -394,6 +443,112 @@ class ChartHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The ruler's year and month rows: each run of days of one year (one
+/// month) is one cell, its name centred in the part of it in sight — so
+/// it stays readable as the days slide; a faint line where a run starts.
+/// Its own layer, repainting with the slide alone.
+class _SpanPainter extends CustomPainter {
+  _SpanPainter({
+    required this.window,
+    required this.slide,
+    required this.ink,
+    required this.line,
+    required this.style,
+    required this.lang,
+    this.yearTop,
+    this.monthTop,
+  }) : super(repaint: slide);
+
+  final ChartWindow window;
+  final ValueListenable<double>? slide;
+  final Color ink;
+  final Color line;
+  final TextStyle style;
+  final Lang lang;
+
+  /// Each row's top; null hides it.
+  final double? yearTop;
+  final double? monthTop;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dw = size.width / window.days;
+    final lo = (slide?.value ?? 0) * dw;
+    final hi = lo + window.shown * dw;
+    final rule = Paint()
+      ..color = line
+      ..strokeWidth = 1;
+    void row(
+      double top,
+      Object Function(DateTime d) keyOf,
+      String Function(DateTime d) name,
+    ) {
+      for (final (a, b) in chartRuns(window, keyOf)) {
+        final t = TextPainter(
+          text: TextSpan(
+            text: name(window.dayAt(a)),
+            style: style.copyWith(
+              fontSize: 11,
+              color: ink,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+        final x0 = a * dw;
+        final x1 = b * dw;
+        if (a > 0) {
+          canvas.drawLine(Offset(x0, top), Offset(x0, top + 13), rule);
+        }
+        // Centred in what shows of the run, kept inside the run.
+        final from = x0 > lo ? x0 : lo;
+        final to = x1 < hi ? x1 : hi;
+        if (to <= from) continue;
+        var x = (from + to - t.width) / 2;
+        if (x + t.width > x1 - 2) x = x1 - 2 - t.width;
+        if (x < x0 + 2) x = x0 + 2;
+        t.paint(canvas, Offset(x, top));
+      }
+    }
+
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    if (yearTop case final y?) row(y, (d) => d.year, (d) => '${d.year}');
+    if (monthTop case final y?) {
+      row(y, (d) => d.year * 12 + d.month, (d) => monthName(d.month, lang));
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_SpanPainter old) =>
+      old.window != window ||
+      old.slide != slide ||
+      old.ink != ink ||
+      old.lang != lang ||
+      old.yearTop != yearTop ||
+      old.monthTop != monthTop;
+}
+
+/// [window]'s days in runs of one [keyOf] (a year, a month): each run's
+/// first and past-last column.
+List<(int, int)> chartRuns(
+  ChartWindow window,
+  Object Function(DateTime day) keyOf,
+) {
+  final runs = <(int, int)>[];
+  var start = 0;
+  for (var i = 1; i <= window.days; i++) {
+    if (i == window.days ||
+        keyOf(window.dayAt(i)) != keyOf(window.dayAt(start))) {
+      runs.add((start, i));
+      start = i;
+    }
+  }
+  return runs;
 }
 
 /// What the ruler says on a day: a holiday's name, the day's events.
@@ -451,24 +606,23 @@ class _RulerNote extends StatelessWidget {
   }
 }
 
+/// The ruler's day numbers and weekdays, each by [numberFits]: every
+/// day's while it fits its cell squeezed; else one per stretch.
 class _HeaderPainter extends CustomPainter {
   _HeaderPainter({
     required this.window,
     required this.today,
     required this.days,
     required this.marks,
-    required this.ink,
     required this.muted,
-    required this.faint,
     required this.red,
     required this.style,
     required this.lang,
     required this.numberWidth,
-    this.pinned = false,
+    required this.dateTop,
+    this.weekdayTop,
   });
 
-  /// The first month's name is drawn by [_MonthPin] instead.
-  final bool pinned;
   final double numberWidth;
   final ChartWindow window;
   final int today;
@@ -476,23 +630,26 @@ class _HeaderPainter extends CustomPainter {
 
   /// The numbers' colours for marked days.
   final Map<DayKind, Color> marks;
-  final Color ink;
   final Color muted;
-  final Color faint;
   final Color red;
   final TextStyle style;
   final Lang lang;
+  final double dateTop;
+
+  /// Null hides the weekdays.
+  final double? weekdayTop;
 
   TextPainter _text(
     String s,
     Color color, {
+    double size = 11,
     bool bold = false,
     double spacing = 0,
   }) => TextPainter(
     text: TextSpan(
       text: s,
       style: style.copyWith(
-        fontSize: 11,
+        fontSize: size,
         color: color,
         fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
         letterSpacing: spacing == 0 ? null : spacing,
@@ -502,47 +659,59 @@ class _HeaderPainter extends CustomPainter {
     maxLines: 1,
   )..layout();
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    ChartPaints.background++;
-    final dw = size.width / window.days;
-    final labels = DayLabels(window, dw, numberWidth);
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
+  /// One row of day labels at [top]: [text] of each day, [width] the
+  /// widest one's.
+  void _row(
+    Canvas canvas,
+    double dw,
+    double top,
+    double width,
+    double size,
+    String Function(DateTime d) text,
+  ) {
+    final labels = DayLabels(window, dw, width);
+    final every = labels.step == 1;
     for (var i = 0; i < window.days; i++) {
       final d = window.dayAt(i);
-      if ((i == 0 && !pinned) || d.day == 1) {
-        _text(
-          monthName(d.month, lang),
-          ink,
-          bold: true,
-        ).paint(canvas, Offset(i * dw + 4, 4));
-      }
-      // Every day's number when it fits its cell (squeezed if need be);
-      // else one where its stretch starts (and today's, always), none so
-      // near today that the two would touch.
-      final every = labels.step == 1;
+      // Every day's when it fits its cell (squeezed if need be); else
+      // one where its stretch starts (and today's, always), none so near
+      // today that the two would touch.
       final near = !every && i != today && (i - today).abs() * dw < labels.need;
       if (i != today && (!labels.labelled(i) || near)) continue;
-      final text = '${d.day}';
+      final s = text(d);
       final color = i == today ? red : (marks[days.kindOf(d)] ?? muted);
-      var t = _text(text, color, bold: i == today);
+      var t = _text(s, color, size: size, bold: i == today);
       if (!every) {
-        t.paint(canvas, Offset(i * dw + 2, 24));
+        t.paint(canvas, Offset(i * dw + 2, top));
         continue;
       }
       // In its cell: letter gaps, then narrower, as FitText does.
-      final fit = fitWord(width: t.width, gaps: text.length - 1, room: dw);
+      final fit = fitWord(width: t.width, gaps: s.length - 1, room: dw);
       if (fit.spacing != 0) {
-        t = _text(text, color, bold: i == today, spacing: fit.spacing);
+        t = _text(s, color, size: size, bold: i == today, spacing: fit.spacing);
       }
       final w = t.width * fit.scaleX;
       canvas
         ..save()
-        ..translate(i * dw + (dw - w) / 2, 24)
+        ..translate(i * dw + (dw - w) / 2, top)
         ..scale(fit.scaleX, 1);
       t.paint(canvas, Offset.zero);
       canvas.restore();
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    ChartPaints.background++;
+    final dw = size.width / window.days;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    _row(canvas, dw, dateTop, numberWidth, 11, (d) => '${d.day}');
+    if (weekdayTop case final y?) {
+      final names = weekdayNames(lang);
+      final widest = [for (final n in names) _text(n, muted, size: 10).width]
+          .reduce((a, b) => a > b ? a : b);
+      _row(canvas, dw, y, widest, 10, (d) => names[d.weekday - 1]);
     }
     canvas.restore();
   }
@@ -551,63 +720,11 @@ class _HeaderPainter extends CustomPainter {
   bool shouldRepaint(_HeaderPainter old) =>
       old.window != window ||
       old.today != today ||
-      old.ink != ink ||
       old.muted != muted ||
       old.lang != lang ||
       old.numberWidth != numberWidth ||
-      old.pinned != pinned ||
+      old.dateTop != dateTop ||
+      old.weekdayTop != weekdayTop ||
       !mapEquals(old.marks, marks) ||
       old.days != days;
-}
-
-/// The month name at the visible left edge of a sliding header: it stays
-/// in sight as the part day slides (the first column goes under the
-/// edge), pushed out by the next month's name as that comes in. Its own
-/// layer, repainting with the slide alone.
-class _MonthPin extends CustomPainter {
-  _MonthPin({
-    required this.window,
-    required this.slide,
-    required this.ink,
-    required this.style,
-    required this.lang,
-  }) : super(repaint: slide);
-
-  final ChartWindow window;
-  final ValueListenable<double> slide;
-  final Color ink;
-  final TextStyle style;
-  final Lang lang;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final dw = size.width / window.days;
-    final t = TextPainter(
-      text: TextSpan(
-        text: monthName(window.start.month, lang),
-        style: style.copyWith(
-          fontSize: 11,
-          color: ink,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    var x = slide.value * dw + 4;
-    for (var i = 1; i < window.days; i++) {
-      if (window.dayAt(i).day != 1) continue;
-      final next = i * dw + 4;
-      if (x + t.width + 6 > next) x = next - t.width - 6;
-      break;
-    }
-    t.paint(canvas, Offset(x, 4));
-  }
-
-  @override
-  bool shouldRepaint(_MonthPin old) =>
-      old.window != window ||
-      old.slide != slide ||
-      old.ink != ink ||
-      old.lang != lang;
 }
