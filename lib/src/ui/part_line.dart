@@ -180,7 +180,7 @@ class PartLine extends StatelessWidget {
                           tooltip: false,
                         ),
                         FitText(
-                          '${g.workTitle} ${episodeLabel(g.episodeNumber)}',
+                          '${g.workTitle} ${g.episodeNumber}',
                           style: TextStyle(fontSize: 12, color: c.muted),
                           tooltip: false,
                         ),

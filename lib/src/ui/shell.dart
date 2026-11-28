@@ -331,7 +331,7 @@ class _AppShellState extends State<AppShell> {
             search: (q) async => [
               for (final k in keys)
                 if (q.isEmpty || eps[k]!.contains(q))
-                  (value: k, title: episodeLabel(eps[k]!), note: null),
+                  (value: k, title: eps[k]!, note: null),
             ],
           );
     if (picked == null || picked.value == current) return;
@@ -657,14 +657,8 @@ class _AppShellState extends State<AppShell> {
         onCreateEpisode: writable
             ? (work, typed) {
                 var id = 0;
-                // A typed number is stored in the document's style (#07).
-                final n = typedEpisodeNumber(typed);
-                _write(
-                  (s) => id = s.addEpisode(
-                    work,
-                    n == null ? typed.trim() : s.episodeNumberFor(n),
-                  ),
-                );
+                // The store keeps the typed number's value (#07 → 7).
+                _write((s) => id = s.addEpisode(work, typed));
                 return id;
               }
             : null,

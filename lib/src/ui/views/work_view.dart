@@ -435,5 +435,5 @@ class _WorkViewState extends State<WorkView> {
 
 /// 「별빛 정류장 #07 · 원화 · 4 cut」.
 String workBarLabel(PartGroup g) =>
-    '${g.workTitle} ${episodeLabel(g.episodeNumber)} · ${stageText(g.stageName)} · '
+    '${g.workTitle} ${g.episodeNumber} · ${stageText(g.stageName)} · '
     '${g.kind == GroupKind.storyboard ? groupCount(g) : '${g.total} cut'}';
