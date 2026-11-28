@@ -123,6 +123,19 @@ void main() {
     expect(header.rows.month, isFalse);
     expect(header.rows.year, isFalse);
   });
+
+  testWidgets('months sit edge to edge, one line between', (t) async {
+    await pumpTimeline(t);
+    chartMonthView.value = true;
+    await t.pump();
+    final nov = find.byKey(const Key('month-2026-11'));
+    final dec = find.byKey(const Key('month-2026-12'));
+    expect(t.getBottomLeft(nov).dy, t.getTopLeft(dec).dy, reason: 'no gap');
+    final box = t.widget<DecoratedBox>(nov);
+    final border = (box.decoration as BoxDecoration).border! as Border;
+    expect(border.bottom.width, 1);
+    expect(border.top, BorderSide.none);
+  });
 }
 
 /// The colour at [x], [y] of an image's RGBA bytes, as 0xAARRGGBB.
