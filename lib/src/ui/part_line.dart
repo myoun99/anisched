@@ -56,19 +56,6 @@ class PartHeader extends StatelessWidget {
 }
 
 /// Name, progress and the date signal for one group. Tapping opens it.
-/// How a bundle line shows its stages' progress — two proposals until
-/// the user picks one.
-enum BundleProgress {
-  /// One thin bar per stage, stacked.
-  perStage,
-
-  /// One bar of every stage's cuts together.
-  sum,
-}
-
-/// The proposal in use (captures switch it).
-BundleProgress bundleProgress = BundleProgress.perStage;
-
 class PartLine extends StatelessWidget {
   const PartLine({
     super.key,
@@ -292,14 +279,12 @@ class PartLine extends StatelessWidget {
 
   Widget _progress(UnitBundle? b) {
     if (b == null) return PartProgress(group, height: 4);
-    return switch (bundleProgress) {
-      BundleProgress.perStage => Column(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 2,
-        children: [for (final s in b.stages) PartProgress(s, height: 3)],
-      ),
-      BundleProgress.sum => PartProgress(b.together, height: 4),
-    };
+    // One thin bar per stage, stacked.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 2,
+      children: [for (final s in b.stages) PartProgress(s, height: 3)],
+    );
   }
 }
 

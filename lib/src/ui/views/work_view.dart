@@ -12,26 +12,11 @@ import 'chart.dart';
 import '../fit_text.dart';
 import '../part_line.dart';
 
-/// Where a tapped bar opens its work — three proposals shown side by side
-/// until the user picks one (then the other two go).
-enum WorkOpenStyle {
-  /// Under the bar's lane, the board's full width (like the timeline).
-  below,
-
-  /// A card floating just under the bar, over the board.
-  floating,
-
-  /// A panel beside the board (landscape) or under it (portrait).
-  side,
-}
-
-/// The proposal in use (captures switch it).
-WorkOpenStyle workOpenStyle = WorkOpenStyle.side;
-
 /// The user's own work periods laid out on parallel lanes (「라인 1 · 2」).
 /// Bars past the lane count go to red 「넘침」 rows. A long press picks a
 /// bar up to drop it on another lane (it stays pinned there); its ends
-/// move the work's start and end.
+/// move the work's start and end. A tap opens the work in a panel beside
+/// the board (under it in portrait).
 class WorkView extends StatefulWidget {
   const WorkView({
     super.key,
@@ -87,28 +72,10 @@ class _WorkViewState extends State<WorkView> {
 
   /// The work whose bar was tapped open.
   String? _open;
-  final _float = OverlayPortalController();
-  final _openBar = GlobalKey();
-  final _tapGroup = Object();
 
-  void _toggle(String key) {
-    setState(() => _open = _open == key ? null : key);
-    if (workOpenStyle != WorkOpenStyle.floating) return;
-    if (_open == null) {
-      _float.hide();
-    } else {
-      // Shown once the bar is laid out, so the card can sit under it.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _open != null) _float.show();
-      });
-    }
-  }
+  void _toggle(String key) => setState(() => _open = _open == key ? null : key);
 
-  void _close() {
-    if (_open == null) return;
-    setState(() => _open = null);
-    if (_float.isShowing) _float.hide();
-  }
+  void _close() => setState(() => _open = null);
 
   PartGroup? get _openGroup => _open == null ? null : widget.parts[_open];
 
@@ -197,17 +164,6 @@ class _WorkViewState extends State<WorkView> {
                       if (lanes.laneOf[s.key] == r)
                         _bar(s, window, lanes.overflow, accent, red),
                   ],
-                  below:
-                      workOpenStyle == WorkOpenStyle.below &&
-                          widget.wiring != null
-                      ? (context, r) {
-                          final g = _openGroup;
-                          if (g == null || lanes!.laneOf[g.key] != r) {
-                            return null;
-                          }
-                          return widget.wiring!.details(g);
-                        }
-                      : null,
                   rowTint: (r) =>
                       r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
                   rowWrap: (r, child) => DragTarget<String>(
@@ -233,9 +189,9 @@ class _WorkViewState extends State<WorkView> {
   }
 
   /// The opened work's head (its list line, a tap closes) and details.
-  Widget _openPanel(BuildContext context, PartGroup g, {double? maxHeight}) {
+  Widget _openPanel(BuildContext context, PartGroup g) {
     final w = widget.wiring!;
-    final body = Column(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -252,20 +208,13 @@ class _WorkViewState extends State<WorkView> {
         Flexible(child: SingleChildScrollView(child: w.details(g))),
       ],
     );
-    return maxHeight == null
-        ? body
-        : ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxHeight),
-            child: body,
-          );
   }
 
-  /// The board, with the side proposal's panel beside or under it.
+  /// The board, with the opened work's panel beside it (landscape) or
+  /// under it (portrait), so the chart stays in view.
   Widget _withSide(BuildContext context, Widget board) {
     final g = _openGroup;
-    if (workOpenStyle != WorkOpenStyle.side ||
-        g == null ||
-        widget.wiring == null) {
+    if (g == null || widget.wiring == null) {
       return board;
     }
     final c = AppColors.of(context);
@@ -301,43 +250,6 @@ class _WorkViewState extends State<WorkView> {
                 ],
               );
       },
-    );
-  }
-
-  /// The floating proposal's card, just under the open bar.
-  Widget _floatingCard(BuildContext context) {
-    final g = _openGroup;
-    final bar = _openBar.currentContext?.findRenderObject() as RenderBox?;
-    if (g == null || bar == null || !bar.attached) {
-      return const SizedBox.shrink();
-    }
-    final screen = MediaQuery.sizeOf(context);
-    final at = bar.localToGlobal(Offset.zero);
-    final width = (screen.width - 16).clamp(0.0, 420.0);
-    final left = at.dx.clamp(8.0, screen.width - width - 8);
-    final top = at.dy + bar.size.height + 6;
-    final room = screen.height - top - 8;
-    // Not enough room under the bar: over it instead.
-    final above = room < 220;
-    final c = AppColors.of(context);
-    final card = TapRegion(
-      groupId: _tapGroup,
-      onTapOutside: (_) => _close(),
-      child: Material(
-        key: const Key('work-open-card'),
-        color: c.panel,
-        elevation: 8,
-        borderRadius: BorderRadius.circular(10),
-        clipBehavior: Clip.antiAlias,
-        child: _openPanel(context, g, maxHeight: above ? at.dy - 14 : room),
-      ),
-    );
-    return Positioned(
-      left: left,
-      width: width,
-      top: above ? null : top,
-      bottom: above ? screen.height - at.dy + 6 : null,
-      child: card,
     );
   }
 
@@ -490,7 +402,7 @@ class _WorkViewState extends State<WorkView> {
                 child: face,
               )
             : face;
-        Widget body = LongPressDraggable<String>(
+        final body = LongPressDraggable<String>(
           data: s.key,
           feedback: Material(
             color: color,
@@ -511,22 +423,11 @@ class _WorkViewState extends State<WorkView> {
           child: ring,
         );
         if (g == null || widget.wiring == null) return body;
-        body = TapRegion(
-          groupId: _tapGroup,
-          child: GestureDetector(
-            key: Key('work-open-${s.key}'),
-            onTap: () => _toggle(s.key),
-            child: KeyedSubtree(key: open ? _openBar : null, child: body),
-          ),
+        return GestureDetector(
+          key: Key('work-open-${s.key}'),
+          onTap: () => _toggle(s.key),
+          child: body,
         );
-        if (open && workOpenStyle == WorkOpenStyle.floating) {
-          body = OverlayPortal(
-            controller: _float,
-            overlayChildBuilder: _floatingCard,
-            child: body,
-          );
-        }
-        return body;
       },
     );
   }

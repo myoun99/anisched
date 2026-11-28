@@ -12,8 +12,6 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
-import 'package:anisched/src/ui/part_line.dart';
-import 'package:anisched/src/ui/views/work_view.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
@@ -181,10 +179,8 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
-  // Round 8: the same cuts at two stages, one line (「LO・原画」);
-  // progress as one bar per stage, or one bar for all.
+  // Round 8: the same cuts at two stages, one line (「LO・原画」).
   'bundle': (AppView.list, (t, size) async {}),
-  'bundle-sum': (AppView.list, (t, size) async {}),
   // …opened: its stages, the first one opened too.
   'bundle-open': (
     AppView.list,
@@ -205,17 +201,16 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
-  // Round 8: a work bar tapped — three ways to open it.
-  for (final style in WorkOpenStyle.values)
-    'work-open-${style.name}': (
-      AppView.work,
-      (t, size) async {
-        await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
-        await t.pump();
-        await t.pump();
-        await t.pump();
-      },
-    ),
+  // Round 8: a work bar tapped open, its panel beside the board.
+  'work-open': (
+    AppView.work,
+    (t, size) async {
+      await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
+      await t.pump();
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // Round 7: the register screen's top (how many rows the roles take).
   'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
@@ -286,9 +281,74 @@ final scenarios = <String, (AppView, Scenario)>{
 void main() {
   final out = Directory('build/captures')..createSync(recursive: true);
   setUpAll(loadFonts);
-
-
   final only = Platform.environment['CAPTURE']?.split(',').toSet();
+
+  // Round 8: bars of 1–6 days, drawn 4× — the label runs edge to edge
+  // (the end grips lie over it), condensing before it is cut.
+  for (final dark in [false, true]) {
+    final name = dark ? 'bar-zoom-dark' : 'bar-zoom';
+    if (only != null && !only.contains('bar-zoom')) continue;
+    testWidgets(name, (t) async {
+      const size = Size(420, 300);
+      t.view.physicalSize = size * 4;
+      t.view.devicePixelRatio = 4;
+      addTearDown(t.view.reset);
+      final shot = GlobalKey();
+      final window = ChartWindow(DateTime(2026, 11, 20), 7);
+      await t.pumpWidget(
+        RepaintBoundary(
+          key: shot,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: dark ? AppTheme.dark() : AppTheme.light(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      for (final days in [1, 2, 3, 4, 6])
+                        SizedBox(
+                          height: ChartBoard.rowExtent,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: AppColors.of(context).line,
+                                ),
+                              ),
+                            ),
+                            child: ChartBar(
+                              window: window,
+                              start: DateTime(2026, 11, 20),
+                              end: DateTime(2026, 11, 19 + days),
+                              color: Theme.of(context).colorScheme.primary,
+                              textColor: Colors.white,
+                              label: '별빛 정류장 #07 · 원화 · 4 cut',
+                              onDates: (a, b) {},
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.pump();
+      final boundary =
+          shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      await t.runAsync(() async {
+        final image = await boundary.toImage(pixelRatio: 4);
+        final png = await image.toByteData(format: ui.ImageByteFormat.png);
+        File('${out.path}/$name.png')
+            .writeAsBytesSync(png!.buffer.asUint8List());
+      });
+    });
+  }
+
   for (final dark in [false, true]) {
     for (final MapEntry(key: base, value: (view, act)) in scenarios.entries) {
       if (only != null && !only.contains(base)) continue;
@@ -311,13 +371,6 @@ void main() {
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
           if (base.startsWith('bundle')) prepareBundles(store);
-          bundleProgress = base == 'bundle-sum'
-              ? BundleProgress.sum
-              : BundleProgress.perStage;
-          workOpenStyle = WorkOpenStyle.values.firstWhere(
-            (s) => base == 'work-open-${s.name}',
-            orElse: () => WorkOpenStyle.side,
-          );
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
