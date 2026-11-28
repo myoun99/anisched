@@ -156,6 +156,14 @@ final scenarios = <String, (AppView, Scenario)>{
     },
   ),
   'settings': (AppView.settings, (t, size) async {}),
+  // 표기: digit counts typed in a pill, like the register's cut fields.
+  'notation': (
+    AppView.settings,
+    (t, size) async {
+      await t.ensureVisible(find.byKey(const Key('notation-preview')));
+      await t.pump();
+    },
+  ),
   'timeline': (AppView.timeline, (t, size) async {}),
   // Mid-drag: the days slid by part of a day, bars cut at the edges.
   'timeline-slide': (

@@ -24,6 +24,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import '../fit_text.dart';
+import '../cut_add_tools.dart';
 
 /// The user's settings: rest weekdays, days off, parallel lanes, when a
 /// day starts, per-second rounding, usual speeds and this month's pay.
@@ -528,7 +529,6 @@ class _SettingsViewState extends State<SettingsView> {
       IconData icon,
       NumberStyle style,
       String usual,
-      List<int> digits,
       void Function(SettingsStore s, NumberStyle v) save,
     ) {
       final custom = style.prefix != usual && style.prefix.isNotEmpty;
@@ -586,21 +586,12 @@ class _SettingsViewState extends State<SettingsView> {
                 ],
               ),
             ),
-            Expanded(
-              flex: 2,
-              child: _FillRow(
-                children: [
-                  for (final d in digits)
-                    SegmentButton(
-                      key: Key('$key-digits-$d'),
-                      label: S.digitsN.f({'n': d}),
-                      selected: style.digits == d,
-                      onTap: () => _set(
-                        (s) =>
-                            save(s.settings, (prefix: style.prefix, digits: d)),
-                      ),
-                    ),
-                ],
+            DigitsField(
+              key: Key('$key-digits'),
+              fieldKey: Key('$key-digits-field'),
+              value: style.digits,
+              onSave: (d) => _set(
+                (s) => save(s.settings, (prefix: style.prefix, digits: d)),
               ),
             ),
           ],
@@ -627,14 +618,22 @@ class _SettingsViewState extends State<SettingsView> {
               ),
             ),
       children: [
-        row('cut', S.cutNotation.t, Icons.movie_outlined, cut, 'C', const [
-          3,
-          4,
-        ], (s, v) => s.cutStyle = v),
-        row('episode', S.episodeNotation.t, Icons.tv_outlined, ep, '#', const [
-          2,
-          3,
-        ], (s, v) => s.episodeStyle = v),
+        row(
+          'cut',
+          S.cutNotation.t,
+          Icons.movie_outlined,
+          cut,
+          'C',
+          (s, v) => s.cutStyle = v,
+        ),
+        row(
+          'episode',
+          S.episodeNotation.t,
+          Icons.tv_outlined,
+          ep,
+          '#',
+          (s, v) => s.episodeStyle = v,
+        ),
         Text(
           '${formatCutNumber(1, cut)} · ${formatEpisodeNumber(7, ep)}',
           key: const Key('notation-preview'),
@@ -888,6 +887,90 @@ class _Line extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Row(spacing: 12, children: children),
       ),
+    );
+  }
+}
+
+/// How many digits a number is written with, typed into a pill like the
+/// register's cut fields (1–6); anything else goes back to [value] when
+/// the field is left.
+class DigitsField extends StatefulWidget {
+  const DigitsField({
+    super.key,
+    required this.fieldKey,
+    required this.value,
+    required this.onSave,
+  });
+
+  final Key fieldKey;
+  final int value;
+  final ValueChanged<int> onSave;
+
+  static const lowest = 1;
+  static const highest = 6;
+
+  @override
+  State<DigitsField> createState() => _DigitsFieldState();
+}
+
+class _DigitsFieldState extends State<DigitsField> {
+  late final _text = TextEditingController(text: '${widget.value}');
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(DigitsField old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && _text.text != '${widget.value}') {
+      _text.text = '${widget.value}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final n = int.tryParse(_text.text.trim());
+    if (n == null || n < DigitsField.lowest || n > DigitsField.highest) {
+      _text.text = '${widget.value}';
+      return;
+    }
+    if (n != widget.value) widget.onSave(n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return CutToolPill(
+      icon: Icons.pin_outlined,
+      children: [
+        PillField(
+          fieldKey: widget.fieldKey,
+          controller: _text,
+          focus: _focus,
+          width: 20,
+          maxLength: 1,
+          onSubmit: _commit,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Text(
+            S.digitsN.f({'n': ''}).trim(),
+            style: TextStyle(color: c.muted),
+          ),
+        ),
+      ],
     );
   }
 }
