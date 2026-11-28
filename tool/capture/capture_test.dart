@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
+import 'package:anisched/src/services/undo_history.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
@@ -16,7 +17,7 @@ import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
 import 'package:anisched/src/ui/theme.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -515,6 +516,8 @@ void main() {
           t.view.devicePixelRatio = 2;
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
+          // As the app runs: every write can be undone (↶ ↷ shown).
+          UndoHistory.attach(store.db);
           if (base == 'holds') prepareHolds(store);
           if (base == 'archived-shown') {
             final g = store.partGroups()[1];
