@@ -83,16 +83,17 @@ void main() {
   testWidgets('a line shows no detail until it opens', (t) async {
     final gs = await pumpSheet(t, const Size(1280, 800));
     final a = part(gs, '별빛 정류장', 'A', '원화');
-    expect(find.textContaining('C012', findRichText: true), findsNothing);
+    // The line names its part and cut range (the second line), no more.
+    expect(find.text('A파트 · C012, C014, C015, C021'), findsOneWidget);
+    expect(find.byKey(Key('details-${a.key}')), findsNothing);
     expect(find.textContaining('¥18,000', findRichText: true), findsNothing);
     await t.tap(find.byKey(Key('line-${a.key}')));
     await t.pump();
     expect(find.byKey(Key('details-${a.key}')), findsOneWidget);
-    expect(find.textContaining('C012', findRichText: true), findsWidgets);
     expect(find.textContaining('¥18,000', findRichText: true), findsOneWidget);
     await t.tap(find.byKey(Key('line-${a.key}')));
     await t.pump();
-    expect(find.textContaining('C012', findRichText: true), findsNothing);
+    expect(find.byKey(Key('details-${a.key}')), findsNothing);
   });
 
   testWidgets('the work menu narrows to one work', (t) async {

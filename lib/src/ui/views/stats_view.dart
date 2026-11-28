@@ -12,6 +12,7 @@ import '../text/strings.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../fit_text.dart';
+import '../client_chip.dart';
 
 /// How far back the statistics look.
 enum StatsRange {
@@ -39,6 +40,7 @@ class StatsView extends StatefulWidget {
     this.clientId,
     this.workId,
     this.filter,
+    this.clients = const {},
   });
 
   /// The shared filter's client and work (null = all).
@@ -47,6 +49,9 @@ class StatsView extends StatefulWidget {
 
   /// The shared filter button, shown first in the toolbar.
   final Widget? filter;
+
+  /// Clients by id, for their chips.
+  final Map<int, ClientTag> clients;
 
   final DateTime now;
   final ScreenLayout layout;
@@ -472,6 +477,10 @@ class _StatsViewState extends State<StatsView> {
         for (final x in s.clients)
           _BarRow(
             label: x.label ?? '—',
+            lead: switch (widget.clients[x.key]) {
+              final t? => ClientChip(t),
+              null => null,
+            },
             value: [
               '${x.handed} cut',
               for (final e in x.earned.entries) formatMoney(e.key, e.value),
@@ -709,9 +718,13 @@ class _BarRow extends StatelessWidget {
     required this.bar,
     required this.value,
     this.valueWidth = 86,
+    this.lead,
   });
 
   final String label;
+
+  /// Shown instead of [label] (a client's chip).
+  final Widget? lead;
   final Widget bar;
   final String value;
   final double valueWidth;
@@ -724,7 +737,7 @@ class _BarRow extends StatelessWidget {
       children: [
         SizedBox(
           width: 88,
-          child: FitText(label, style: const TextStyle(fontSize: 12)),
+          child: lead ?? FitText(label, style: const TextStyle(fontSize: 12)),
         ),
         Expanded(child: bar),
         ConstrainedBox(

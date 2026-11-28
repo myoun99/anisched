@@ -58,7 +58,8 @@ void main() {
     final g = store.partGroups().firstWhere(
       (g) => g.workTitle == '별빛 정류장' && g.partLabel == 'C',
     );
-    expect(picked('0건'), findsOneWidget);
+    // Nothing picked: the actions are not shown.
+    expect(find.byKey(const Key('picked-count')), findsNothing);
     await t.longPress(find.byKey(Key('line-${g.key}')));
     await t.pump();
     expect(picked('${g.total}건'), findsOneWidget);
@@ -70,6 +71,7 @@ void main() {
         .partGroups(includeDone: true)
         .firstWhere((x) => x.key == g.key);
     expect(after.tasks.every((x) => x.status == TaskStatus.submitted), isTrue);
-    expect(picked('0건'), findsOneWidget);
+    // Done: the selection empties and the actions go away.
+    expect(find.byKey(const Key('picked-count')), findsNothing);
   });
 }

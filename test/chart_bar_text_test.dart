@@ -3,19 +3,19 @@ import 'package:anisched/src/ui/views/chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// A bar of [days] days from the 21st in a 10-day window 500 wide (50 a
-/// day), the bar starting at x = 50.
+/// A bar of [days] days from the 21st in a 10-day window [width] wide,
+/// the bar starting at the 2nd day.
 Future<void> pumpBar(
   WidgetTester t, {
   required int days,
+  double width = 500,
   bool ends = true,
-  bool selected = false,
   void Function(DateTime, DateTime)? onDates,
 }) => t.pumpWidget(
   MaterialApp(
     home: Center(
       child: SizedBox(
-        width: 500,
+        width: width,
         height: ChartBoard.rowExtent,
         child: ChartBar(
           window: ChartWindow(DateTime(2026, 11, 20), 10),
@@ -23,7 +23,6 @@ Future<void> pumpBar(
           end: DateTime(2026, 11, 20 + days),
           color: Colors.blue,
           label: 'A long label that never fits in a short bar',
-          selected: selected,
           onDates: ends ? (onDates ?? (a, b) {}) : null,
         ),
       ),
@@ -31,10 +30,13 @@ Future<void> pumpBar(
   ),
 );
 
-double barLeft(WidgetTester t) => t.getTopLeft(find.byType(ChartBar)).dx + 50;
-
 void main() {
-  tearDown(() => shortBarGrips = ShortBarGrips.outside);
+  test('a grip is at most 16, and at most half a day', () {
+    expect(BarGrip.widthFor(50), 16);
+    expect(BarGrip.widthFor(32), 16);
+    expect(BarGrip.widthFor(20), 10);
+    expect(BarGrip.widthFor(6), 3);
+  });
 
   testWidgets('a fixed bar has no grips; its label gets the whole bar', (
     t,
@@ -43,18 +45,15 @@ void main() {
       await pumpBar(t, days: days, ends: false);
       expect(find.byType(BarGrip), findsNothing);
       expect(t.getSize(find.byType(FitText)).width, days * 50.0);
-      expect(t.getTopLeft(find.byType(FitText)).dx, barLeft(t));
     }
   });
 
   testWidgets('the label takes every pixel between the two grips', (t) async {
-    for (final days in [2, 3, 8]) {
+    for (final days in [1, 2, 8]) {
       await pumpBar(t, days: days);
       expect(find.byType(BarGrip), findsNWidgets(2));
-      expect(
-        t.getSize(find.byType(FitText)).width,
-        days * 50.0 - 2 * BarGrip.width,
-      );
+      expect(t.getSize(find.byType(BarGrip).first).width, 16);
+      expect(t.getSize(find.byType(FitText)).width, days * 50.0 - 32);
       expect(
         t.getTopLeft(find.byType(FitText)).dx,
         t.getTopRight(find.byType(BarGrip).first).dx,
@@ -66,24 +65,19 @@ void main() {
     }
   });
 
-  testWidgets('a short bar keeps its grips just outside its ends', (t) async {
-    await pumpBar(t, days: 1);
-    expect(t.getSize(find.byType(FitText)).width, 50);
-    expect(t.getTopRight(find.byType(BarGrip).first).dx, barLeft(t));
-    expect(t.getTopLeft(find.byType(BarGrip).last).dx, barLeft(t) + 50);
-  });
-
-  testWidgets('or, the other proposal, only while it is the opened bar', (
-    t,
-  ) async {
-    shortBarGrips = ShortBarGrips.whenSelected;
-    await pumpBar(t, days: 1);
-    expect(find.byType(BarGrip), findsNothing);
-    await pumpBar(t, days: 1, selected: true);
-    expect(find.byType(BarGrip), findsNWidgets(2));
-    // Long bars keep theirs either way.
-    await pumpBar(t, days: 3);
-    expect(find.byType(BarGrip), findsNWidgets(2));
+  testWidgets('zoomed out, a one-day bar is just its two grips', (t) async {
+    // 20 a day: grips of 10, nothing left for the label.
+    await pumpBar(t, days: 1, width: 200);
+    final grips = find.byType(BarGrip);
+    expect(grips, findsNWidgets(2));
+    expect(t.getSize(grips.first).width, 10);
+    expect(find.byType(FitText), findsNothing);
+    final bar = t.getTopLeft(find.byType(ChartBar)).dx + 20;
+    expect(t.getTopLeft(grips.first).dx, bar);
+    expect(t.getTopRight(grips.last).dx, bar + 20);
+    // Two days leave 20: enough for the label.
+    await pumpBar(t, days: 2, width: 200);
+    expect(t.getSize(find.byType(FitText)).width, 20);
   });
 
   testWidgets('dragging a grip moves that end', (t) async {

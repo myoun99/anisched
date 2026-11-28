@@ -82,6 +82,18 @@ void main() {
   ]) {
     testWidgets('the picked-task actions fit the top bar at $size', (t) async {
       await pumpShell(t, size);
+      // Nothing picked: no actions at all.
+      expect(find.byKey(const Key('pick-clear')), findsNothing);
+      await t.longPress(
+        find
+            .byWidgetPredicate(
+              (w) =>
+                  w.key is ValueKey<String> &&
+                  (w.key! as ValueKey<String>).value.startsWith('line-'),
+            )
+            .first,
+      );
+      await t.pump();
       final rows = t.getRect(find.byKey(const Key('sheet-rows')));
       for (final key in const [
         'picked-count',

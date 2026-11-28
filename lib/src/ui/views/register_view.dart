@@ -11,7 +11,9 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
+import '../client_chip.dart';
 import '../fold.dart';
+import '../palette.dart';
 import '../format.dart';
 import '../instant.dart';
 import '../pick_field.dart';
@@ -38,6 +40,7 @@ class RegisterView extends StatefulWidget {
     this.onCreateEpisode,
     this.onRegister,
     this.onEdit,
+    this.onClientColor,
   });
 
   /// Runs one edit of an episode's saved cuts (then the views reload);
@@ -51,6 +54,9 @@ class RegisterView extends StatefulWidget {
   final CatalogueReader? reader;
 
   /// Role presets: name and the stages it takes on.
+  /// Sets a client's colour (ARGB); null hides the swatch button.
+  final void Function(int clientId, int argb)? onClientColor;
+
   final List<({int id, String name, List<String> stages})> roles;
 
   final int Function(String name)? onCreateClient;
@@ -66,6 +72,9 @@ class RegisterView extends StatefulWidget {
 
 class _RegisterViewState extends State<RegisterView> {
   PickOption<int>? _client;
+
+  /// Colours of the clients the picker has shown (its search answers).
+  final _clientColors = <int, int?>{};
   PickOption<int>? _work;
   PickOption<int>? _episode;
   String? _part;
@@ -418,12 +427,17 @@ class _RegisterViewState extends State<RegisterView> {
               label: S.client.t,
               width: fw,
               value: _client?.title,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      for (final x in await r.searchClients(q))
-                        (value: x.id, title: x.name, note: null),
-                    ],
+              search: (q) async {
+                if (r == null) return const [];
+                final found = await r.searchClients(q);
+                for (final x in found) {
+                  _clientColors[x.id] = x.color;
+                }
+                return [
+                  for (final x in found)
+                    (value: x.id, title: x.name, note: null),
+                ];
+              },
               onPicked: (x) => setState(() {
                 _client = x;
                 _work = null;
@@ -438,6 +452,16 @@ class _RegisterViewState extends State<RegisterView> {
                       note: null,
                     ),
             ),
+            if (_client case final cl? when widget.onClientColor != null)
+              ClientColorButton(
+                color: clientColorOf(cl.value, _clientColors[cl.value]),
+                swatches: clientSwatches,
+                tooltip: S.client.t,
+                onPicked: (col) {
+                  widget.onClientColor!(cl.value, col.toARGB32());
+                  setState(() => _clientColors[cl.value] = col.toARGB32());
+                },
+              ),
             PickField<int>(
               key: const Key('pick-work'),
               current: _work?.value,

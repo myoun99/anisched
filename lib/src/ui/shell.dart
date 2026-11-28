@@ -15,12 +15,15 @@ import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
+import 'client_chip.dart';
 import 'document_menu.dart';
 import 'empty_start.dart';
+import 'event_editor.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
 import 'instant.dart';
+import 'palette.dart';
 import 'part_line.dart';
 import 'pick_field.dart';
 import 'time_editor.dart';
@@ -29,6 +32,7 @@ import 'selection_bar.dart';
 import 'theme.dart';
 import 'timer_bar.dart';
 import 'widgets.dart';
+import 'views/chart.dart';
 import 'views/register_view.dart';
 import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
@@ -107,6 +111,12 @@ class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
 
+  /// Rest weekdays, days off and holidays, for the charts' backgrounds.
+  ChartDays _days = const ChartDays();
+
+  /// Dated events by episode, for the timeline.
+  Map<int?, List<EventRow>> _events = const {};
+
   /// The first read has come back (an empty document is then truly empty).
   bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
@@ -114,7 +124,7 @@ class _AppShellState extends State<AppShell> {
   LaneLayout? _lanes;
   ViewFilter _filter = const ViewFilter();
   Map<int, ({String title, int? clientId})> _works = const {};
-  Map<int, String> _clients = const {};
+  Map<int, ClientTag> _clients = const {};
   List<({int id, String name, List<String> stages})> _roles = const [];
   final _selection = TaskSelection();
   int _refresh = 0;
@@ -164,7 +174,18 @@ class _AppShellState extends State<AppShell> {
     final reader = widget.reader;
     if (reader == null) return;
     final done = _filter.showDone;
-    final (groups, signals, paces, lanes, works, clients, roles) = await (
+    final today = widget.clock();
+    final (
+      groups,
+      signals,
+      paces,
+      lanes,
+      works,
+      clients,
+      roles,
+      events,
+      holidays,
+    ) = await (
       reader.partGroups(
         includeDone: done,
         includeHandedOff: _filter.showHandedOff,
@@ -175,20 +196,89 @@ class _AppShellState extends State<AppShell> {
       reader.works(),
       reader.clients(),
       reader.roles(),
+      // Events a few months either side (the chart scrolls).
+      reader.events(
+        from: today.subtract(const Duration(days: 120)),
+        to: today.add(const Duration(days: 240)),
+      ),
+      reader.holidays(
+        from: today.subtract(const Duration(days: 120)),
+        to: today.add(const Duration(days: 240)),
+      ),
     ).wait;
     if (!mounted) return;
     setState(() {
       _loaded = true;
+      _events = events;
+      final st = widget.store;
+      _days = ChartDays(
+        restWeekdays:
+            st?.settings.restWeekdays ??
+            const {DateTime.saturday, DateTime.sunday},
+        daysOff: [
+          if (st != null)
+            for (final d in st.daysOff()) d.range,
+        ],
+        holidays: st == null || st.settings.showHolidays
+            ? {for (final h in holidays) h.date: h.name}
+            : const {},
+      );
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
-      _clients = {for (final c in clients) c.id: c.name};
+      _clients = {
+        for (final c in clients)
+          c.id: (name: c.name, color: clientColorOf(c.id, c.color)),
+      };
       _roles = roles;
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
       _lanes = lanes.layout;
     });
+  }
+
+  /// A new event on [g]'s episode, on [day] (a long press on the
+  /// timeline).
+  Future<void> _newEvent(PartGroup g, DateTime day) async {
+    final a = await showEventEditor(context, day: day);
+    if (a is! EventSave) return;
+    _write(
+      (s) => s.addEvent(
+        episodeId: g.episodeId,
+        date: day,
+        timeMinutes: a.timeMinutes,
+        title: a.title,
+        note: a.note,
+      ),
+    );
+  }
+
+  /// An event tapped: the same window edits or removes it.
+  Future<void> _editEvent(EventRow e) async {
+    final a = await showEventEditor(context, day: e.date, existing: e);
+    switch (a) {
+      case EventSave():
+        _write(
+          (s) => s.updateEvent(
+            e.id,
+            episodeId: e.episodeId,
+            date: e.date,
+            timeMinutes: a.timeMinutes,
+            title: a.title,
+            note: a.note,
+          ),
+        );
+      case EventRemove():
+        _write((s) => s.deleteEvent(e.id));
+      case null:
+    }
+  }
+
+  /// A unit's client: its work's, with the client's colour.
+  ClientTag? _clientOf(PartGroup g) {
+    final id = _works[g.workId]?.clientId;
+    return id == null ? null : _clients[id];
   }
 
   /// The task the timer last ran on, for resume.
@@ -589,9 +679,6 @@ class _AppShellState extends State<AppShell> {
       );
     }
     final now = widget.clock();
-    final rest =
-        widget.store?.settings.restWeekdays ??
-        const {DateTime.saturday, DateTime.sunday};
     final writable = widget.store != null;
     final shown = _visible(now);
     final toolbar = _toolbar(shown.length);
@@ -600,6 +687,7 @@ class _AppShellState extends State<AppShell> {
       signals: _signals,
       paces: _paces,
       selection: _selection,
+      clientOf: _clientOf,
       onDue: writable ? _setDue : null,
       onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
       onKickoff: writable ? _setKickoff : null,
@@ -629,10 +717,13 @@ class _AppShellState extends State<AppShell> {
         onDue: writable ? _setDue : null,
         now: now,
         layout: layout,
-        restWeekdays: rest,
+        days: _days,
         selection: _selection,
         onSchedule: writable ? _schedule : null,
-        details: wiring.details,
+        details: (g) => wiring.details(g, client: true),
+        events: _events,
+        onNewEvent: writable ? _newEvent : null,
+        onEvent: writable ? _editEvent : null,
       ),
       AppView.work => WorkView(
         lanes: _lanes,
@@ -640,7 +731,7 @@ class _AppShellState extends State<AppShell> {
         parts: {for (final g in _groups) g.key: g},
         now: now,
         layout: layout,
-        restWeekdays: rest,
+        days: _days,
         onPin: writable
             ? (key, lane) => _write((s) => s.pinLane(key, lane))
             : null,
@@ -682,6 +773,9 @@ class _AppShellState extends State<AppShell> {
               }
             : null,
         onEdit: writable ? _write : null,
+        onClientColor: writable
+            ? (id, argb) => _write((s) => s.setClientColor(id, argb))
+            : null,
         onRegister: writable
             ? (draft) {
                 var n = 0;
@@ -698,6 +792,7 @@ class _AppShellState extends State<AppShell> {
         refresh: _refresh,
         clientId: _filter.clientId,
         workId: _filter.workId,
+        clients: _clients,
         filter: _filterButton(),
       ),
       AppView.settings => SettingsView(
@@ -759,21 +854,26 @@ class _AppShellState extends State<AppShell> {
               bottom: !narrow,
               child: Column(
                 children: [
-                  _TopBar(
-                    title: widget.session == null
-                        ? null
-                        : ValueListenableBuilder<RemoteCheck?>(
-                            valueListenable:
-                                widget.remote ??
-                                ValueNotifier<RemoteCheck?>(null),
-                            builder: (context, remote, _) => DocumentMenu(
-                              session: widget.session!,
-                              picker: widget.picker,
-                              remote: remote,
+                  ListenableBuilder(
+                    listenable: _selection,
+                    builder: (context, _) => _TopBar(
+                      picking: !_selection.isEmpty,
+                      narrow: narrow,
+                      title: widget.session == null
+                          ? null
+                          : ValueListenableBuilder<RemoteCheck?>(
+                              valueListenable:
+                                  widget.remote ??
+                                  ValueNotifier<RemoteCheck?>(null),
+                              builder: (context, remote, _) => DocumentMenu(
+                                session: widget.session!,
+                                picker: widget.picker,
+                                remote: remote,
+                              ),
                             ),
-                          ),
-                    actions: selectionBar,
-                    switcher: narrow ? null : switcher,
+                      actions: selectionBar,
+                      switcher: narrow ? null : switcher,
+                    ),
                   ),
                   Expanded(
                     child: IndexedStack(
@@ -797,7 +897,21 @@ class _AppShellState extends State<AppShell> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({this.title, required this.actions, this.switcher});
+  const _TopBar({
+    this.title,
+    required this.actions,
+    this.switcher,
+    this.picking = false,
+    this.narrow = false,
+  });
+
+  /// Something is picked: the actions show (only then; with nothing picked
+  /// every one of them would do nothing).
+  final bool picking;
+
+  /// A phone held upright: while picking, the actions take the document
+  /// name's place.
+  final bool narrow;
 
   /// The document's name and file menu, after the app name.
   final Widget? title;
@@ -833,10 +947,12 @@ class _TopBar extends StatelessWidget {
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
       const SizedBox(width: 10),
-      if (title != null) Flexible(child: title!),
+      if (title != null && !(picking && narrow)) Flexible(child: title!),
       const SizedBox(width: 10),
       Expanded(
-        child: Align(alignment: Alignment.centerRight, child: actions),
+        child: picking
+            ? Align(alignment: Alignment.centerRight, child: actions)
+            : const SizedBox.shrink(),
       ),
       if (switcher case final s?) ...[
         const SizedBox(width: 12),

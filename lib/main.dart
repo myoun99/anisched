@@ -6,6 +6,7 @@ import 'boot.dart';
 import 'src/services/catalogue_store.dart';
 import 'src/services/device_settings.dart';
 import 'src/services/document_session.dart';
+import 'src/services/sample_data.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
 import 'src/ui/text/strings.dart';
@@ -57,6 +58,8 @@ Future<void> main() async {
       timer: WorkTimerStore(db),
       session: session,
       remote: remote,
+      // An empty document offers the example catalogue (first run).
+      onSample: (store) => fillSample(store, DateTime.now()),
     ),
   );
 }
