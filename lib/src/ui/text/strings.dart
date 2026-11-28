@@ -308,6 +308,7 @@ enum S {
   lateN('{n} late', '遅れ {n}', '지연 {n}', '{n} en retard', '逾期 {n}'),
   hours('{n}h', '{n}時間', '{n}시간', '{n} h', '{n}小时'),
   minutes('{n} min', '{n}分', '{n}분', '{n} min', '{n}分钟'),
+  extendedN('{n} extended', '延長 {n}', '연장 {n}', '{n} prolongés', '延期 {n}'),
   comingSoon('Coming', '準備中', '준비 중', 'Bientôt', '即将'),
   cDoneCuts('Done cuts', '完了 cut', '완료 cut', 'Cuts terminés', '完成 cut'),
   cAvgLine(

@@ -75,6 +75,7 @@ class RichStatsReader extends SyncCatalogueReader {
       final due = handed.add(
         Duration(days: r.nextInt(6) - (r.nextDouble() < 0.18 ? 6 : 1)),
       );
+      final ext = r.nextDouble() < 0.2 ? 1 + r.nextInt(2) : 0;
       id++;
       final worked = Duration(minutes: 25 + r.nextInt(70));
       facts.add(
@@ -91,6 +92,8 @@ class RichStatsReader extends SyncCatalogueReader {
           submittedAt: handed.toUtc(),
           doneAt: handed.add(Duration(days: 2 + r.nextInt(4))).toUtc(),
           dueAt: due.toUtc(),
+          dueExtensions: ext,
+          firstDueAt: due.subtract(Duration(days: ext * 3)).toUtc(),
           planStartAt: day.subtract(Duration(days: r.nextInt(4))),
           planEndAt: day.add(Duration(days: r.nextInt(3))),
           pay: w.$6,

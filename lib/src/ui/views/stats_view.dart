@@ -179,14 +179,30 @@ class _StatsViewState extends State<StatsView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: gap,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final k in _kpis(context, s))
-              SizedBox(width: kpiWidth, child: k),
-          ],
-        ),
+        // Short screens (a phone held sideways) keep the numbers to one
+        // row that scrolls sideways, so the charts start on screen.
+        if (MediaQuery.sizeOf(context).height < 500)
+          SingleChildScrollView(
+            key: const Key('stats-kpi-row'),
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 8,
+              children: [
+                for (final k in _kpis(context, s))
+                  SizedBox(width: 150, child: k),
+              ],
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final k in _kpis(context, s))
+                SizedBox(width: kpiWidth, child: k),
+            ],
+          ),
         _doneCard(context, s),
         Wrap(
           spacing: gap,
@@ -208,6 +224,10 @@ class _StatsViewState extends State<StatsView> {
     final t = s.total;
     final workDays = s.days.where((d) => d.worked > 0).length;
     final handedIn = s.onTime + s.late;
+    final firstIn = s.onTimeFirst + s.lateFirst;
+    final extended = s.extensions.entries
+        .where((e) => e.key > 0)
+        .fold(0, (n, e) => n + e.value);
     List<String> money(Map<String, num> m) => [
       for (final e in m.entries) formatMoney(e.key, e.value.round()),
     ];
@@ -261,11 +281,16 @@ class _StatsViewState extends State<StatsView> {
           style: TextStyle(color: s.late > 0 ? c.retake : c.muted),
         ),
       ),
-      // Waits for the deadline rounds from the data lane.
+      // Against the first deadline given, before any extension.
       _Kpi(
         label: S.kFirstDue.t,
-        value: '—',
-        note: Text(S.comingSoon.t, style: TextStyle(color: c.faint)),
+        value: firstIn == 0
+            ? '—'
+            : '${(s.onTimeFirst * 100 / firstIn).round()}%',
+        note: Text(
+          S.extendedN.f({'n': extended}),
+          style: TextStyle(color: c.muted),
+        ),
       ),
       _Kpi(
         label: S.kRetake.t,
