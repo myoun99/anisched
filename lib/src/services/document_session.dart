@@ -135,9 +135,7 @@ abstract interface class DocumentSessionBase {
 String documentFileName(String name) {
   final clean = name.replaceAll(RegExp(r'[/\\:]'), '_').trim();
   final base = clean.isEmpty ? 'Untitled' : clean;
-  return base.toLowerCase().endsWith('.$documentExtension')
-      ? base
-      : '$base.$documentExtension';
+  return withDocumentExtension(base);
 }
 
 /// Puts the finished document at [stagedPath] (named [fileName]) in its

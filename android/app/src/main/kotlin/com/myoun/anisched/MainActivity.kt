@@ -112,7 +112,7 @@ class MainActivity : FlutterActivity() {
         if (requestCode == pickRequest) return waiting.success(describe(uri))
         background(waiting) {
             replaceFrom(uri, File(source!!))
-            describe(uri)
+            describe(withExtension(uri))
         }
     }
 
@@ -138,6 +138,21 @@ class MainActivity : FlutterActivity() {
         val uri = Uri.parse(location)
         val held = contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
         return if (held) mapOf("status" to "granted") else unavailable("the grant is gone")
+    }
+
+    // The user may take `.anisched` out of the name in the create dialog:
+    // put it back where the provider allows renaming. Where it does not,
+    // the document stays as named (opening judges the content, not the name).
+    private fun withExtension(uri: Uri): Uri {
+        val name = describe(uri)["name"] as String? ?: return uri
+        if (name.lowercase().endsWith(".anisched")) return uri
+        return try {
+            val renamed = DocumentsContract.renameDocument(contentResolver, uri, "$name.anisched")
+            if (renamed != null && renamed != uri) takePersistable(renamed)
+            renamed ?: uri
+        } catch (_: Exception) {
+            uri
+        }
     }
 
     private fun describe(uri: Uri): Map<String, Any?> {

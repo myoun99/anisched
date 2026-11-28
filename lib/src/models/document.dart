@@ -9,6 +9,21 @@ library;
 /// File extension of a document, without the dot.
 const String documentExtension = 'anisched';
 
+/// [name] (a file name or a path) ending in `.anisched`: the extension
+/// added when the user left it out, never doubled (유저 2026-11-28: the
+/// user types a name; the app adds the extension).
+String withDocumentExtension(String name) =>
+    name.toLowerCase().endsWith('.$documentExtension')
+    ? name
+    : '$name.$documentExtension';
+
+/// A document's name as the user calls it: the file name without
+/// `.anisched` (the top bar, menus, recent list).
+String documentDisplayName(String fileName) =>
+    fileName.toLowerCase().endsWith('.$documentExtension')
+    ? fileName.substring(0, fileName.length - documentExtension.length - 1)
+    : fileName;
+
 /// SQLite `application_id` stamped on every document the app writes
 /// ('ANSC'), so a stray SQLite file is refused instead of imported.
 const int documentApplicationId = 0x414E5343;
