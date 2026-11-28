@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
 import 'due_button.dart';
+import 'fit_text.dart';
 import 'fold.dart';
 import 'hold.dart';
 import 'format.dart';
@@ -137,7 +138,9 @@ class PartLine extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       spacing: 2,
                       children: [
-                        Text.rich(
+                        // The line's long press picks it: no tooltips here;
+                        // the opened details show every word.
+                        FitText.rich(
                           TextSpan(
                             children: [
                               TextSpan(
@@ -147,19 +150,17 @@ class PartLine extends StatelessWidget {
                                 ),
                               ),
                               TextSpan(
-                                text: '  ${g.stageName}',
+                                text: '  ${stageText(g.stageName)}',
                                 style: TextStyle(color: c.muted),
                               ),
                             ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          tooltip: false,
                         ),
-                        Text(
+                        FitText(
                           '${g.workTitle} ${episodeLabel(g.episodeNumber)}',
                           style: TextStyle(fontSize: 12, color: c.muted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          tooltip: false,
                         ),
                       ],
                     ),
@@ -557,7 +558,8 @@ class _CutChip extends StatelessWidget {
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),
             Flexible(
-              child: Text.rich(
+              child: FitText.rich(
+                tooltip: false,
                 TextSpan(
                   children: [
                     TextSpan(
@@ -682,4 +684,76 @@ extension on PartDetails {
 String _perDay(UsualPace p) {
   final d = p.perDay;
   return d == null ? '—' : '${d.toStringAsFixed(1)} cut';
+}
+
+/// Everything a unit's opened details need from the app — one bundle the
+/// shell makes once and every view that opens a unit (list, timeline)
+/// uses, so the details are the same widget wired the same way.
+class UnitWiring {
+  const UnitWiring({
+    this.signals = const {},
+    this.paces = const {},
+    this.paceOf,
+    this.selection,
+    this.onTaskTap,
+    this.onDue,
+    this.onKickoff,
+    this.onPlan,
+    this.onHold,
+    this.revisionsOf,
+    this.onEditRevision,
+  });
+
+  /// Deadline and plan signals by group key (reader.signals).
+  final Map<String, GroupSignals> signals;
+
+  /// Usual speeds by stage name (reader.stagePaces).
+  final Map<String, StagePace> paces;
+
+  /// A unit's pace when [signals] has none.
+  final Pace? Function(PartGroup group)? paceOf;
+
+  /// Tasks picked for an action, shared by every view.
+  final TaskSelection? selection;
+
+  /// A cut tapped in the details (starts the timer, or picks it while
+  /// picking); null: taps pick.
+  final ValueChanged<TaskRow>? onTaskTap;
+
+  final void Function(PartGroup group, DateTime due)? onDue;
+  final void Function(PartGroup group, DateTime kickoff)? onKickoff;
+  final void Function(PartGroup group, DateTime start, DateTime end)? onPlan;
+  final void Function(PartGroup group)? onHold;
+  final Future<List<DueRevision>> Function(PartGroup group)? revisionsOf;
+  final void Function(PartGroup group, int revision, DateTime due)?
+  onEditRevision;
+
+  /// The details of [p], opened under its line or row.
+  Widget details(PartGroup p) {
+    final sel = selection;
+    return PartDetails(
+      group: p,
+      pace: signals[p.key]?.pace ?? paceOf?.call(p),
+      plan: signals[p.key]?.plan,
+      usual: paces[p.stageName],
+      isPicked: sel?.has,
+      onTask: onTaskTap ?? sel?.toggleTask,
+      onDue: onDue == null ? null : (d) => onDue!(p, d),
+      onTaskLongPress: sel?.toggleTask,
+      onKickoff: onKickoff == null ? null : (d) => onKickoff!(p, d),
+      onPlanStart: onPlan == null
+          ? null
+          : (d) => onPlan!(p, d, p.planEndAt ?? p.dueAt ?? d),
+      onPlanEnd: onPlan == null
+          ? null
+          : (d) => onPlan!(p, p.planStartAt ?? p.kickoffAt ?? d, d),
+      onHold: onHold == null ? null : () => onHold!(p),
+      loadRevisions: revisionsOf == null || p.kind == GroupKind.noPart
+          ? null
+          : () => revisionsOf!(p),
+      onEditRevision: onEditRevision == null
+          ? null
+          : (n, d) => onEditRevision!(p, n, d),
+    );
+  }
 }

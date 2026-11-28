@@ -105,7 +105,9 @@ void main() {
   testWidgets('tapping outside a number field ends editing', (t) async {
     await pumpShell(t, const Size(390, 844), view: AppView.register);
     final count = find.byKey(const Key('reg-count'));
-    await t.ensureVisible(count);
+    // Mid-screen, with room above it to tap outside.
+    await Scrollable.ensureVisible(t.element(count), alignment: 0.5);
+    await t.pump();
     await t.tap(count);
     await t.pump();
     expect(FocusManager.instance.primaryFocus?.context?.widget, isNotNull);

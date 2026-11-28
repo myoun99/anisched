@@ -10,6 +10,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'chart.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// The production schedule only: one bar per unit from kickoff to
 /// deadline, the deadline's D-day on the right of the name. Dragging a
@@ -26,7 +27,12 @@ class TimelineView extends StatefulWidget {
     this.toolbar,
     this.onReorder,
     this.onDue,
+    this.details,
   });
+
+  /// A unit's details (the list's own, from the shell's wiring), opened
+  /// under its row across the whole board by a tap on the row's label.
+  final Widget Function(PartGroup group)? details;
 
   /// Sets a unit's deadline (tap on its D label).
   final void Function(PartGroup group, DateTime due)? onDue;
@@ -57,6 +63,12 @@ class TimelineView extends StatefulWidget {
 
 class _TimelineViewState extends State<TimelineView> {
   void _onView() => setState(() {});
+
+  /// The unit opened under its row, if any.
+  String? _open;
+
+  void _toggle(PartGroup g) =>
+      setState(() => _open = _open == g.key ? null : g.key);
 
   @override
   void initState() {
@@ -126,8 +138,17 @@ class _TimelineViewState extends State<TimelineView> {
                   narrow: widget.layout.size == SizeClass.narrow,
                   onDue: widget.onDue,
                   selection: widget.selection,
+                  open: _open == rows[i].key,
+                  onOpen: widget.details == null
+                      ? null
+                      : () => _toggle(rows[i]),
                 ),
                 bars: (context, i) => _bars(context, rows[i], window),
+                below: widget.details == null
+                    ? null
+                    : (context, i) => _open == rows[i].key
+                          ? widget.details!(rows[i])
+                          : null,
               ),
             ),
           ),
@@ -169,9 +190,17 @@ class _TimelineLabel extends StatelessWidget {
     required this.narrow,
     this.selection,
     this.onDue,
+    this.open = false,
+    this.onOpen,
   });
 
   final void Function(PartGroup group, DateTime due)? onDue;
+
+  /// Its details are open below.
+  final bool open;
+
+  /// Opens or closes the details (a tap, when nothing is being picked).
+  final VoidCallback? onOpen;
 
   /// Row index for the drag grip; null hides it.
   final int? index;
@@ -186,7 +215,7 @@ class _TimelineLabel extends StatelessWidget {
     final g = group;
     final due = dueLabel(g.dueAt, now, g.status);
     final sel = selection;
-    Widget label = Padding(
+    final Widget label = Padding(
       padding: EdgeInsets.only(left: index == null ? 10 : 0, right: 10),
       child: Row(
         spacing: 6,
@@ -209,7 +238,8 @@ class _TimelineLabel extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text.rich(
+                FitText.rich(
+                  tooltip: false,
                   TextSpan(
                     children: [
                       if (!narrow)
@@ -226,14 +256,11 @@ class _TimelineLabel extends StatelessWidget {
                       ),
                     ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13),
                 ),
-                Text(
-                  '${g.stageName} · ${g.kind == GroupKind.noPart ? g.cutsLabel : groupTitle(g)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                FitText(
+                  '${stageText(g.stageName)} · ${groupTitle(g)}',
+                  tooltip: false,
                   style: TextStyle(fontSize: 11, color: c.muted),
                 ),
               ],
@@ -280,20 +307,35 @@ class _TimelineLabel extends StatelessWidget {
         ],
       ),
     );
-    if (sel != null) {
-      label = ListenableBuilder(
-        listenable: sel,
-        builder: (context, child) => Material(
-          color: sel.of(g) != Picked.none ? c.selected : Colors.transparent,
-          child: InkWell(
-            onLongPress: () => sel.toggleGroup(g),
-            onTap: sel.isEmpty ? null : () => sel.toggleGroup(g),
-            child: child,
-          ),
+    final opened = open;
+    return ListenableBuilder(
+      listenable: sel ?? const _Quiet(),
+      builder: (context, child) => Material(
+        color: sel != null && sel.of(g) != Picked.none
+            ? c.selected
+            : (opened ? c.hover : Colors.transparent),
+        child: InkWell(
+          key: Key('tl-label-${g.key}'),
+          onLongPress: sel == null ? null : () => sel.toggleGroup(g),
+          // A tap picks while picking; otherwise it opens the details.
+          onTap: sel != null && !sel.isEmpty
+              ? () => sel.toggleGroup(g)
+              : onOpen,
+          child: child,
         ),
-        child: label,
-      );
-    }
-    return label;
+      ),
+      child: label,
+    );
   }
+}
+
+/// A listenable that never fires (no selection).
+class _Quiet implements Listenable {
+  const _Quiet();
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }

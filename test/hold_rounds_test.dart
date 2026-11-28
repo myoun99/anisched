@@ -184,4 +184,22 @@ void main() {
     await t.pump();
     expect(find.byKey(Key('line-${g.key}')), findsOneWidget);
   });
+
+  testWidgets('a tap on a timeline row opens the list details below it', (
+    t,
+  ) async {
+    final store = await pumpShell(t);
+    await t.tap(find.byKey(const Key('view-tab-timeline')));
+    await t.pump();
+    final g = store.partGroups().firstWhere((g) => g.kind == GroupKind.part);
+    await t.tap(find.byKey(Key('tl-label-${g.key}')));
+    await t.pump();
+    final details = find.byKey(Key('details-${g.key}'));
+    expect(details, findsOneWidget);
+    // Across the whole board, label column and dates.
+    expect(t.getRect(details).width, greaterThan(1280 * 0.9));
+    await t.tap(find.byKey(Key('details-kickoff-${g.key}')));
+    await t.pump();
+    expect(find.text('착수일'), findsOneWidget, reason: 'the same details');
+  });
 }

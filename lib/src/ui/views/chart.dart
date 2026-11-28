@@ -7,6 +7,7 @@ import '../../core/size_class.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// Local calendar day as a UTC midnight, so day differences are exact.
 DateTime chartDay(DateTime t) {
@@ -734,7 +735,12 @@ class ChartBoard extends StatefulWidget {
     this.rowTint,
     this.onReorder,
     this.corner,
+    this.below,
   });
+
+  /// What opens under a row, the full width of the board (label column
+  /// and dates); null when the row is closed.
+  final Widget? Function(BuildContext context, int row)? below;
 
   final ChartWindow window;
   final DateTime today;
@@ -807,6 +813,20 @@ class _ChartBoardState extends State<ChartBoard> {
         ],
       ),
     );
+    if (widget.below != null) {
+      // No fixed extent then: each row keeps its own height.
+      row = SizedBox(height: ChartBoard.rowExtent, child: row);
+      if (widget.below!(context, i) case final open?) {
+        row = Column(
+          key: widget.rowKey?.call(i),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [row, open],
+        );
+      } else if (widget.rowKey != null) {
+        row = KeyedSubtree(key: widget.rowKey!(i), child: row);
+      }
+    }
     if (widget.rowWrap case final wrap?) row = wrap(i, row);
     return row;
   }
@@ -857,14 +877,19 @@ class _ChartBoardState extends State<ChartBoard> {
                           ? ListView.builder(
                               controller: controller,
                               itemCount: widget.rowCount,
-                              itemExtent: ChartBoard.rowExtent,
+                              // Rows can open (below): heights vary then.
+                              itemExtent: widget.below == null
+                                  ? ChartBoard.rowExtent
+                                  : null,
                               itemBuilder: _row,
                             )
                           : ReorderableListView.builder(
                               scrollController: controller,
                               buildDefaultDragHandles: false,
                               itemCount: widget.rowCount,
-                              itemExtent: ChartBoard.rowExtent,
+                              itemExtent: widget.below == null
+                                  ? ChartBoard.rowExtent
+                                  : null,
                               onReorderItem: reorder,
                               itemBuilder: _row,
                             ),
@@ -1014,24 +1039,23 @@ class _ChartBarState extends State<ChartBar> {
   );
 
   Widget _face() {
+    // The label uses the bar's whole width, no padding; tight bars
+    // condense it (FitText). A bar that is a drag source keeps its long
+    // press, so no tooltip there.
     final face = SizedBox.expand(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: widget.label == null
-              ? null
-              : Text(
-                  widget.label!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: widget.textColor,
-                  ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: widget.label == null
+            ? null
+            : FitText(
+                widget.label!,
+                tooltip: widget.wrapBody == null,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: widget.textColor,
                 ),
-        ),
+              ),
       ),
     );
     return widget.wrapBody?.call(face) ?? face;

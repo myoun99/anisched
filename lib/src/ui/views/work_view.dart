@@ -9,6 +9,7 @@ import '../instant.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import 'chart.dart';
+import '../fit_text.dart';
 
 /// The user's own work periods laid out on parallel lanes (「라인 1 · 2」).
 /// Bars past the lane count go to red 「넘침」 rows. A long press picks a
@@ -208,10 +209,9 @@ class _WorkViewState extends State<WorkView> {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(left: 10, right: 4),
-        child: Text(
+        child: FitText(
           over ? S.overflow.t : _laneName(r),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          tooltip: false,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -329,5 +329,5 @@ class _WorkViewState extends State<WorkView> {
 
 /// 「별빛 정류장 #07 · 원화 · 4 cut」.
 String workBarLabel(PartGroup g) =>
-    '${g.workTitle} ${episodeLabel(g.episodeNumber)} · ${g.stageName} · '
+    '${g.workTitle} ${episodeLabel(g.episodeNumber)} · ${stageText(g.stageName)} · '
     '${g.kind == GroupKind.storyboard ? groupCount(g) : '${g.total} cut'}';

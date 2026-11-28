@@ -17,7 +17,11 @@ import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'document_menu.dart';
 import 'filter.dart';
+import 'format.dart';
 import 'hold.dart';
+import 'part_line.dart';
+import 'pick_field.dart';
+import 'time_editor.dart';
 import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
@@ -30,6 +34,7 @@ import 'views/stats_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
 import 'text/strings.dart';
+import 'fit_text.dart';
 
 /// The app's views: the list, the production timeline, the user's own
 /// work on parallel lanes, registration and settings.
@@ -137,6 +142,9 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _timerTask = widget.timer?.running()?.taskId;
+    if (widget.store case final s?) {
+      episodeStyle.value = s.settings.episodeStyle;
+    }
     _doc = widget.session?.changes.listen(_onDocument);
     unawaited(_loadGroups());
   }
@@ -175,25 +183,34 @@ class _AppShellState extends State<AppShell> {
   /// The task the timer last ran on, for resume.
   int? _timerTask;
 
+  /// The cut on the time bar and its unit — from the sheet, or (when the
+  /// sheet hides it, e.g. just submitted) straight from the store, so the
+  /// bar keeps its cut.
+  (TaskRow, PartGroup)? _timerTarget(int? id) {
+    if (id == null) return null;
+    for (final g in _groups) {
+      for (final t in g.tasks) {
+        if (t.id == id) return (t, g);
+      }
+    }
+    final row = widget.store
+        ?.taskRows(includeDone: true)
+        .where((t) => t.id == id)
+        .firstOrNull;
+    return row == null ? null : (row, PartGroup([row]));
+  }
+
   Widget _timerBar() {
     final timer = widget.timer;
     final running = timer?.running();
     final id = running?.taskId ?? _timerTask;
-    TaskRow? task;
-    PartGroup? group;
-    for (final g in _groups) {
-      for (final t in g.tasks) {
-        if (t.id == id) {
-          task = t;
-          group = g;
-        }
-      }
-    }
+    final target = _timerTarget(id);
     final on = running != null && running.taskId == id;
+    final writable = widget.store != null;
     return TimerBar(
       running: on,
-      task: task,
-      group: group,
+      task: target?.$1,
+      group: target?.$2,
       clock: widget.clock,
       worked: timer == null || id == null ? null : () => timer.workedOn(id),
       onToggle: timer == null || id == null
@@ -202,7 +219,126 @@ class _AppShellState extends State<AppShell> {
               timer.toggle(taskId: id);
               setState(() => _timerTask = id);
             },
+      onPickCut: target == null ? null : () => _pickTimerCut(target.$1),
+      onPickWork: target == null ? null : () => _pickTimerWork(target.$2),
+      onPickEpisode: target == null
+          ? null
+          : () => _pickTimerEpisode(target.$2.workId, target.$2.episodeId),
+      onStatus: !writable || id == null
+          ? null
+          : (st) => _write((store) => store.setStatus(id, st)),
+      onEditTime: timer == null || target == null || widget.reader == null
+          ? null
+          : () => unawaited(
+              showTimeEditor(
+                context,
+                title: taskLabel(target.$1),
+                now: widget.clock(),
+                edits: TimeEdits(
+                  load: () => widget.reader!.intervalsOf(target.$1.id),
+                  edit: (i, {start, stop}) {
+                    timer.editInterval(i, start: start, stop: stop);
+                    setState(() => _refresh++);
+                  },
+                  add: (a, b) {
+                    timer.addInterval(taskId: target.$1.id, start: a, stop: b);
+                    setState(() => _refresh++);
+                  },
+                  delete: (i) {
+                    timer.deleteInterval(i);
+                    setState(() => _refresh++);
+                  },
+                ),
+              ),
+            ),
     );
+  }
+
+  /// The time bar's cut: the others of its episode, in cut order, the
+  /// current one in the middle.
+  Future<void> _pickTimerCut(TaskRow now) async {
+    final reader = widget.reader;
+    if (reader == null) return;
+    final rows = [now, ...await reader.tasksBeside(now.id)]
+      ..sort((a, b) {
+        final k = naturalSortKey(taskLabel(a))
+            .compareTo(naturalSortKey(taskLabel(b)));
+        return k != 0 ? k : a.stageName.compareTo(b.stageName);
+      });
+    if (!mounted) return;
+    final picked = await showCenteredPicker<int>(
+      context: context,
+      title: S.cutName.t,
+      current: now.id,
+      searchable: rows.length > 12,
+      search: (q) async => [
+        for (final t in rows)
+          if (q.isEmpty || taskLabel(t).contains(q))
+            (
+              value: t.id,
+              title: taskLabel(t),
+              note: [
+                stageText(t.stageName),
+                if (t.partLabel case final p?) S.partTitle.f({'p': p}),
+              ].join(' · '),
+            ),
+      ],
+    );
+    if (picked != null) _pickForTimer(picked.value);
+  }
+
+  /// Another title: then its episode, then that episode's first cut.
+  Future<void> _pickTimerWork(PartGroup now) async {
+    final works = <int, String>{for (final g in _groups) g.workId: g.workTitle};
+    final keys = works.keys.toList()
+      ..sort(
+        (a, b) =>
+            naturalSortKey(works[a]!).compareTo(naturalSortKey(works[b]!)),
+      );
+    final picked = await showCenteredPicker<int>(
+      context: context,
+      title: S.title.t,
+      current: now.workId,
+      searchable: keys.length > 12,
+      search: (q) async => [
+        for (final k in keys)
+          if (q.isEmpty || works[k]!.contains(q))
+            (value: k, title: works[k]!, note: null),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    await _pickTimerEpisode(picked.value, null);
+  }
+
+  /// An episode of [workId]; the bar moves to its first cut.
+  Future<void> _pickTimerEpisode(int workId, int? current) async {
+    final eps = <int, String>{
+      for (final g in _groups)
+        if (g.workId == workId) g.episodeId: g.episodeNumber,
+    };
+    final keys = eps.keys.toList()
+      ..sort(
+        (a, b) => naturalSortKey(eps[a]!).compareTo(naturalSortKey(eps[b]!)),
+      );
+    final picked = keys.length == 1 && current == null
+        ? (value: keys.single, title: '', note: null)
+        : await showCenteredPicker<int>(
+            context: context,
+            title: S.episode.t,
+            current: current,
+            searchable: keys.length > 12,
+            search: (q) async => [
+              for (final k in keys)
+                if (q.isEmpty || eps[k]!.contains(q))
+                  (value: k, title: episodeLabel(eps[k]!), note: null),
+            ],
+          );
+    if (picked == null || picked.value == current) return;
+    final first = _groups
+        .where((g) => g.episodeId == picked.value)
+        .expand((g) => g.tasks)
+        .firstOrNull;
+    if (first != null) _pickForTimer(first.id);
   }
 
   /// Puts a cut on the time bar. Recording starts only when the user
@@ -222,6 +358,7 @@ class _AppShellState extends State<AppShell> {
     final store = widget.store;
     if (store == null) return;
     body(store);
+    episodeStyle.value = store.settings.episodeStyle;
     setState(() => _refresh++);
     unawaited(_loadGroups());
   }
@@ -415,28 +552,32 @@ class _AppShellState extends State<AppShell> {
     final writable = widget.store != null;
     final shown = _visible(now);
     final toolbar = _toolbar(shown.length);
+    // One wiring for every view that opens a unit's details.
+    final wiring = UnitWiring(
+      signals: _signals,
+      paces: _paces,
+      selection: _selection,
+      onDue: writable ? _setDue : null,
+      onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
+      onKickoff: writable ? _setKickoff : null,
+      onPlan: writable ? _plan : null,
+      revisionsOf: widget.reader == null ? null : _revisions,
+      onEditRevision: writable ? _editRevision : null,
+      onTaskTap: widget.timer == null
+          ? null
+          : (t) => _selection.isEmpty
+                ? _pickForTimer(t.id)
+                : _selection.toggleTask(t),
+    );
     return switch (v) {
       AppView.list => SheetView(
         parts: shown,
         now: now,
         layout: layout,
         showDone: _filter.showDone,
-        signals: _signals,
-        paces: _paces,
-        selection: _selection,
+        wiring: wiring,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
-        onDue: writable ? _setDue : null,
-        onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
-        onKickoff: writable ? _setKickoff : null,
-        onPlan: writable ? _plan : null,
-        revisionsOf: widget.reader == null ? null : _revisions,
-        onEditRevision: writable ? _editRevision : null,
-        onTaskTap: widget.timer == null
-            ? null
-            : (t) => _selection.isEmpty
-                  ? _pickForTimer(t.id)
-                  : _selection.toggleTask(t),
       ),
       AppView.timeline => TimelineView(
         parts: shown,
@@ -448,6 +589,7 @@ class _AppShellState extends State<AppShell> {
         restWeekdays: rest,
         selection: _selection,
         onSchedule: writable ? _schedule : null,
+        details: wiring.details,
       ),
       AppView.work => WorkView(
         lanes: _lanes,
@@ -488,9 +630,16 @@ class _AppShellState extends State<AppShell> {
               }
             : null,
         onCreateEpisode: writable
-            ? (work, number) {
+            ? (work, typed) {
                 var id = 0;
-                _write((s) => id = s.addEpisode(work, number));
+                // A typed number is stored in the document's style (#07).
+                final n = typedEpisodeNumber(typed);
+                _write(
+                  (s) => id = s.addEpisode(
+                    work,
+                    n == null ? typed.trim() : s.episodeNumberFor(n),
+                  ),
+                );
                 return id;
               }
             : null,
@@ -757,16 +906,12 @@ class _ViewButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Center(
                 widthFactor: 1,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    view.label,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: selected ? ink : c.muted,
-                    ),
+                child: FitText(
+                  view.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: selected ? ink : c.muted,
                   ),
                 ),
               ),

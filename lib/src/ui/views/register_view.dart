@@ -414,6 +414,7 @@ class _RegisterViewState extends State<RegisterView> {
           children: [
             PickField<int>(
               key: const Key('pick-client'),
+              current: _client?.value,
               label: S.client.t,
               width: fw,
               value: _client?.title,
@@ -439,6 +440,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-work'),
+              current: _work?.value,
               label: S.title.t,
               width: fw,
               value: _work?.title,
@@ -462,6 +464,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-episode'),
+              current: _episode?.value,
               label: S.episode.t,
               width: sw,
               enabled: _work != null,
@@ -480,17 +483,20 @@ class _RegisterViewState extends State<RegisterView> {
               onPicked: _pickEpisode,
               onCreate: widget.onCreateEpisode == null
                   ? null
-                  : (name) async => (
-                      value: widget.onCreateEpisode!(
-                        _work!.value,
-                        episodeNumberOf(name),
-                      ),
-                      title: episodeLabel(episodeNumberOf(name)),
-                      note: null,
-                    ),
+                  : (name) async {
+                      final id = widget.onCreateEpisode!(_work!.value, name);
+                      return (
+                        value: id,
+                        title: typedEpisodeNumber(name) == null
+                            ? name.trim()
+                            : episodeLabel('${typedEpisodeNumber(name)}'),
+                        note: null,
+                      );
+                    },
             ),
             PickField<String>(
               key: const Key('pick-part'),
+              current: _part,
               label: S.part.t,
               width: sw,
               enabled: _episode != null,
@@ -555,7 +561,7 @@ class _RegisterViewState extends State<RegisterView> {
                         () => v == true ? _stages.add(s) : _stages.remove(s),
                       ),
                     ),
-                    Text(s, style: const TextStyle(fontSize: 13)),
+                    Text(stageText(s), style: const TextStyle(fontSize: 13)),
                   ],
                 ),
               ),

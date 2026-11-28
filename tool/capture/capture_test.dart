@@ -155,6 +155,30 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 7: a timeline row opened (the list's details, board-wide).
+  'timeline-open': (
+    AppView.timeline,
+    (t, size) async {
+      await t.tap(byKeyPrefix('tl-label-').at(1));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Round 7: a cut on the time bar, its picker open (this cut centred).
+  'timer-pick': (
+    AppView.list,
+    (t, size) async {
+      Folds.cutsInDetails.value = true;
+      await t.tap(byKeyPrefix('line-').at(1));
+      await t.pump();
+      await t.tap(byKeyPrefix('cut-').at(1));
+      await t.pump();
+      await t.tap(find.byKey(const Key('timer-cut')));
+      await t.pump();
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // Round 4: the statistics tab, loaded.
   'stats': (
     AppView.stats,

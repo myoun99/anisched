@@ -20,45 +20,15 @@ class SheetView extends StatefulWidget {
     required this.now,
     required this.layout,
     this.dayStartMinutes = 0,
-    this.paceOf,
+    this.wiring = const UnitWiring(),
     this.showDone,
     this.onShowDoneChanged,
-    this.signals = const {},
-    this.paces = const {},
-    this.selection,
     this.toolbar,
     this.onReorder,
-    this.onTaskTap,
-    this.onDue,
-    this.onHold,
-    this.onKickoff,
-    this.onPlan,
-    this.revisionsOf,
-    this.onEditRevision,
   });
 
-  /// Sets a unit's deadline / one cut's own deadline.
-  final void Function(PartGroup group, DateTime due)? onDue;
-
-  /// Sets a unit's production start (착수).
-  final void Function(PartGroup group, DateTime kickoff)? onKickoff;
-
-  /// Sets a unit's own work start and end (one may be the old one).
-  final void Function(PartGroup group, DateTime start, DateTime end)? onPlan;
-
-  /// Puts a whole unit on hold, or takes it off.
-  final void Function(PartGroup group)? onHold;
-
-  /// A unit's deadline rounds; null hides the list.
-  final Future<List<DueRevision>> Function(PartGroup group)? revisionsOf;
-
-  /// Corrects one round of a unit's deadline.
-  final void Function(PartGroup group, int revision, DateTime due)?
-  onEditRevision;
-
-  /// A cut tapped in the opened details (starts the timer, or picks it
-  /// while picking); null: taps pick.
-  final ValueChanged<TaskRow>? onTaskTap;
+  /// What the lines and their opened details act through (the shell's).
+  final UnitWiring wiring;
 
   /// Units to list. With [onReorder] they are shown as given (already
   /// filtered and in the user's order); without it this view filters by
@@ -79,22 +49,10 @@ class SheetView extends StatefulWidget {
   /// When a working day starts (the user's setting).
   final int dayStartMinutes;
 
-  /// The group's pace, shown when a line opens.
-  final Pace? Function(PartGroup group)? paceOf;
-
   /// Whether done work is listed, when the caller owns that choice (it
   /// then reloads [parts] with or without done work). Null keeps it here.
   final bool? showDone;
   final ValueChanged<bool>? onShowDoneChanged;
-
-  /// Deadline and plan signals by group key (reader.signals).
-  final Map<String, GroupSignals> signals;
-
-  /// Usual speeds by stage name (reader.stagePaces).
-  final Map<String, StagePace> paces;
-
-  /// Tasks picked for an action, shared by every view.
-  final TaskSelection? selection;
 
   @override
   State<SheetView> createState() => _SheetViewState();
@@ -170,10 +128,10 @@ class _SheetViewState extends State<SheetView> {
           if (!narrow) const PartHeader(),
           Expanded(
             child: ListenableBuilder(
-              listenable: widget.selection ?? const _Never(),
+              listenable: widget.wiring.selection ?? const _Never(),
               builder: (context, _) => _list(parts, (context, i) {
                 final p = parts[i];
-                final sel = widget.selection;
+                final sel = widget.wiring.selection;
                 final open = _expanded.contains(p.key);
                 final body = Column(
                   key: ValueKey(p.key),
@@ -185,11 +143,11 @@ class _SheetViewState extends State<SheetView> {
                       dayStartMinutes: widget.dayStartMinutes,
                       expanded: open,
                       selected: _selected == p.key,
-                      signals: widget.signals[p.key],
+                      signals: widget.wiring.signals[p.key],
                       picked: sel?.of(p) ?? Picked.none,
-                      onDue: widget.onDue == null
+                      onDue: widget.wiring.onDue == null
                           ? null
-                          : (d) => widget.onDue!(p, d),
+                          : (d) => widget.wiring.onDue!(p, d),
                       onLongPress: sel == null
                           ? null
                           : () => sel.toggleGroup(p),
@@ -197,49 +155,7 @@ class _SheetViewState extends State<SheetView> {
                           ? sel.toggleGroup(p)
                           : _toggle(p),
                     ),
-                    if (open)
-                      PartDetails(
-                        group: p,
-                        pace:
-                            widget.signals[p.key]?.pace ??
-                            widget.paceOf?.call(p),
-                        plan: widget.signals[p.key]?.plan,
-                        usual: widget.paces[p.stageName],
-                        isPicked: sel?.has,
-                        onTask: widget.onTaskTap ?? sel?.toggleTask,
-                        onDue: widget.onDue == null
-                            ? null
-                            : (d) => widget.onDue!(p, d),
-                        onTaskLongPress: sel?.toggleTask,
-                        onKickoff: widget.onKickoff == null
-                            ? null
-                            : (d) => widget.onKickoff!(p, d),
-                        onPlanStart: widget.onPlan == null
-                            ? null
-                            : (d) => widget.onPlan!(
-                                p,
-                                d,
-                                p.planEndAt ?? p.dueAt ?? d,
-                              ),
-                        onPlanEnd: widget.onPlan == null
-                            ? null
-                            : (d) => widget.onPlan!(
-                                p,
-                                p.planStartAt ?? p.kickoffAt ?? d,
-                                d,
-                              ),
-                        onHold: widget.onHold == null
-                            ? null
-                            : () => widget.onHold!(p),
-                        loadRevisions:
-                            widget.revisionsOf == null ||
-                                p.kind == GroupKind.noPart
-                            ? null
-                            : () => widget.revisionsOf!(p),
-                        onEditRevision: widget.onEditRevision == null
-                            ? null
-                            : (n, d) => widget.onEditRevision!(p, n, d),
-                      ),
+                    if (open) widget.wiring.details(p),
                   ],
                 );
                 if (widget.onReorder == null) return body;

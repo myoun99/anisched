@@ -4,6 +4,7 @@ import '../models/catalogue.dart';
 import '../models/progress.dart';
 import 'format.dart';
 import 'theme.dart';
+import 'fit_text.dart';
 
 extension StatusColor on AppColors {
   Color of(TaskStatus s) => switch (s) {
@@ -215,13 +216,7 @@ class SegmentButton extends StatelessWidget {
               if (icon != null)
                 Icon(icon, size: 17, color: selected ? null : c.muted),
               if (label.isNotEmpty)
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                Flexible(child: FitText(label, textAlign: TextAlign.center)),
               if (count != null)
                 Text('$count', style: TextStyle(color: c.muted)),
             ],
