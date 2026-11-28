@@ -22,6 +22,7 @@ import '../pick_field.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
+import '../notice.dart';
 
 /// Registering cuts, one step after another: 회사 → 작품 → 화수 → 파트 →
 /// 컷. Each of the first four picks from what is registered, with
@@ -389,21 +390,18 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   void _snack(String text, {required String key, VoidCallback? undo}) =>
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            key: Key(key),
-            content: Text(text),
-            action: undo == null
-                ? null
-                : SnackBarAction(
-                    key: const Key('reset-undo'),
-                    label: S.undoDrop.t,
-                    onPressed: undo,
-                  ),
-          ),
-        );
+      showNotice(
+        context,
+        text,
+        key: Key(key),
+        action: undo == null
+            ? null
+            : (
+                label: S.undoDrop.t,
+                onPressed: undo,
+                key: const Key('reset-undo'),
+              ),
+      );
 
   /// The checked stages, in order.
   List<String> get _checked => [

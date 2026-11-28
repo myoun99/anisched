@@ -169,6 +169,7 @@ class _TimelineViewState extends State<TimelineView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ViewToolbar(
+            basis: ToolbarBasis(Icons.factory_outlined, S.basisProduction.t),
             children: [
               ...?widget.toolbar,
               ValueListenableBuilder<bool>(
