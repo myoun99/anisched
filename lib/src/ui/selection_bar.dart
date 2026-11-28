@@ -85,7 +85,6 @@ class SelectionBar extends StatelessWidget {
   static IconData iconOf(TaskStatus s) => switch (s) {
     TaskStatus.inProgress => Icons.brush_outlined,
     TaskStatus.submitted => Icons.send_outlined,
-    TaskStatus.done => Icons.check_circle_outline,
     TaskStatus.received => Icons.inbox_outlined,
     TaskStatus.retake => Icons.replay,
   };

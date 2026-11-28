@@ -92,7 +92,6 @@ class RichStatsReader extends SyncCatalogueReader {
           groupKey: 'g${w.$1}-${back ~/ 9}',
           take: take,
           submittedAt: handed.toUtc(),
-          doneAt: handed.add(Duration(days: 2 + r.nextInt(4))).toUtc(),
           dueAt: due.toUtc(),
           dueExtensions: ext,
           firstDueAt: due.subtract(Duration(days: ext * 3)).toUtc(),

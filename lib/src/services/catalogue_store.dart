@@ -903,8 +903,7 @@ ORDER BY sort_key, id;''')) {
       '''
 SELECT cl.id, cl.name, cl.closing_day, cl.color,
   (SELECT MAX(COALESCE(
-     (SELECT MAX(MAX(COALESCE(t.done_at, 0), COALESCE(t.submitted_at, 0),
-                     COALESCE(t.received_at, 0)))
+     (SELECT MAX(MAX(COALESCE(t.submitted_at, 0), COALESCE(t.received_at, 0)))
       FROM work_stages s JOIN tasks t ON t.stage_id = s.id
       WHERE s.work_id = w.id), w.created_at))
    FROM works w WHERE w.client_id = cl.id AND w.archived_at IS NULL) AS used,
@@ -925,8 +924,7 @@ LIMIT ?;''',
     for (final r in db.select(
       '''
 SELECT w.id, w.title, w.currency, w.client_id,
-  COALESCE((SELECT MAX(MAX(COALESCE(t.done_at, 0),
-                           COALESCE(t.submitted_at, 0),
+  COALESCE((SELECT MAX(MAX(COALESCE(t.submitted_at, 0),
                            COALESCE(t.received_at, 0)))
             FROM work_stages s JOIN tasks t ON t.stage_id = s.id
             WHERE s.work_id = w.id), w.created_at) AS used,
@@ -1357,7 +1355,7 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
   List<StatsFact> _statsFacts(int? clientId, int? workId) {
     final extra = {
       for (final r in db.select('''
-SELECT t.id, t.submitted_at, t.submitted_due_at, t.done_at, w.client_id,
+SELECT t.id, t.submitted_at, t.submitted_due_at, w.client_id,
        c.name AS client
 FROM live_tasks t
 JOIN work_stages s ON s.id = t.stage_id
@@ -1393,7 +1391,6 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               clientColor: t.clientColor,
               take: t.take,
               submittedAt: _utcOrNull(x['submitted_at']),
-              doneAt: _utcOrNull(x['done_at']),
               dueAt: t.dueAt,
               submittedDueAt: _utcOrNull(x['submitted_due_at']),
               firstDueAt: t.firstDueAt,
@@ -2073,10 +2070,10 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
       );
   }
 
-  /// Sets [status]. `done_at` is when the work was FIRST finished and
-  /// `submitted_at` when it was FIRST handed in (pace, totals and
-  /// statistics count a cut once); handing in a retake stamps that take's
-  /// row instead. Submitting work not marked done marks it done too.
+  /// Sets [status]. `submitted_at` is when the cut was FIRST handed in —
+  /// finished, paid and counted once by pace, totals and statistics
+  /// (2026-11-28 유저: 완료와 제출 합침); handing in a retake stamps that
+  /// take's row instead.
   ///
   /// A shared (겸용) cut is one cut in progress (유저 2026-11-28): the
   /// status goes to the same stage's task of every live cut in its group.
@@ -2117,7 +2114,6 @@ THEN COALESCE($c.shared_with, $c.id) END''';
   void _setOneStatus(int taskId, TaskStatus status) {
     final now = _now();
     final submitted = status == TaskStatus.submitted ? 1 : 0;
-    final done = submitted == 1 || status == TaskStatus.done ? 1 : 0;
     _transaction(() {
       if (submitted == 1) {
         // Out of hand: a timer running on it pauses.
@@ -2146,10 +2142,9 @@ WHERE id = ? AND submitted_at IS NULL;''',
       db.execute(
         'UPDATE tasks SET status = ?, '
         'submitted_at = CASE WHEN ? THEN COALESCE(submitted_at, ?) '
-        'ELSE submitted_at END, '
-        'done_at = CASE WHEN ? THEN COALESCE(done_at, ?) ELSE done_at END '
+        'ELSE submitted_at END '
         'WHERE id = ?;',
-        [status.dbName, submitted, now, done, now, taskId],
+        [status.dbName, submitted, now, taskId],
       );
     });
   }
@@ -2274,7 +2269,7 @@ SELECT t.id, w.currency FROM live_tasks t
 JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
 LEFT JOIN clients cl ON cl.id = w.client_id
-WHERE t.done_at >= ? AND t.done_at < ?
+WHERE t.submitted_at >= ? AND t.submitted_at < ?
   AND t.handed_off_at IS NULL
   AND cl.closing_day IS ?;''',
         [
@@ -2299,9 +2294,9 @@ WHERE t.done_at >= ? AND t.done_at < ?
   /// order (work, episode, part, stage, cut). One query: rates, lengths,
   /// takes, paid retakes and timer time are resolved in SQL.
   ///
-  /// Unless [includeDone], a done task is left out when every task of its
-  /// group is done too — finished units drop off the views, while a done
-  /// cut still counts in a part that has open ones ("3/6").
+  /// Unless [includeDone], a submitted task is left out when every task of
+  /// its group is submitted too — finished units drop off the views, while
+  /// a submitted cut still counts in a part that has open ones ("3/6").
   ///
   /// Tasks handed off to someone else are left out unless
   /// [includeHandedOff]; archived tasks (of live cuts, parts, episodes and
@@ -2683,8 +2678,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     ];
   }
 
-  /// The usual pace per stage name: cuts handed over (submitted, or done
-  /// without a submission) in the last [days] days up to today, divided
+  /// The usual pace per stage name: cuts handed over (submitted) in the
+  /// last [days] days up to today, divided
   /// by the working days in that window. Stages of every work with the
   /// same name pool together ("LO" in two works is one LO speed).
   List<UsualPace> usualPaces({int? days}) {
@@ -2710,8 +2705,8 @@ SELECT s.name AS stage_name, COUNT(DISTINCT ${_unitKeySql('t', 'c')}) AS cuts
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 LEFT JOIN cuts c ON c.id = t.cut_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.done_at, t.submitted_at) >= ?
-  AND COALESCE(t.done_at, t.submitted_at) < ?
+  AND t.submitted_at >= ?
+  AND t.submitted_at < ?
 GROUP BY s.name ORDER BY s.name;''',
         [_ms(from), _ms(today.end)],
       ))
@@ -2737,12 +2732,12 @@ GROUP BY s.name ORDER BY s.name;''',
     for (final r in db.select(
       '''
 SELECT s.name AS stage_name, COUNT(DISTINCT ${_unitKeySql('t', 'c')}) AS cuts,
-       MIN(COALESCE(t.done_at, t.submitted_at)) AS first_at
+       MIN(t.submitted_at) AS first_at
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 LEFT JOIN cuts c ON c.id = t.cut_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.done_at, t.submitted_at) IS NOT NULL
-  AND COALESCE(t.done_at, t.submitted_at) < ?
+  AND t.submitted_at IS NOT NULL
+  AND t.submitted_at < ?
 GROUP BY s.name;''',
       [_ms(today.end)],
     )) {

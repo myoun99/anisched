@@ -106,12 +106,9 @@ class _TimerBarState extends State<TimerBar> {
       '${(d.inMinutes % 60).toString().padLeft(2, '0')}:'
       '${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 
-  /// The finish button's next step: 완료 first, then 제출.
-  static TaskStatus? _next(TaskStatus s) => switch (s) {
-    TaskStatus.done => TaskStatus.submitted,
-    TaskStatus.submitted => null,
-    _ => TaskStatus.done,
-  };
+  /// The finish button's next step: 제출 (2026-11-28 유저: 완료와 제출 합침).
+  static TaskStatus? _next(TaskStatus s) =>
+      s == TaskStatus.submitted ? null : TaskStatus.submitted;
 
   Future<void> _stepBack(BuildContext context, TaskStatus s) async {
     final on = widget.onStatus;
@@ -119,9 +116,7 @@ class _TimerBarState extends State<TimerBar> {
     final box = context.findRenderObject()! as RenderBox;
     final at = box.localToGlobal(Offset.zero) & box.size;
     final back = <(TaskStatus, String)>[
-      if (s == TaskStatus.submitted) (TaskStatus.done, S.backToDone.t),
-      if (s == TaskStatus.submitted || s == TaskStatus.done)
-        (TaskStatus.inProgress, S.backToWork.t),
+      if (s == TaskStatus.submitted) (TaskStatus.inProgress, S.backToWork.t),
     ];
     if (back.isEmpty) return;
     final picked = await showMenu<TaskStatus>(

@@ -293,16 +293,10 @@ class TaskRow {
 }
 
 extension TaskStatusRules on TaskStatus {
-  /// Still in the user's hands: everything before the submission, done
-  /// work included (the 「보유」 cuts).
+  /// Still in the user's hands, with work to do: everything before the
+  /// submission (the 「보유」 cuts, what the daily pace counts).
+  /// 2026-11-28 유저: 완료와 제출 합침 — "open" and "needs work" are one.
   bool get isOpen => this != TaskStatus.submitted;
-
-  /// Work still to do — what the daily pace counts (not done, not
-  /// submitted).
-  bool get needsWork =>
-      this == TaskStatus.received ||
-      this == TaskStatus.inProgress ||
-      this == TaskStatus.retake;
 
   /// Handed to production: submitted.
   bool get isHanded => this == TaskStatus.submitted;
@@ -312,14 +306,13 @@ extension TaskStatusRules on TaskStatus {
     TaskStatus.retake => 0,
     TaskStatus.inProgress => 1,
     TaskStatus.received => 2,
-    TaskStatus.done => 3,
-    TaskStatus.submitted => 4,
+    TaskStatus.submitted => 3,
   };
 }
 
 /// The status of a group from its tasks' statuses: all submitted →
-/// submitted; any retake → retake; all done or submitted → done; all
-/// received → received; otherwise in progress.
+/// submitted; any retake → retake; all received → received; otherwise
+/// in progress.
 TaskStatus deriveStatus(Map<TaskStatus, int> counts) {
   final total = counts.values.fold(0, (a, b) => a + b);
   int n(TaskStatus s) => counts[s] ?? 0;
@@ -328,9 +321,6 @@ TaskStatus deriveStatus(Map<TaskStatus, int> counts) {
   }
   if (n(TaskStatus.submitted) == total) return TaskStatus.submitted;
   if (n(TaskStatus.retake) > 0) return TaskStatus.retake;
-  if (n(TaskStatus.submitted) + n(TaskStatus.done) == total) {
-    return TaskStatus.done;
-  }
   return TaskStatus.inProgress;
 }
 
@@ -430,10 +420,10 @@ class PartGroup {
     return {for (final e in keys.entries) e.key: e.value.length};
   }
 
-  /// Cuts submitted or done — the 3 in "3/6".
+  /// Cuts submitted — the 3 in "3/6".
   int get handed => unitCount(tasks.where((t) => t.status.isHanded));
 
-  /// Cuts not handed in yet (done ones included) — the count at the right
+  /// Cuts not handed in yet — the count at the right
   /// end of a timeline row.
   int get toSubmit => unitCount(tasks.where((t) => t.status.isOpen));
 
@@ -727,7 +717,7 @@ Pace? paceFor(
     if (!off(d)) workDays++;
   }
   return Pace(
-    remaining: unitCount(group.tasks.where((t) => t.status.needsWork)),
+    remaining: unitCount(group.tasks.where((t) => t.status.isOpen)),
     workDays: workDays,
     startsLater: startsLater,
     end: endTime,
@@ -879,15 +869,6 @@ sealed class DueSignal {
   const DueSignal();
 }
 
-/// Every cut's work is done, not all submitted yet: the deadline (for the
-/// submission) still runs — [daysLeft] to it (negative = late), null with
-/// none.
-final class DueDone extends DueSignal {
-  const DueDone([this.daysLeft]);
-
-  final int? daysLeft;
-}
-
 /// Every cut is submitted — out of the user's hands.
 final class DueSubmitted extends DueSignal {
   const DueSubmitted();
@@ -918,17 +899,7 @@ DueSignal dueSignal(
   required DateTime now,
   int dayStartMinutes = 0,
 }) {
-  switch (group.status) {
-    case TaskStatus.submitted:
-      return const DueSubmitted();
-    case TaskStatus.done:
-      final due = group.dueAt;
-      return DueDone(due == null ? null : dueInDays(due, now, dayStartMinutes));
-    case TaskStatus.received:
-    case TaskStatus.inProgress:
-    case TaskStatus.retake:
-      break;
-  }
+  if (group.status == TaskStatus.submitted) return const DueSubmitted();
   final due = group.dueAt;
   if (due == null) return const DueNone();
   final days = dueInDays(due, now, dayStartMinutes);
@@ -985,7 +956,7 @@ PlanSignal planSignal(
   double? recentPerDay,
 }) {
   final status = group.status;
-  if (!status.needsWork) return const PlanNone();
+  if (!status.isOpen) return const PlanNone();
   final slack = group.slackDays;
   if (slack != null && slack < 0) return const PlanOver();
   final start = group.planStartAt;

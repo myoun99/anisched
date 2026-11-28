@@ -16,7 +16,6 @@ extension TaskStatusLabel on TaskStatus {
     TaskStatus.inProgress => S.stInProgress.t,
     TaskStatus.submitted => S.stSubmitted.t,
     TaskStatus.retake => S.stRetake.t,
-    TaskStatus.done => S.stDone.t,
   };
 }
 
@@ -38,8 +37,7 @@ enum DueTone { none, quiet, late }
 
 /// [dueLabel] from days already counted (negative = late, null = none).
 ({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
-  // Handed in: no deadline to watch any more. Done but not handed in still
-  // counts down — it has yet to go.
+  // Handed in: no deadline to watch any more.
   if (days == null || status.isHanded) {
     return (text: '—', tone: DueTone.none);
   }
@@ -144,7 +142,6 @@ String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
 /// The deadline signal as one label; only [DueLate] stands out.
 ({String text, bool late, bool quiet}) dueSignalLabel(DueSignal s) =>
     switch (s) {
-      DueDone() => (text: S.stDone.t, late: false, quiet: true),
       DueSubmitted() => (text: S.stSubmitted.t, late: false, quiet: true),
       DueNone() => (text: '—', late: false, quiet: true),
       DueLate(:final days) => (

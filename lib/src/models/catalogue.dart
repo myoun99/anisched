@@ -2,14 +2,13 @@
 library;
 
 /// Where a task stands. Stored as [dbName].
-/// In flow order (유저 2026-11-28): received → in progress → **done** (the
-/// work is finished, still in the user's hands) → **submitted** (handed to
+/// In flow order: received → in progress → submitted (handed to
 /// production, out of the user's hands); a retake comes back after a
-/// submission. Submitting work not yet done marks it done too.
+/// submission. 2026-11-28 유저: 완료와 제출 합침 — there is no separate
+/// "done" any more; finishing the work is submitting it.
 enum TaskStatus {
   received('received'),
   inProgress('in_progress'),
-  done('done'),
   submitted('submitted'),
   retake('retake');
 

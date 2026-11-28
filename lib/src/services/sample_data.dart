@@ -63,7 +63,6 @@ void fillSample(CatalogueStore store, DateTime now) {
   const w = TaskStatus.inProgress;
   const s = TaskStatus.submitted;
   const t = TaskStatus.retake;
-  const d = TaskStatus.done;
 
   // Each client its own colour, so the views show what colours do.
   final sky = store.addClient('스튜디오 하늘', color: 0xFF5B8DEF);
@@ -73,10 +72,10 @@ void fillSample(CatalogueStore store, DateTime now) {
   final star = store.createWork('별빛 정류장', clientId: sky);
   final star7 = store.addEpisode(star, '#07');
   part(star, star7, 'B', 'LO', -6, const Rate(RateUnit.fixed, 3000), [
-    ('C030', d, 1, '2+06', null),
-    ('C031', d, 1, '1+12', null),
-    ('C032', d, 2, '5+00', null),
-    ('C033', d, 1, '3+00', null),
+    ('C030', s, 1, '2+06', null),
+    ('C031', s, 1, '1+12', null),
+    ('C032', s, 2, '5+00', null),
+    ('C033', w, 1, '3+00', null),
   ]);
   part(star, star7, 'A', '원화', 0, const Rate(RateUnit.fixed, 4500), [
     ('C012', w, 1, '3+12', null),
@@ -106,14 +105,14 @@ void fillSample(CatalogueStore store, DateTime now) {
   part(riko, riko11, 'B', '원화/작감', 1, const Rate(RateUnit.fixed, 2000), [
     ('C108', s, 1, '3+18', null),
     ('C109', t, 2, '2+00', -1),
-    ('C110', d, 1, '1+00', null),
+    ('C110', s, 1, '1+00', null),
     ('C115', w, 1, '2+06', null),
   ]);
 
   final wolf = store.createWork('푸른 늑대의 숲', clientId: sky);
   final movie = store.addEpisode(wolf, '극장판');
   part(wolf, movie, 'A', '원화', 3, const Rate(RateUnit.perSecond, 10000), [
-    ('C0290', d, 2, '4+00', null),
+    ('C0290', s, 2, '4+00', null),
     ('C0291', t, 2, '3+06', null),
     ('C0295', w, 1, '2+12', null),
   ]);

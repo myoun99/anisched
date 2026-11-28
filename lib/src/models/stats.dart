@@ -34,7 +34,6 @@ class StatsFact {
     this.clientColor,
     this.take = 1,
     this.submittedAt,
-    this.doneAt,
     this.dueAt,
     this.submittedDueAt,
     this.firstDueAt,
@@ -77,9 +76,9 @@ class StatsFact {
   /// Highest take (1 = never retaken).
   final int take;
 
-  /// First hand-in.
+  /// First hand-in — when the cut counts as handed, done and paid
+  /// (2026-11-28 유저: 완료와 제출 합침).
   final DateTime? submittedAt;
-  final DateTime? doneAt;
 
   /// The production deadline in force now.
   final DateTime? dueAt;
@@ -117,10 +116,9 @@ class StatsPeriod {
   final DateTime start;
   final DateTime end;
   int handed = 0;
-  int done = 0;
   Duration worked = Duration.zero;
 
-  /// Pay of tasks done in the bucket.
+  /// Pay of tasks handed in the bucket.
   final Money earned = {};
 }
 
@@ -131,9 +129,9 @@ class StatsSlice {
   final Object? key;
   final String? label;
 
-  /// Tasks first handed in the range.
+  /// Tasks first handed in the range (2026-11-28 유저: 완료와 제출 합침 —
+  /// the old `done` count is this).
   int handed = 0;
-  int done = 0;
 
   /// Timer time inside the range.
   Duration worked = Duration.zero;
@@ -157,7 +155,7 @@ class StatsSlice {
   DateTime? lastHandedAt;
 
   /// Progress now, whatever the range: live cuts in the slice, and those
-  /// handed in or done.
+  /// handed in.
   int cuts = 0;
   int finished = 0;
 
@@ -331,7 +329,7 @@ class Stats {
   /// covers it — against [lanes].
   final List<StatsDay> days = [];
 
-  /// Money per hour by currency, over tasks done in the range that have
+  /// Money per hour by currency, over tasks handed in the range that have
   /// timer time (their whole time); smallest unit per hour.
   final Map<String, double> hourly = {};
 }
@@ -416,7 +414,7 @@ class _StatsFold {
     return null;
   }
 
-  /// Counts one task: handed over, done (and paid), deadlines kept — into
+  /// Counts one task: handed over (and paid), deadlines kept — into
   /// the total, its stage, work and client, and (with a tree) every node
   /// on its path; its cut leaf counts it whatever its shared group.
   void fact(StatsFact f) {
@@ -449,8 +447,8 @@ class _StatsFold {
         for (final x in slices) {
           x.timedHandedWorked += f.worked;
         }
+        _paid(f, slices, periodOf(f.submittedAt!));
       }
-      if (inRange(f.doneAt)) _paid(f, slices, periodOf(f.doneAt!));
     }
     if (leaf != null) _count(f, [leaf], global: false);
   }
@@ -462,10 +460,9 @@ class _StatsFold {
   void _count(StatsFact f, List<StatsSlice> slices, {required bool global}) {
     for (final x in slices) {
       x.cuts++;
-      if (f.submittedAt != null || f.doneAt != null) x.finished++;
+      if (f.submittedAt != null) x.finished++;
     }
     if (inRange(f.submittedAt)) _handed(f, slices, global: global);
-    if (inRange(f.doneAt)) _done(f, slices, global: global);
   }
 
   void _handed(StatsFact f, List<StatsSlice> slices, {required bool global}) {
@@ -492,8 +489,13 @@ class _StatsFold {
       final last = x.lastHandedAt;
       if (last == null || handedAt.isAfter(last)) x.lastHandedAt = handedAt;
     }
-    if (!global) return;
-    periodOf(handedAt)?.handed++;
+    if (!global) {
+      _earn(f, slices);
+      return;
+    }
+    final period = periodOf(handedAt);
+    period?.handed++;
+    _paid(f, slices, period);
     s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
     if (due == null) {
       s.noDue++;
@@ -510,20 +512,7 @@ class _StatsFold {
     }
   }
 
-  void _done(StatsFact f, List<StatsSlice> slices, {required bool global}) {
-    for (final x in slices) {
-      x.done++;
-    }
-    if (!global) {
-      _earn(f, slices);
-      return;
-    }
-    final period = periodOf(f.doneAt!);
-    period?.done++;
-    _paid(f, slices, period);
-  }
-
-  /// A done task's pay into [slices] only.
+  /// A handed task's pay into [slices] only.
   void _earn(StatsFact f, List<StatsSlice> slices) {
     final pay = f.pay;
     if (pay == null) return;
@@ -532,7 +521,7 @@ class _StatsFold {
     }
   }
 
-  /// A done task's pay into the slices, its period and the hourly pay.
+  /// A handed task's pay into the slices, its period and the hourly pay.
   void _paid(StatsFact f, List<StatsSlice> slices, StatsPeriod? period) {
     final pay = f.pay;
     if (pay == null) return;
@@ -757,8 +746,7 @@ class _StatsFold {
     int byHanded(StatsSlice a, StatsSlice b) => b.handed != a.handed
         ? b.handed.compareTo(a.handed)
         : b.worked.compareTo(a.worked);
-    bool used(StatsSlice x) =>
-        x.handed > 0 || x.done > 0 || x.worked > Duration.zero;
+    bool used(StatsSlice x) => x.handed > 0 || x.worked > Duration.zero;
     s.stages.addAll(stages.values.where(used).toList()..sort(byHanded));
     s.works.addAll(works.values.where(used).toList()..sort(byHanded));
     s.clients.addAll(clients.values.where(used).toList()..sort(byHanded));

@@ -20,25 +20,33 @@ void main() {
     const w = TaskStatus.inProgress;
     const s = TaskStatus.submitted;
     const t = TaskStatus.retake;
-    const d = TaskStatus.done;
 
     test('follows the design rules', () {
       expect(deriveStatus(c([s, s])), s); // all handed in
       expect(deriveStatus(c([s, t, w])), t); // a retake came back
-      expect(deriveStatus(c([s, d])), d); // all finished, not all handed
-      expect(deriveStatus(c([d, d])), d);
       expect(deriveStatus(c([r, r])), r);
       expect(deriveStatus(c([r, w])), w);
-      expect(deriveStatus(c([r, d])), w);
+      expect(deriveStatus(c([r, s])), w);
       expect(deriveStatus(c([])), r);
     });
 
-    test('done is in hand, submitted is not; pace counts neither', () {
-      expect(TaskStatus.done.isOpen, isTrue);
-      expect(TaskStatus.done.needsWork, isFalse);
-      expect(TaskStatus.submitted.isOpen, isFalse);
-      expect(TaskStatus.submitted.isHanded, isTrue);
-      expect(TaskStatus.done.isHanded, isFalse);
+    test('four statuses; submitted is out of hand, the rest in hand '
+        '(2026-11-28 유저: 완료와 제출 합침)', () {
+      expect(TaskStatus.values, [r, w, s, t]);
+      expect(TaskStatus.values.map((v) => v.dbName), [
+        'received',
+        'in_progress',
+        'submitted',
+        'retake',
+      ]);
+      expect(
+        [for (final v in TaskStatus.values) v.isOpen],
+        [true, true, false, true],
+      );
+      expect(
+        [for (final v in TaskStatus.values) v.isHanded],
+        [false, false, true, false],
+      );
     });
   });
 
@@ -103,8 +111,8 @@ void main() {
       final ids = tasksOf(part, genga); // C030, C031, C032, C033
       store
         ..setStatus(ids[0], TaskStatus.submitted)
-        ..setStatus(ids[1], TaskStatus.done)
-        ..setStatus(ids[2], TaskStatus.done)
+        ..setStatus(ids[1], TaskStatus.inProgress)
+        ..setStatus(ids[2], TaskStatus.inProgress)
         ..setStatus(ids[3], TaskStatus.inProgress)
         ..requestRetake(ids[0], paidAmount: 500);
       store.setStatus(ids[0], TaskStatus.submitted);
@@ -118,13 +126,9 @@ void main() {
       expect(g.stageName, '원화');
       expect(g.kind, GroupKind.part);
       expect(g.total, 4);
-      expect(g.handed, 1); // done cuts are still in hand
+      expect(g.handed, 1);
       expect(g.status, TaskStatus.inProgress);
-      expect(g.counts, {
-        TaskStatus.submitted: 1,
-        TaskStatus.done: 2,
-        TaskStatus.inProgress: 1,
-      });
+      expect(g.counts, {TaskStatus.submitted: 1, TaskStatus.inProgress: 3});
       expect(g.pay, 4 * 4500 + 500);
       expect(g.unpriced, 0);
       expect(g.currency, 'JPY');
@@ -463,10 +467,10 @@ void main() {
         final ids = tasksOf(part, lo);
         store
           ..setStatus(ids[0], TaskStatus.submitted)
-          ..setStatus(ids[1], TaskStatus.done)
+          ..setStatus(ids[1], TaskStatus.submitted)
           ..requestRetake(ids[0]); // back in hand
         final p = store.paceOf(store.partGroups().single)!;
-        expect(p.remaining, 5); // all but the done one
+        expect(p.remaining, 5); // all but the submitted one
         expect(p.workDays, 3); // Fri, Sat, Sun
         expect(p.perDay, closeTo(5 / 3, 1e-9));
         expect(p.today, closeTo(5 / 3, 1e-9));
@@ -566,22 +570,16 @@ void main() {
             .firstWhere((s) => s.name == 'LO')
             .id;
         DateTime daysAgo(int n) => now.subtract(Duration(days: n));
-        void handed(
-          int stage,
-          int episode,
-          String cut,
-          int ago, {
-          bool done = false,
-        }) {
+        void handed(int stage, int episode, String cut, int ago) {
           final t = store.addTask(stage, cutId: store.addCut(episode, cut));
           CatalogueStore(
             db,
             clock: () => daysAgo(ago),
-          ).setStatus(t, done ? TaskStatus.done : TaskStatus.submitted);
+          ).setStatus(t, TaskStatus.submitted);
         }
 
         handed(lo, ep, 'C1', 1);
-        handed(lo, ep, 'C2', 10, done: true); // done without a submission
+        handed(lo, ep, 'C2', 10);
         handed(otherLo, otherEp, 'C3', 27); // same stage name, other work
         handed(lo, ep, 'C4', 28); // just outside the 4 weeks
         handed(genga, ep, 'C5', 3);
@@ -637,8 +635,6 @@ void main() {
         'part 1/2',
         'noPart 1/2',
       ]);
-      store.setStatus(ids[1], TaskStatus.done); // finished, still in hand
-      expect(store.partGroups(), hasLength(2));
       store.setStatus(ids[1], TaskStatus.submitted);
       groups = store.partGroups();
       expect(groups.map((g) => g.kind), [GroupKind.noPart]);
@@ -662,8 +658,6 @@ void main() {
         final ids = tasksOf(part, lo);
         store.setStatusMany(ids, TaskStatus.submitted);
         expect(due(), isA<DueSubmitted>());
-        store.setStatusMany(ids, TaskStatus.done);
-        expect(due(), isA<DueDone>());
       });
 
       test('no deadline, no D', () {
