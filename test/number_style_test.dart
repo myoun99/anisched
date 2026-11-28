@@ -12,6 +12,7 @@ void main() {
     expect(storedNumber('BANK1', c3), 'BANK1');
     expect(storedNumber('C012-014', c3), 'C012-014');
     expect(storedNumber('C', c3), 'C');
+    expect(storedNumber('E', (prefix: 'EP', digits: 2)), 'E'); // shorter
     expect(storedNumber('C1234567890', c3), 'C1234567890'); // too long
     expect(storedNumber('C12', (prefix: '', digits: 3)), 'C12');
   });
