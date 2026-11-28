@@ -32,7 +32,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v14)
+## 구조 (v15)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -299,7 +299,7 @@
 | 한 번에 등록 | `createWorkWithCuts(제목, 화, 컷 입력, partLabel:)` · `addEpisodeWithCuts(작품, 화, 컷 입력, partLabel:)` — 입력 오류면 아무것도 안 만듦 | |
 | 컷 대량 손보기 | 시작 번호 + 개수 `cutNumberRun(start:, count:, prefix:, width:)` → `addCuts` · 결번 `removeCuts(화, 번호들)` / 격자에서 고른 컷 `removeCutIds(컷들)`(보관) · 분할 `splitCut(컷, ['A','B','C'])`(같은 공정 작업 생성) · 겸용 `linkSharedCuts(컷들)` / `unlinkSharedCut(컷)` · `renumberCuts({컷: 새 번호})`(맞바꾸기 가능) | |
 | 공정으로 등록 | 체크한 공정들 `addTasksForStages(공정 id들, partId: 또는 cutIds:)` · 역할 = 체크 바로가기 `roleStageIds(역할, 작품)`(작품에 없는 공정은 끝에 추가) · `applyRole` = 둘을 한 번에 · 역할 편집 `createRole` · `renameRole` · `setRoleStages` · `deleteRole` | `roles()` |
-| 컷 번호 형식 | 작품마다 앞 글자 · 자릿수(기본 C · 3) `setWorkCutFormat` · 입력 숫자 → `cutNumberFor(작품, 1)` = `C001` · `addCutRun(화, start:, count:)` | `workCutFormat(작품)` |
+| 컷 · 화수 표기 (v15) | **문서 설정 하나씩**(작품별 없음): `settings.cutStyle`(기본 `C`·3) · `settings.episodeStyle`(기본 `#`·2), 자릿수 1~8 · 입력 숫자 → `cutNumberFor(1)` = `C001` · `episodeNumberFor(7)` = `#07` · `addCutRun(화, start:, count:)` · 표시 함수 `formatCutNumber` · `formatEpisodeNumber`(models/number_style.dart) | `numberStyles()` |
 | 작품의 공정 목록 | `addStage(작품, 이름, beforeStageId:)` · `renameStage` · `reorderStages(작품, 전체 id 순서)` · 숨김 = `archive(stage)` | `stages(작품)` |
 | 보관(지우기) · 되살리기 | `archive(종류, id)` · `restore(종류, id)` — 작품·화·파트·컷·콘티·작업·공정 | `archived()`(휴지통, 최근 순) |
 
@@ -342,7 +342,10 @@
 
 
 정해진 것(v9): 착수일 기본 = 등록한 날 · 실 작업 기간이 비면 제작 기간으로 하루 몇 컷 계산 · 드래그 순서가 있을 때 새 묶음은 맨 뒤.
-정해진 것(v14, 유저 2026-11-28): 리테이크 공정은 역할에 묶지 않음(체크박스로 직접) · 「콘티 체크」→ `콘티/감독`(유저 확인 중, 답 전까지 유지).
+정해진 것(v14, 유저 2026-11-28): 리테이크 공정은 역할에 묶지 않음(체크박스로 직접) · 「콘티 체크」→ `콘티/감독`(유저 확정).
+정해진 것(v15, 유저 2026-11-28): 컷 표기 · 화수 표기는 문서 설정 하나씩(따로). 작품별 컷 형식(`cut_prefix` · `cut_digits`)은 지움 —
+이행: 작품들이 가장 많이 쓴 형식(같으면 가장 최근 작품 것)이 기본(C · 3)과 다르면 그걸 문서 설정으로, 아니면 기본값.
+역할 추가: 감독[콘티/감독] · 총감독[콘티/총감독] · 액션작감[LO/액션 · 원화/액션] · 동화검사[동화/동검] · 셀검사[시아게/셀검] · 러프원[러프원]. 리테이크는 역할에 안 묶음.
 
 ## 겸용 컷 (v10)
 
@@ -379,4 +382,4 @@
 
 
 
-정해진 것(v10): 공정 프리셋 「기본」 하나 · 겸용 컷 상태는 컷마다 따로 · 역할 = 직급 5개 · 컷 번호 형식은 작품별(기본 C · 3).
+정해진 것(v10): 공정 프리셋 「기본」 하나 · 겸용 컷 상태는 컷마다 따로 · 역할 = 직급 5개 · 컷 번호 형식은 작품별(기본 C · 3) — v15 에서 문서 설정 하나로 바뀜.

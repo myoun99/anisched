@@ -1,5 +1,6 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/cut_numbers.dart';
+import 'package:anisched/src/models/stage_names.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -208,8 +209,23 @@ void main() {
       '동화',
       '시아게',
       '캐릭터디자인',
+      '감독',
+      '총감독',
+      '액션작감',
+      '동화검사',
+      '셀검사',
+      '러프원',
     ]);
     expect(store.roles()[1].stages, ['LO/연출', '원화/연출']);
+    final byName = {for (final r in store.roles()) r.name: r.stages};
+    expect(byName['액션작감'], ['LO/액션', '원화/액션']);
+    // Every seeded role uses names of the two axes; 리테이크 is in none.
+    for (final r in store.roles()) {
+      for (final s in r.stages) {
+        expect(stageLabelOf(s), isNotNull, reason: '${r.name}: $s');
+        expect(s, isNot(StageExtra.retake.korean));
+      }
+    }
     expect(store.roles().first.stages, ['LO', '원화']);
     final w = store.createWork('W');
     final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'B');
@@ -232,7 +248,7 @@ void main() {
     expect((edited.id, edited.name), (niwon, '제2원화'));
     expect(edited.stages, ['2원', '동화']);
     store.deleteRole(niwon);
-    expect(store.roles(), hasLength(8));
+    expect(store.roles(), hasLength(14));
   });
 
   test('checkboxes: tasks from a list of stages; a role ticks its boxes', () {
@@ -253,20 +269,33 @@ void main() {
     );
   });
 
-  test('cut numbers follow the format of their work', () {
+  test('cut and episode numbers follow the document styles', () {
     final w = store.createWork('W');
-    expect(store.workCutFormat(w), (prefix: 'C', digits: 3));
-    expect(store.cutNumberFor(w, 1), 'C001');
+    expect(store.numberStyles(), (
+      cut: (prefix: 'C', digits: 3),
+      episode: (prefix: '#', digits: 2),
+    ));
+    expect(store.cutNumberFor(1), 'C001');
+    expect(store.episodeNumberFor(7), '#07');
     final ep = store.addEpisode(w, '#1');
     store.addCutRun(ep, start: 98, count: 3);
     expect(numbers(ep), ['C098', 'C099', 'C100']);
 
-    store.setWorkCutFormat(w, prefix: '', digits: 4);
-    expect(store.cutNumberFor(w, 12), '0012');
-    store.addCutRun(ep, start: 1, count: 2);
-    expect(numbers(ep).take(2), ['0001', '0002']);
+    // One setting for every work; the two styles are separate.
+    store.settings
+      ..cutStyle = (prefix: '', digits: 4)
+      ..episodeStyle = (prefix: 'EP', digits: 3);
+    expect(store.cutNumberFor(12), '0012');
+    expect(store.episodeNumberFor(7), 'EP007');
+    final other = store.addEpisode(store.createWork('V'), '#1');
+    store.addCutRun(other, start: 1, count: 2);
+    expect(numbers(other), ['0001', '0002']);
     expect(
-      () => store.setWorkCutFormat(w, prefix: 'C', digits: 0),
+      () => store.settings.cutStyle = (prefix: 'C', digits: 0),
+      throwsRangeError,
+    );
+    expect(
+      () => store.settings.episodeStyle = (prefix: '#', digits: 9),
       throwsRangeError,
     );
   });

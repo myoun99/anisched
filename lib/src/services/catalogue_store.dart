@@ -4,6 +4,7 @@ import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/cut_numbers.dart';
 import '../models/lanes.dart';
+import '../models/number_style.dart';
 import '../models/progress.dart';
 import '../models/stats.dart';
 import '../models/work_interval.dart';
@@ -322,40 +323,20 @@ class CatalogueStore {
     ),
   );
 
-  /// How the work writes cut numbers (default `C` and 3 digits).
-  ({String prefix, int digits}) workCutFormat(int workId) {
-    final r = db.select(
-      'SELECT cut_prefix, cut_digits FROM works WHERE id = ?;',
-      [workId],
-    ).first;
-    return (prefix: r['cut_prefix'] as String, digits: r['cut_digits'] as int);
-  }
+  /// How cut and episode numbers are written (document settings,
+  /// [SettingsStore.cutStyle] and [SettingsStore.episodeStyle]).
+  ({NumberStyle cut, NumberStyle episode}) numberStyles() =>
+      (cut: settings.cutStyle, episode: settings.episodeStyle);
 
-  void setWorkCutFormat(
-    int workId, {
-    required String prefix,
-    required int digits,
-  }) {
-    RangeError.checkValueInInterval(digits, 1, 8, 'digits');
-    db.execute(
-      'UPDATE works SET cut_prefix = ?, cut_digits = ? WHERE id = ?;',
-      [prefix, digits, workId],
-    );
-  }
+  /// The cut number the user typed, in the cut style: 1 → `C001`.
+  String cutNumberFor(int number) => formatCutNumber(number, settings.cutStyle);
 
-  /// The number the user typed, in the work's format: 1 → `C001`.
-  String cutNumberFor(int workId, int number) {
-    final f = workCutFormat(workId);
-    return cutNumberRun(
-      start: number,
-      count: 1,
-      prefix: f.prefix,
-      width: f.digits,
-    ).single;
-  }
+  /// The episode number the user typed, in the episode style: 7 → `#07`.
+  String episodeNumberFor(int number) =>
+      formatEpisodeNumber(number, settings.episodeStyle);
 
-  /// Adds [count] cuts from [start] up to an episode in its work's
-  /// format (see [addCuts]).
+  /// Adds [count] cuts from [start] up to an episode in the cut style
+  /// (see [addCuts]).
   ({List<int> added, List<String> skipped}) addCutRun(
     int episodeId, {
     required int start,
@@ -363,12 +344,7 @@ class CatalogueStore {
     int? partId,
     int? lengthMs,
   }) {
-    final workId =
-        db.select('SELECT work_id FROM episodes WHERE id = ?;', [
-              episodeId,
-            ]).first['work_id']
-            as int;
-    final f = workCutFormat(workId);
+    final f = settings.cutStyle;
     return addCuts(
       episodeId,
       cutNumberRun(
