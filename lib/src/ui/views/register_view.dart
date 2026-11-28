@@ -12,7 +12,7 @@ import '../../models/progress.dart';
 import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
 import '../palette.dart';
-import '../count_stepper.dart';
+import '../cut_add_tools.dart';
 import '../date_span.dart';
 import '../sliding_row.dart';
 import '../fold.dart';
@@ -86,9 +86,6 @@ class _RegisterViewState extends State<RegisterView> {
   PickOption<int>? _work;
   PickOption<int>? _episode;
   String? _part;
-  // The range tool's first and last cut.
-  final _first = TextEditingController(text: '1');
-  final _last = TextEditingController(text: '100');
   final _stages = <String>{};
   CutDraft _cuts = CutDraft(count: 0);
   Set<String> _taken = const {};
@@ -171,8 +168,6 @@ class _RegisterViewState extends State<RegisterView> {
   @override
   void dispose() {
     Folds.newCuts.removeListener(_refold);
-    _first.dispose();
-    _last.dispose();
     super.dispose();
   }
 
@@ -224,17 +219,6 @@ class _RegisterViewState extends State<RegisterView> {
     _picked.retainWhere(cells.contains);
   }
 
-  int? get _firstNo => int.tryParse(_first.text.trim());
-  int? get _lastNo => int.tryParse(_last.text.trim());
-
-  /// 「범위로 추가」: the first cut to the last as blocks.
-  void _addRange() {
-    final a = _firstNo;
-    final b = _lastNo;
-    if (a == null || b == null) return;
-    setState(() => _cuts.addRange(a, b));
-  }
-
   // ---- grid picking ----
 
   String? _cellAt(Offset global) {
@@ -260,17 +244,6 @@ class _RegisterViewState extends State<RegisterView> {
       if (_paint == null || _paint == has) return;
       _paint! ? _picked.add(n) : _picked.remove(n);
     });
-  }
-
-  /// 「직접 추가」: one cut by name (12A, BANK).
-  Future<void> _addCut() async {
-    final name = await askName(
-      context,
-      title: S.addCut.t,
-      prefix: _cuts.prefix,
-    );
-    if (name == null || !mounted) return;
-    setState(() => _cuts.add(name));
   }
 
   Future<void> _rename(String id) async {
@@ -336,8 +309,6 @@ class _RegisterViewState extends State<RegisterView> {
     String? part,
     Set<String> stages,
     CutDraft cuts,
-    String first,
-    String last,
     Map<String, ({DateTime? kickoff, DateTime? due})> dates,
   })
   _snapshot() => (
@@ -347,8 +318,6 @@ class _RegisterViewState extends State<RegisterView> {
     part: _part,
     stages: {..._stages},
     cuts: _cuts,
-    first: _first.text,
-    last: _last.text,
     dates: {..._ownDates},
   );
 
@@ -362,8 +331,6 @@ class _RegisterViewState extends State<RegisterView> {
     _stages
       ..clear()
       ..addAll(widget.roles.isEmpty ? const [] : widget.roles.first.stages);
-    _first.text = '1';
-    _last.text = '100';
     _cuts = CutDraft(count: 0, prefix: _cuts.prefix, width: _cuts.width);
     _ownDates.clear();
     _picked.clear();
@@ -388,8 +355,6 @@ class _RegisterViewState extends State<RegisterView> {
             ..clear()
             ..addAll(was.stages);
           _cuts = was.cuts;
-          _first.text = was.first;
-          _last.text = was.last;
           _ownDates
             ..clear()
             ..addAll(was.dates);
@@ -893,46 +858,11 @@ class _RegisterViewState extends State<RegisterView> {
     final c = AppColors.of(context);
     final clashes = _clashes;
     final cells = _cuts.cells;
-    final a = _firstNo;
-    final b = _lastNo;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 10,
       children: [
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.end,
-          children: [
-            CountStepper(
-              label: S.firstCut.t,
-              preview: a == null ? '' : _cuts.number(a),
-              controller: _first,
-              fieldKey: const Key('reg-first'),
-              onChanged: () => setState(() {}),
-            ),
-            CountStepper(
-              label: S.lastCut.t,
-              preview: b == null ? '' : _cuts.number(b),
-              controller: _last,
-              fieldKey: const Key('reg-last'),
-              onChanged: () => setState(() {}),
-            ),
-            FilledButton.tonalIcon(
-              key: const Key('cut-add-range'),
-              onPressed: a == null || b == null ? null : _addRange,
-              icon: const Icon(Icons.playlist_add, size: 18),
-              label: Text(S.addRange.t),
-            ),
-            OutlinedButton.icon(
-              key: const Key('cut-add-one'),
-              onPressed: _addCut,
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(S.addOne.t),
-            ),
-          ],
-        ),
+        CutAddTools(draft: _cuts, first: 1, onChanged: () => setState(() {})),
         Row(
           spacing: 8,
           children: [

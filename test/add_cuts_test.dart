@@ -56,8 +56,15 @@ void main() {
     final store = await pumpShell(t);
     final g = store.partGroups().firstWhere((g) => g.kind == GroupKind.part);
     await openAdd(t, g);
-    await t.enterText(find.byKey(const Key('add-count')), '3');
+    // The range starts at the next free number: three from there.
+    final first = t.widget<TextField>(find.byKey(const Key('reg-first')));
+    final next = int.parse(first.controller!.text);
+    await t.enterText(find.byKey(const Key('reg-last')), '${next + 2}');
     await t.pump();
+    await t.tap(find.byKey(const Key('cut-add-range')));
+    await t.pump();
+    // The fields empty for the next range.
+    expect(first.controller!.text, isEmpty);
     await t.tap(find.byKey(const Key('add-ok')));
     await t.pump();
     await t.pump();
@@ -79,7 +86,9 @@ void main() {
     final taken = store.cuts(g.episodeId).first.number;
     final n = int.parse(RegExp(r'\d+').firstMatch(taken)![0]!);
     await openAdd(t, g);
-    await t.enterText(find.byKey(const Key('add-start')), '$n');
+    await t.enterText(find.byKey(const Key('reg-first')), '$n');
+    await t.pump();
+    await t.tap(find.byKey(const Key('cut-add-range')));
     await t.pump();
     expect(find.byKey(const Key('add-clash')), findsOneWidget);
     expect(
@@ -104,6 +113,9 @@ void main() {
     await pumpShell(t, existing: store);
     final g = store.partGroups().firstWhere((g) => g.kind == GroupKind.noPart);
     await openAdd(t, g);
+    // The first free number alone (no last cut: one).
+    await t.tap(find.byKey(const Key('cut-add-range')));
+    await t.pump();
     await t.tap(find.byKey(const Key('add-ok')));
     await t.pump();
     final after = unit(store, g.key);

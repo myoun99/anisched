@@ -29,6 +29,7 @@ class TimerBar extends StatefulWidget {
     this.onPickCut,
     this.onPickWork,
     this.onPickEpisode,
+    this.onPickStage,
     this.onStatus,
     this.onEditTime,
   });
@@ -38,6 +39,9 @@ class TimerBar extends StatefulWidget {
   final VoidCallback? onPickCut;
   final VoidCallback? onPickWork;
   final VoidCallback? onPickEpisode;
+
+  /// Another stage of the same cuts.
+  final VoidCallback? onPickStage;
 
   /// Moves [task] on: done, submitted, or back.
   final ValueChanged<TaskStatus>? onStatus;
@@ -214,14 +218,15 @@ class _TimerBarState extends State<TimerBar> {
                             style: TextStyle(color: c.muted, fontSize: 12),
                           ),
                         ),
-                        if (!narrow)
-                          Flexible(
-                            flex: 2,
-                            child: FitText(
-                              stageText(g.stageName),
-                              style: TextStyle(color: c.faint, fontSize: 12),
-                            ),
+                        Flexible(
+                          flex: 2,
+                          child: _name(
+                            'timer-stage',
+                            stageText(g.stageName),
+                            widget.onPickStage,
+                            style: TextStyle(color: c.muted, fontSize: 12),
                           ),
+                        ),
                       ],
                     ],
                   ),

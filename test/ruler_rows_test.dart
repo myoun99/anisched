@@ -224,7 +224,9 @@ void colourTests() {
         (i * dw + 3).round(),
         at.month.round() + 1,
       );
-      expect(m, panel.toARGB32(), reason: 'day $i: the merged month cell');
+      // November is the 24323rd month: banded, the whole merged cell.
+      expect(chartBand(2026 * 12 + 11), isTrue);
+      expect(m, stripe.toARGB32(), reason: 'day $i: the merged month cell');
     }
     // A day off did fall on a band (where colours used to mix).
     final labels = DayLabels(window, dw, numberWidth);
@@ -287,10 +289,21 @@ void colourTests() {
     final dw = width / window.days;
     final cell = (from: 5 * dw, to: 36 * dw);
     // The ink of the row inside December's cell (its edge lines left out).
+    // December's ground (the 24324th month: plain); November's banded.
+    final y0 = at.month.round() + 1;
+    final ground = pixel(bytes, width.toInt(), (cell.from + 3).round(), y0);
+    expect(ground, panel.toARGB32());
+    expect(
+      pixel(bytes, width.toInt(), (cell.from - 3).round(), y0),
+      isNot(ground),
+      reason: 'two months side by side differ',
+    );
+    // No line where December starts: the ground runs straight on.
+    expect(pixel(bytes, width.toInt(), cell.from.round(), y0 + 6), ground);
     final xs = <int>[];
     for (var x = cell.from.ceil() + 2; x < cell.to.floor() - 2; x++) {
       for (var y = at.month.round(); y < at.month + ChartHeader.spanRow; y++) {
-        if (pixel(bytes, width.toInt(), x, y) != panel.toARGB32()) {
+        if (pixel(bytes, width.toInt(), x, y) != ground) {
           xs.add(x);
           break;
         }

@@ -80,6 +80,28 @@ typedef Scenario = Future<void> Function(WidgetTester t, Size size);
 final scenarios = <String, (AppView, Scenario)>{
   // Round 2: an opened line (cuts folded, D label is a button) and a cut
   // on the time bar, paused.
+  // The catalogue browser from an empty time bar, two levels down.
+  'browser': (
+    AppView.list,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('timer-cut')));
+      await t.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        await t.tap(byKeyPrefix('browse-').first);
+        await t.pumpAndSettle();
+      }
+    },
+  ),
+  // The browser searched from the top.
+  'browser-search': (
+    AppView.list,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('timer-cut')));
+      await t.pumpAndSettle();
+      await t.enterText(find.byKey(const Key('browser-search')), '01');
+      await t.pump();
+    },
+  ),
   // A card's cut chips: numbers in their status colours, a shared pair.
   'cut-chips': (
     AppView.list,
@@ -419,7 +441,11 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
       await t.tap(add);
       await t.pump();
-      await t.enterText(find.byKey(const Key('add-count')), '3');
+      final first = t.widget<TextField>(find.byKey(const Key('reg-first')));
+      final next = int.parse(first.controller!.text);
+      await t.enterText(find.byKey(const Key('reg-last')), '${next + 2}');
+      await t.pump();
+      await t.tap(find.byKey(const Key('cut-add-range')));
       await t.pump();
     },
   ),
@@ -496,11 +522,9 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.enterText(find.byKey(const Key('reg-last')), '24');
       await t.pump();
       await tap(find.byKey(const Key('cut-add-range')));
+      await t.enterText(find.byKey(const Key('cut-add-name')), 'BANK1');
+      await t.pump();
       await tap(find.byKey(const Key('cut-add-one')));
-      await t.pumpAndSettle();
-      await t.enterText(find.byKey(const Key('name-input')), 'BANK1');
-      await t.tap(find.byKey(const Key('name-ok')));
-      await t.pumpAndSettle();
       await tap(find.byKey(const Key('cell-C004')));
       await tap(find.byKey(const Key('cell-C005')));
       await tap(find.byKey(const Key('cut-share')));

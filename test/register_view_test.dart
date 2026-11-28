@@ -51,11 +51,9 @@ Future<void> addRange(WidgetTester t, int first, int last) async {
 
 /// 「직접 추가」 one cut by [name].
 Future<void> addOne(WidgetTester t, String name) async {
+  await t.enterText(find.byKey(const Key('cut-add-name')), name);
+  await t.pump();
   await tapIn(t, find.byKey(const Key('cut-add-one')));
-  await t.pumpAndSettle();
-  await t.enterText(find.byKey(const Key('name-input')), name);
-  await t.tap(find.byKey(const Key('name-ok')));
-  await t.pumpAndSettle();
 }
 
 /// The blocks in reading order, by cell id.
