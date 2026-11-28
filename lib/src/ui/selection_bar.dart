@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/unit_actions.dart';
 import '../models/catalogue.dart';
 import 'format.dart';
 import 'instant.dart';
@@ -27,7 +28,25 @@ class SelectionBar extends StatelessWidget {
     this.onDelete,
     this.onEdit,
     this.canEdit,
+    this.onShare,
+    this.share,
+    this.onRename,
+    this.onSplit,
+    this.onTakeOut,
+    this.cutCount,
   });
+
+  /// The picked cuts' own tools (were the register screen's): join them
+  /// as shared or take their group apart ([share] says which, null:
+  /// neither applies); rename one; split into A/B; take out. Null hides.
+  final VoidCallback? onShare;
+  final ShareAction? Function()? share;
+  final VoidCallback? onRename;
+  final VoidCallback? onSplit;
+  final VoidCallback? onTakeOut;
+
+  /// How many cuts are picked (storyboards are none).
+  final int Function()? cutCount;
 
   /// Edits the picked bundle's names (work, episode, part, client); only
   /// when [canEdit] (one bundle picked). Null hides it.
@@ -83,6 +102,8 @@ class SelectionBar extends StatelessWidget {
         final waiting = allWaiting?.call() ?? false;
         final pulled = allHandedOff?.call() ?? false;
         final archived = allArchived?.call() ?? false;
+        final sharing = share?.call();
+        final cuts = cutCount?.call() ?? 0;
         final danger = Theme.of(context).colorScheme.error;
         final actions =
             <_Action>[
@@ -101,6 +122,38 @@ class SelectionBar extends StatelessWidget {
                   Icons.edit_outlined,
                   S.edit.t,
                   n > 0 && (canEdit?.call() ?? true) ? onEdit : null,
+                ),
+              if (onShare != null)
+                _Action(
+                  'share',
+                  const Key('pick-share'),
+                  sharing == ShareAction.unlink ? Icons.link_off : Icons.link,
+                  sharing == ShareAction.unlink ? S.unshare.t : S.shared.t,
+                  sharing == null ? null : onShare,
+                ),
+              if (onRename != null)
+                _Action(
+                  'rename',
+                  const Key('pick-rename'),
+                  Icons.drive_file_rename_outline,
+                  S.name.t,
+                  cuts == 1 ? onRename : null,
+                ),
+              if (onSplit != null)
+                _Action(
+                  'split',
+                  const Key('pick-split'),
+                  Icons.call_split,
+                  'A/B',
+                  cuts > 0 ? onSplit : null,
+                ),
+              if (onTakeOut != null)
+                _Action(
+                  'takeout',
+                  const Key('pick-takeout'),
+                  Icons.remove_circle_outline,
+                  S.takeOut.t,
+                  cuts > 0 ? onTakeOut : null,
                 ),
               if (onDue != null)
                 _Action(

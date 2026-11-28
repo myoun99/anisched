@@ -6,11 +6,12 @@ import 'package:flutter/rendering.dart';
 
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
-import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
+import '../../models/number_style.dart';
+import '../../models/progress.dart';
 import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
+import '../palette.dart';
 import '../count_stepper.dart';
 import '../date_span.dart';
 import '../sliding_row.dart';
@@ -40,13 +41,17 @@ class RegisterView extends StatefulWidget {
     this.onCreateWork,
     this.onCreateEpisode,
     this.onRegister,
-    this.onEdit,
     this.onClientColor,
+    this.onWrite,
+    this.onUndo,
   });
 
-  /// Runs one edit of an episode's saved cuts (then the views reload);
-  /// null hides the editing buttons.
-  final void Function(void Function(CatalogueStore store) edit)? onEdit;
+  /// One edit of what the pick lists hold (rename, delete), then the
+  /// views reload; null hides the lists' tools.
+  final void Function(void Function(CatalogueStore store) write)? onWrite;
+
+  /// The app's undo, offered after a delete in a pick list.
+  final VoidCallback? onUndo;
 
   final DateTime now;
   final ScreenLayout layout;
@@ -85,9 +90,6 @@ class _RegisterViewState extends State<RegisterView> {
   CutDraft _cuts = CutDraft();
   Set<String> _taken = const {};
 
-  /// The picked episode's saved cuts, and which of them are picked.
-  List<CutRow> _saved = const [];
-  final _pickedSaved = <int>{};
   final _picked = <String>{};
 
   /// The first stage's start until set: the day of registering.
@@ -100,6 +102,44 @@ class _RegisterViewState extends State<RegisterView> {
   /// Dates set on one stage's row, by stage name; a stage without its own
   /// takes the stage above's (the first: [_kickoff], no deadline).
   final _ownDates = <String, ({DateTime? kickoff, DateTime? due})>{};
+
+  /// What the pick lists last showed, for their tools: whether each item
+  /// is used, an episode's subtitle (kept when renumbered), a part's id.
+  final _used = <(CatalogueKind, int), bool>{};
+  final _clientsUsed = <int, bool>{};
+  final _episodeTitles = <int, String?>{};
+  final _partIds = <String, ({int id, bool used})>{};
+
+  /// The tools for one kind of list: rename and delete through
+  /// [RegisterView.onWrite]; a picked item renamed shows its new name, a
+  /// picked one deleted is unpicked.
+  PresetTools<T>? _tools<T>({
+    required bool Function(T value) inUse,
+    required void Function(CatalogueStore s, T value, String name) rename,
+    required void Function(CatalogueStore s, T value) delete,
+    required void Function(T value, String? name) after,
+    Color Function(T value)? colorOf,
+    void Function(T value, Color color)? recolor,
+    bool Function(T value)? editable,
+  }) {
+    final write = widget.onWrite;
+    if (write == null) return null;
+    return PresetTools<T>(
+      inUse: inUse,
+      rename: (v, name) {
+        write((s) => rename(s, v, name));
+        setState(() => after(v, name));
+      },
+      delete: (v) {
+        write((s) => delete(s, v));
+        setState(() => after(v, null));
+      },
+      colorOf: colorOf,
+      recolor: recolor,
+      editable: editable,
+      onUndo: widget.onUndo,
+    );
+  }
 
   /// While dragging across the grid: true picks, false drops.
   bool? _paint;
@@ -114,7 +154,6 @@ class _RegisterViewState extends State<RegisterView> {
   void initState() {
     super.initState();
     Folds.newCuts.addListener(_refold);
-    Folds.savedCuts.addListener(_refold);
     if (widget.roles.isNotEmpty) _stages.addAll(widget.roles.first.stages);
   }
 
@@ -129,7 +168,6 @@ class _RegisterViewState extends State<RegisterView> {
   @override
   void dispose() {
     Folds.newCuts.removeListener(_refold);
-    Folds.savedCuts.removeListener(_refold);
     _start.dispose();
     _count.dispose();
     super.dispose();
@@ -160,16 +198,11 @@ class _RegisterViewState extends State<RegisterView> {
   Future<void> _loadTaken() async {
     final e = _episode;
     if (e == null) return;
-    final cuts = await widget.reader?.cuts(e.value, includeArchived: true);
+    // The episode's numbers, read only to warn of a clash: its saved
+    // cuts are edited on their cards now.
+    final cuts = await widget.reader?.cuts(e.value);
     if (!mounted || cuts == null) return;
-    setState(() {
-      _taken = {
-        for (final c in cuts)
-          if (!c.archived) c.number,
-      };
-      _saved = cuts;
-      _pickedSaved.retainWhere((id) => _saved.any((c) => c.id == id));
-    });
+    setState(() => _taken = {for (final c in cuts) c.number});
   }
 
   void _rebuildCuts({String? prefix, int? width}) {
@@ -201,8 +234,8 @@ class _RegisterViewState extends State<RegisterView> {
     box.hitTest(result, position: box.globalToLocal(global));
     for (final e in result.path) {
       final t = e.target;
-      if (t is RenderMetaData && (t.metaData is String || t.metaData is int)) {
-        return '${t.metaData is int ? '#' : ''}${t.metaData}';
+      if (t is RenderMetaData && t.metaData is String) {
+        return t.metaData as String;
       }
     }
     return null;
@@ -211,32 +244,31 @@ class _RegisterViewState extends State<RegisterView> {
   void _paintAt(Offset global, {bool start = false}) {
     final n = _cellAt(global);
     if (n == null) return;
-    final saved = n.startsWith('#') ? int.parse(n.substring(1)) : null;
     setState(() {
-      final has = saved == null
-          ? _picked.contains(n)
-          : _pickedSaved.contains(saved);
+      final has = _picked.contains(n);
       if (start) _paint = !has;
       if (_paint == null || _paint == has) return;
-      if (saved == null) {
-        _paint! ? _picked.add(n) : _picked.remove(n);
-      } else {
-        _paint! ? _pickedSaved.add(saved) : _pickedSaved.remove(saved);
-      }
+      _paint! ? _picked.add(n) : _picked.remove(n);
     });
   }
 
   Future<void> _addCut() async {
-    final name = await askName(context, title: S.addCut.t);
+    final name = await askName(
+      context,
+      title: S.addCut.t,
+      prefix: _cuts.prefix,
+    );
     if (name == null || !mounted) return;
     setState(() => _cuts.add(name));
   }
 
   Future<void> _rename(String id) async {
+    // The value alone in the field (12, 12A); the notation outside it.
     final name = await askName(
       context,
       title: S.cutName.t,
-      initial: _cuts.nameOf(id),
+      initial: _cuts.valueOf(id),
+      prefix: _cuts.prefix,
     );
     if (name == null || !mounted) return;
     setState(() {
@@ -247,7 +279,9 @@ class _RegisterViewState extends State<RegisterView> {
 
   // ---- saving ----
 
-  Set<String> get _clashes => _cuts.clashes(_taken);
+  /// Clashes by value in the document's notation (C012, 12: one cut).
+  Set<String> get _clashes =>
+      _cuts.clashes(_taken, (n) => parseCutInput(n, _cuts.style));
 
   bool get _ready =>
       widget.onRegister != null &&
@@ -322,9 +356,7 @@ class _RegisterViewState extends State<RegisterView> {
     _cuts = CutDraft(prefix: _cuts.prefix, width: _cuts.width);
     _ownDates.clear();
     _picked.clear();
-    _pickedSaved.clear();
     _taken = const {};
-    _saved = const [];
   }
 
   /// 「초기화」: the form empties at once; the snack bar's undo puts back
@@ -501,28 +533,6 @@ class _RegisterViewState extends State<RegisterView> {
                                   ),
                           ),
                         ),
-                      if (_saved.isNotEmpty) ...[
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-                          sliver: SliverToBoxAdapter(child: _savedBar(context)),
-                        ),
-                        if (Folds.savedCuts.value)
-                          SliverPadding(
-                            padding: _gridPadding,
-                            sliver: SliverGrid.builder(
-                              gridDelegate:
-                                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 60,
-                                    mainAxisExtent: 24,
-                                    mainAxisSpacing: 2,
-                                    crossAxisSpacing: 2,
-                                  ),
-                              itemCount: _saved.length,
-                              itemBuilder: (context, i) =>
-                                  _savedCell(context, _saved[i]),
-                            ),
-                          ),
-                      ],
                     ],
                   ),
                 ),
@@ -561,6 +571,29 @@ class _RegisterViewState extends State<RegisterView> {
                 _part = null;
               }),
               onCreate: widget.onCreateClient,
+              inUse: _clientsUsed,
+              tools: _tools<int>(
+                inUse: (id) => _clientsUsed[id] ?? true,
+                rename: (s, id, name) => s.renameClient(id, name),
+                delete: (s, id) => s.deleteClient(id),
+                after: (id, name) {
+                  if (_client?.value != id) return;
+                  if (name == null) {
+                    _client = _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _client = (value: id, title: name, note: null);
+                  }
+                },
+                colorOf: (id) => clientColorOf(id, _clientColors[id]),
+                recolor: widget.onClientColor == null
+                    ? null
+                    : (id, col) {
+                        _clientColors[id] = col.toARGB32();
+                        widget.onClientColor!(id, col.toARGB32());
+                        setState(() {});
+                      },
+              ),
               onColor: widget.onClientColor == null
                   ? null
                   : (id, argb) {
@@ -574,16 +607,32 @@ class _RegisterViewState extends State<RegisterView> {
               label: S.title.t,
               width: fw,
               value: _work?.title,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      for (final x in await r.searchWorks(
-                        q,
-                        clientId: _client?.value,
-                      ))
-                        (value: x.id, title: x.title, note: null),
-                    ],
+              search: (q) async {
+                if (r == null) return const [];
+                final rows = await r.searchWorks(q, clientId: _client?.value);
+                for (final x in rows) {
+                  _used[(CatalogueKind.work, x.id)] = x.inUse;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.title, note: null),
+                ];
+              },
               onPicked: _pickWork,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
+                rename: (s, id, name) => s.renameWork(id, name),
+                delete: (s, id) => s.deleteWork(id),
+                after: (id, name) {
+                  if (_work?.value != id) return;
+                  if (name == null) {
+                    _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _work = (value: id, title: name, note: null);
+                  }
+                },
+              ),
               onCreate: widget.onCreateWork == null
                   ? null
                   : (name) async => (
@@ -599,14 +648,40 @@ class _RegisterViewState extends State<RegisterView> {
               width: sw,
               enabled: _work != null,
               value: _episode?.title,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      if (_work != null)
-                        for (final x in await r.searchEpisodes(_work!.value, q))
-                          (value: x.id, title: x.number, note: x.title),
-                    ],
+              search: (q) async {
+                final w = _work;
+                if (r == null || w == null) return const [];
+                final rows = await r.searchEpisodes(w.value, q);
+                for (final x in rows) {
+                  _used[(CatalogueKind.episode, x.id)] = x.inUse;
+                  _episodeTitles[x.id] = x.title;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.number, note: x.title),
+                ];
+              },
               onPicked: _pickEpisode,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
+                // The number changes; the subtitle stays.
+                rename: (s, id, name) =>
+                    s.renameEpisode(id, name, title: _episodeTitles[id]),
+                delete: (s, id) => s.deleteEpisode(id),
+                after: (id, name) {
+                  if (_episode?.value != id) return;
+                  if (name == null) {
+                    _episode = null;
+                    _part = null;
+                  } else {
+                    _episode = (
+                      value: id,
+                      title: episodeShown(name),
+                      note: null,
+                    );
+                  }
+                },
+              ),
               onCreate: widget.onCreateEpisode == null
                   ? null
                   : (name) async {
@@ -621,19 +696,33 @@ class _RegisterViewState extends State<RegisterView> {
               width: sw,
               enabled: _episode != null,
               value: _part,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      (value: '', title: '—', note: null),
-                      if (_episode != null)
-                        for (final x in await r.parts(_episode!.value))
-                          if (x.label.contains(q))
-                            (
-                              value: x.label,
-                              title: x.label,
-                              note: '${x.cutCount}',
-                            ),
-                    ],
+              search: (q) async {
+                if (r == null) return const [];
+                final e = _episode;
+                final rows = e == null
+                    ? const <PartRow>[]
+                    : await r.parts(e.value);
+                for (final x in rows) {
+                  _partIds[x.label] = (id: x.id, used: x.inUse);
+                }
+                return [
+                  (value: '', title: '—', note: null),
+                  for (final x in rows)
+                    if (x.label.contains(q))
+                      (value: x.label, title: x.label, note: '${x.cutCount}'),
+                ];
+              },
+              tools: _tools<String>(
+                // 「—」 (no part) and a typed new one are not saved parts.
+                editable: _partIds.containsKey,
+                inUse: (label) => _partIds[label]?.used ?? true,
+                rename: (s, label, name) =>
+                    s.renamePart(_partIds[label]!.id, name),
+                delete: (s, label) => s.deletePart(_partIds[label]!.id),
+                after: (label, name) {
+                  if (_part == label) _part = name;
+                },
+              ),
               onPicked: (x) =>
                   setState(() => _part = x.value.isEmpty ? null : x.value),
               onCreate: (name) async => (value: name, title: name, note: null),
@@ -883,175 +972,6 @@ class _RegisterViewState extends State<RegisterView> {
                       : (split != null || paired ? scheme.primary : null),
                   fontWeight: split != null || paired ? FontWeight.w700 : null,
                   decoration: removed ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _edit(void Function(CatalogueStore s) write) {
-    final cb = widget.onEdit;
-    if (cb == null) return;
-    cb(write);
-    setState(_pickedSaved.clear);
-    unawaited(_loadTaken());
-  }
-
-  Future<void> _renameSaved(CutRow cut) async {
-    final name = await askName(
-      context,
-      title: S.cutName.t,
-      initial: cut.number,
-    );
-    if (name == null || name.trim().isEmpty || !mounted) return;
-    if (_taken.contains(name.trim()) && name.trim() != cut.number) {
-      setState(() => _clashSaved = cut.id);
-      return;
-    }
-    _edit((s) => s.renumberCuts({cut.id: name.trim()}));
-  }
-
-  int? _clashSaved;
-
-  Widget _savedBar(BuildContext context) {
-    final picked = [
-      for (final x in _saved)
-        if (_pickedSaved.contains(x.id)) x,
-    ];
-    final can = widget.onEdit != null && picked.isNotEmpty;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        FoldToggle(
-          key: const Key('fold-saved-cuts'),
-          state: Folds.savedCuts,
-          label: S.savedCuts.f({
-            'title': _episode?.title ?? '',
-            'n': _saved.where((x) => !x.archived).length,
-          }).trim(),
-        ),
-        ToolbarButton(
-          key: const Key('saved-remove'),
-          label: S.takeOut.t,
-          selected: false,
-          onTap: can
-              ? () => _edit((s) {
-                  if (picked.every((x) => x.archived)) {
-                    for (final x in picked) {
-                      s.restore(ArchiveKind.cut, x.id);
-                    }
-                  } else {
-                    s.removeCutIds([
-                      for (final x in picked)
-                        if (!x.archived) x.id,
-                    ]);
-                  }
-                })
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-split'),
-          label: 'A/B',
-          selected: false,
-          onTap: can && picked.every((x) => !x.archived)
-              ? () => _edit((s) {
-                  for (final x in picked) {
-                    s.splitCut(x.id, ['A', 'B']);
-                  }
-                })
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-share'),
-          label: S.shared.t,
-          selected: false,
-          onTap: can && picked.every((x) => x.sharedLabel != null)
-              ? () => _edit((s) {
-                  for (final x in picked) {
-                    s.unlinkSharedCut(x.id);
-                  }
-                })
-              : can && picked.length >= 2 && picked.every((x) => !x.archived)
-              ? () => _edit(
-                  (s) => s.linkSharedCuts([for (final x in picked) x.id]),
-                )
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-rename'),
-          label: S.name.t,
-          selected: false,
-          onTap: can && picked.length == 1 && !picked.single.archived
-              ? () => _renameSaved(picked.single)
-              : null,
-        ),
-        ToolbarButton(
-          label: S.clear.t,
-          selected: false,
-          onTap: picked.isEmpty ? null : () => setState(_pickedSaved.clear),
-        ),
-      ],
-    );
-  }
-
-  Widget _savedCell(BuildContext context, CutRow cut) {
-    final c = AppColors.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final on = _pickedSaved.contains(cut.id);
-    final clash = _clashSaved == cut.id;
-    final shared = cut.sharedLabel != null;
-    final head = cut.sharedHeadCutId == cut.id;
-    return MetaData(
-      metaData: cut.id,
-      behavior: HitTestBehavior.opaque,
-      child: GestureDetector(
-        onLongPress: widget.onEdit == null ? null : () => _renameSaved(cut),
-        child: Listener(
-          onPointerDown: (e) {
-            if (e.kind == PointerDeviceKind.mouse &&
-                e.buttons != kPrimaryMouseButton) {
-              return;
-            }
-            _clashSaved = null;
-            _paintAt(e.position, start: true);
-          },
-          onPointerMove: (e) {
-            if (_paint != null) _paintAt(e.position);
-          },
-          child: DecoratedBox(
-            key: Key('saved-${cut.number}'),
-            decoration: BoxDecoration(
-              color: on ? c.selected : (cut.archived ? null : c.panelAlt),
-              border: Border.all(
-                color: clash
-                    ? scheme.error
-                    : shared
-                    ? scheme.primary
-                    : (on ? c.selected : c.line),
-                width: clash || shared ? 1.6 : 1,
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                head ? cut.sharedLabel! : cut.number,
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: clash
-                      ? scheme.error
-                      : cut.archived
-                      ? c.faint
-                      : (shared ? scheme.primary : null),
-                  fontWeight: shared ? FontWeight.w700 : null,
-                  decoration: cut.archived ? TextDecoration.lineThrough : null,
-                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),

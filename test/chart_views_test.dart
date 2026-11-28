@@ -53,11 +53,21 @@ void main() {
   group('day labels', () {
     final w = ChartWindow(DateTime.utc(2026, 11, 2), 70);
 
+    // Zoom alone never drops a number: it is squeezed into its cell
+    // (FitText's rule) and stepped over only when even 70% will not do.
+    test('a number fits its cell squeezed down to 70%, no further', () {
+      expect(numberFits(13, 13), isTrue, reason: 'cell = number');
+      // 13 with its one gap a pixel tighter is 12: 70% of it is 8.4.
+      expect(numberFits(13, 8.5), isTrue);
+      expect(numberFits(13, 8.3), isFalse);
+    });
+
     test('every day while a number fits, sparser only when it does not', () {
-      expect(DayLabels(w, 20, 13).step, 1);
-      expect(DayLabels(w, 19, 13).step, 1, reason: 'just fits: kept');
-      expect(DayLabels(w, 18, 13).step, 2);
-      expect(DayLabels(w, 3, 13).step, 7);
+      expect(DayLabels(w, 13, 13).step, 1, reason: 'cell = number');
+      expect(DayLabels(w, 9, 13).step, 1, reason: 'squeezed in');
+      expect(DayLabels(w, 8, 13).step, 2, reason: 'under 70%');
+      expect(DayLabels(w, 3, 13).step, 3);
+      expect(DayLabels(w, 1.5, 13).step, 7);
     });
 
     test('numbered days stay put while the window scrolls', () {
@@ -74,7 +84,7 @@ void main() {
     });
 
     test('a band runs from one number to the next, alternating', () {
-      final l = DayLabels(w, 10, 13); // every 2 days
+      final l = DayLabels(w, 6, 13); // every 2 days
       expect(l.step, 2);
       final firsts = [
         for (var i = 0; i < 20; i++)
@@ -87,7 +97,7 @@ void main() {
         }
         expect(l.shaded(firsts[k + 1]), isNot(band));
       }
-      final weekly = DayLabels(w, 3, 13);
+      final weekly = DayLabels(w, 1.5, 13);
       expect(weekly.step, 7);
       for (var i = 1; i < 70; i++) {
         if (weekly.labelled(i)) {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/unit_actions.dart';
+import '../models/number_style.dart';
+import 'format.dart';
 import '../services/catalogue_reader.dart';
 import 'client_pick.dart';
 import 'instant.dart';
@@ -56,8 +58,9 @@ class _BundleEditorState extends State<_BundleEditor> {
   };
   final _colors = <int, int?>{};
   late final _work = TextEditingController(text: widget.initial.workTitle);
+  // The value alone (7), the notation (#) outside the field.
   late final _number = TextEditingController(
-    text: widget.initial.episodeNumber,
+    text: parseEpisodeInput(widget.initial.episodeNumber, episodeStyle.value),
   );
   late final _subtitle = TextEditingController(
     text: widget.initial.episodeTitle ?? '',
@@ -91,10 +94,19 @@ class _BundleEditorState extends State<_BundleEditor> {
     ));
   }
 
-  Widget _field(String key, TextEditingController c, String label) => TextField(
+  Widget _field(
+    String key,
+    TextEditingController c,
+    String label, {
+    String? prefix,
+  }) => TextField(
     key: Key(key),
     controller: c,
-    decoration: InputDecoration(labelText: label),
+    decoration: InputDecoration(
+      labelText: label,
+      prefixText: prefix,
+      prefixStyle: TextStyle(color: AppColors.of(context).faint),
+    ),
     onChanged: (_) => setState(() {}),
     onSubmitted: (_) => _save(),
   );
@@ -140,7 +152,12 @@ class _BundleEditorState extends State<_BundleEditor> {
               children: [
                 SizedBox(
                   width: 90,
-                  child: _field('edit-episode', _number, S.episode.t),
+                  child: _field(
+                    'edit-episode',
+                    _number,
+                    S.episode.t,
+                    prefix: episodeStyle.value.prefix,
+                  ),
                 ),
                 Expanded(
                   child: _field('edit-subtitle', _subtitle, S.subtitle.t),

@@ -62,7 +62,11 @@ class _AddCutsState extends State<_AddCuts> {
   });
 
   Future<void> _byName() async {
-    final name = await askName(context, title: S.addCut.t);
+    final name = await askName(
+      context,
+      title: S.addCut.t,
+      prefix: widget.style.prefix,
+    );
     if (name == null || !mounted) return;
     setState(() => _cuts.add(name));
   }
@@ -168,7 +172,7 @@ class _AddCutsState extends State<_AddCuts> {
             if (clashes.isNotEmpty)
               Text(
                 S.cutsTaken.f({
-                  'names': [for (final id in clashes) _cuts.nameOf(id)]
+                  'names': [for (final id in clashes) _cuts.shown(id)]
                       .join(', '),
                 }),
                 key: const Key('add-clash'),
@@ -187,7 +191,7 @@ class _AddCutsState extends State<_AddCuts> {
           onPressed: clashes.isEmpty && cells.isNotEmpty
               ? () =>
                     Navigator.of(context)
-                        .pop([for (final id in cells) _cuts.nameOf(id)])
+                        .pop([for (final id in cells) _cuts.valueOf(id)])
               : null,
           child: Text(S.ok.t),
         ),

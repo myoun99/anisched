@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/unit_bundles.dart';
 import '../../core/size_class.dart';
+import '../../services/device_settings.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
 import '../hold.dart';
@@ -180,6 +181,7 @@ class _TimelineViewState extends State<TimelineView> {
                       ),
               ),
               const MonthViewToggle(),
+              const RulerRowsButton(tab: RulerTab.timeline),
             ],
           ),
           Expanded(
@@ -225,6 +227,16 @@ class _TimelineViewState extends State<TimelineView> {
     required bool month,
   }) => ChartBoard(
     window: window,
+    // A month band names its month in the corner, not in the ruler.
+    ruler: month
+        ? MonthRuler(rulerRows[RulerTab.timeline]!)
+        : rulerRows[RulerTab.timeline],
+    corner: month
+        ? MonthCorner(
+            month: window.value.start,
+            rows: rulerRows[RulerTab.timeline]!,
+          )
+        : null,
     onDayLongPress: widget.onRulerPress,
     onDayEvent: widget.onRulerEvent ?? widget.onEvent,
     shrinkWrap: month,

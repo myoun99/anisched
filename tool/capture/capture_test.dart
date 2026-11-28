@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
+import 'package:anisched/src/services/device_settings.dart';
 import 'package:anisched/src/services/undo_history.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
@@ -391,6 +392,44 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // The client list open: each line's colour, rename and delete.
+  'presets': (
+    AppView.register,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('pick-client')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Every ruler row on: year, month, days, weekdays, events.
+  'ruler-all': (
+    AppView.timeline,
+    (t, size) async {
+      rulerRows[RulerTab.timeline]!.value = (
+        year: true,
+        month: true,
+        weekday: true,
+      );
+      await t.pump();
+    },
+  ),
+  // The ruler rows' menu open.
+  'ruler-menu': (
+    AppView.timeline,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('ruler-rows')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // The month view: each band's month in its corner.
+  'month-corner': (
+    AppView.timeline,
+    (t, size) async {
+      chartMonthView.value = true;
+      await t.pump();
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
@@ -502,6 +541,12 @@ void main() {
       for (final MapEntry(key: label, value: size) in sizes.entries) {
         testWidgets('$name $label', (t) async {
           Folds.cutsInDetails.value = false;
+          chartMonthView.value = false;
+          rulerRows[RulerTab.timeline]!.value = (
+            year: false,
+            month: true,
+            weekday: true,
+          );
           Folds.dueRounds.value = false;
           chartView.value = const ChartView();
           chartMonthView.value = false;

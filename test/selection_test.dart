@@ -19,7 +19,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
   });
 
   test('a group is picked whole, in part, or not at all', () {

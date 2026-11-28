@@ -74,7 +74,12 @@ class ChartBoard extends StatefulWidget {
     this.shrinkWrap = false,
     this.onDayLongPress,
     this.onDayEvent,
+    this.ruler,
   });
+
+  /// Which ruler rows show (a chart tab's [rulerRows]); null: the
+  /// defaults.
+  final ValueListenable<RulerRows>? ruler;
 
   /// What opens under a row, the full width of the board (label column
   /// and dates); null when the row is closed.
@@ -132,6 +137,12 @@ class ChartBoard extends StatefulWidget {
   @override
   State<ChartBoard> createState() => _ChartBoardState();
 }
+
+final _defaultRows = ValueNotifier<RulerRows>((
+  year: false,
+  month: true,
+  weekday: true,
+));
 
 class _ChartBoardState extends State<ChartBoard> {
   /// A running window's part day ([RunningWindow.slide]): the date areas
@@ -289,12 +300,16 @@ class _ChartBoardState extends State<ChartBoard> {
                       builder: (context, window, _) => DaySlide(
                         window: window,
                         slide: _slide,
-                        child: ChartHeader(
-                          window: window,
-                          today: widget.today,
-                          days: widget.days,
-                          onDayLongPress: widget.onDayLongPress,
-                          onEvent: widget.onDayEvent,
+                        child: ValueListenableBuilder<RulerRows>(
+                          valueListenable: widget.ruler ?? _defaultRows,
+                          builder: (context, rows, _) => ChartHeader(
+                            window: window,
+                            today: widget.today,
+                            days: widget.days,
+                            rows: rows,
+                            onDayLongPress: widget.onDayLongPress,
+                            onEvent: widget.onDayEvent,
+                          ),
                         ),
                       ),
                     ),

@@ -377,7 +377,7 @@ class PartDetails extends StatelessWidget {
   final int? highlighted;
 
   /// Tapping a cut, when the view wants it (e.g. to start the timer).
-  final ValueChanged<TaskRow>? onTask;
+  final ValueChanged<List<TaskRow>>? onTask;
 
   /// The plan signal; its reason shows as one line.
   final PlanSignal? plan;
@@ -399,7 +399,7 @@ class PartDetails extends StatelessWidget {
   final ValueChanged<DateTime>? onPlanEnd;
 
   /// Long press on a cut: picks it for the bar's actions.
-  final ValueChanged<TaskRow>? onTaskLongPress;
+  final ValueChanged<List<TaskRow>>? onTaskLongPress;
 
   /// The work's client, first among the facts (views whose rows do not
   /// show it themselves).
@@ -584,19 +584,22 @@ class PartDetails extends StatelessWidget {
                           spacing: 4,
                           runSpacing: 4,
                           children: [
-                            for (final t in g.tasks)
+                            // A shared group is one chip, picked whole.
+                            for (final u in cutUnits(g.tasks))
                               _CutChip(
                                 waiting:
-                                    t.handedOff ||
-                                    (t.waiting && t.status.isOpen),
-                                task: t,
-                                onTap: onTask == null ? null : () => onTask!(t),
+                                    u.first.handedOff ||
+                                    (u.first.waiting && u.first.status.isOpen),
+                                unit: u,
+                                onTap: onTask == null ? null : () => onTask!(u),
                                 onLongPress: onTaskLongPress == null
                                     ? null
-                                    : () => onTaskLongPress!(t),
-                                picked:
-                                    t.id == highlighted ||
-                                    (isPicked?.call(t) ?? false),
+                                    : () => onTaskLongPress!(u),
+                                picked: u.any(
+                                  (t) =>
+                                      t.id == highlighted ||
+                                      (isPicked?.call(t) ?? false),
+                                ),
                               ),
                             if (onAddCuts != null)
                               _AddCutChip(
@@ -648,14 +651,17 @@ class _AddCutChip extends StatelessWidget {
 /// deadline; faded when on hold or pulled.
 class _CutChip extends StatelessWidget {
   const _CutChip({
-    required this.task,
+    required this.unit,
     required this.picked,
     this.waiting = false,
     this.onTap,
     this.onLongPress,
   });
 
-  final TaskRow task;
+  /// The cut's tasks: one, or a shared group's (one chip).
+  final List<TaskRow> unit;
+
+  TaskRow get task => unit.first;
 
   /// Filled: picked for an action, or the one the timer runs on.
   final bool picked;
@@ -676,7 +682,7 @@ class _CutChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: picked ? c.selected : c.panel,
         border: Border.all(
-          color: t.sharedLabel != null
+          color: unit.length > 1 || t.sharedLabel != null
               ? Theme.of(context).colorScheme.primary
               : c.line,
         ),
@@ -695,13 +701,14 @@ class _CutChip extends StatelessWidget {
               Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),
+            if (unit.length > 1) Icon(Icons.link, size: 12, color: c.muted),
             Flexible(
               child: FitText.rich(
                 tooltip: false,
                 TextSpan(
                   children: [
                     TextSpan(
-                      text: taskLabel(t),
+                      text: unitText(unit),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         decoration: t.handedOff
@@ -709,7 +716,7 @@ class _CutChip extends StatelessWidget {
                             : null,
                       ),
                     ),
-                    if (t.sharedLabel != null)
+                    if (unit.length == 1 && t.sharedLabel != null)
                       TextSpan(
                         text: ' ${t.sharedLabel}',
                         style: TextStyle(fontSize: 10, color: c.muted),
@@ -870,7 +877,7 @@ class UnitWiring {
 
   /// A cut tapped in the details (starts the timer, or picks it while
   /// picking); null: taps pick.
-  final ValueChanged<TaskRow>? onTaskTap;
+  final ValueChanged<List<TaskRow>>? onTaskTap;
 
   final void Function(PartGroup group, DateTime due)? onDue;
   final void Function(PartGroup group, DateTime kickoff)? onKickoff;
@@ -891,9 +898,9 @@ class UnitWiring {
       plan: signals[p.key]?.plan,
       usual: paces[p.stageName],
       isPicked: sel?.has,
-      onTask: onTaskTap ?? sel?.toggleTask,
+      onTask: onTaskTap ?? sel?.toggleUnit,
       onDue: onDue == null ? null : (d) => onDue!(p, d),
-      onTaskLongPress: sel?.toggleTask,
+      onTaskLongPress: sel?.toggleUnit,
       onKickoff: onKickoff == null ? null : (d) => onKickoff!(p, d),
       onPlanStart: onPlan == null
           ? null

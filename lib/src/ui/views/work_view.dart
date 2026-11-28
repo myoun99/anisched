@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/size_class.dart';
+import '../../services/device_settings.dart';
 import '../../models/lanes.dart';
 import '../../models/progress.dart';
 import '../format.dart';
@@ -142,6 +143,7 @@ class _WorkViewState extends State<WorkView> {
                       ),
               ),
               const MonthViewToggle(),
+              const RulerRowsButton(tab: RulerTab.work),
             ],
           ),
           Expanded(
@@ -200,7 +202,16 @@ class _WorkViewState extends State<WorkView> {
       labelWidth: _labelWidth,
       rowCount: rows.length,
       shrinkWrap: month,
-      corner: _corner(context),
+      // A month band names its month in the corner, not in the ruler.
+      ruler: month
+          ? MonthRuler(rulerRows[RulerTab.work]!)
+          : rulerRows[RulerTab.work],
+      corner: month
+          ? MonthCorner(
+              month: window.value.start,
+              rows: rulerRows[RulerTab.work]!,
+            )
+          : _corner(context),
       label: (context, i) => _laneLabel(context, lanes, rows[i]),
       bars: (context, i, window) => [
         for (final s in lanes.spans)
@@ -434,7 +445,6 @@ class _WorkViewState extends State<WorkView> {
   Widget _bar(Span s, ChartWindow window, Set<String> overflow, Color red) {
     final g = widget.parts[s.key];
     final label = g == null ? s.key : workBarLabel(g);
-    final pinned = widget.lanes!.pinned.contains(s.key);
     // The stage's colour; work past the lanes is ringed red.
     final color = g == null ? stageTones.first : stageColor(g.stageName);
     // Past the lanes, or overlapping in its own lane: ringed red.
@@ -448,7 +458,7 @@ class _WorkViewState extends State<WorkView> {
       color: color,
       textColor: barInk,
       outline: over ? red : null,
-      label: pinned ? '• $label' : label,
+      label: label,
       onDates: g == null || widget.onPlan == null
           ? null
           : (a, b) => widget.onPlan!(g, a, b),
