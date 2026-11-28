@@ -340,6 +340,20 @@ void main() {
     await t.pumpAndSettle();
   }
 
+  testWidgets('a phone upright: the work card two a row', (t) async {
+    await pumpRegister(t, const Size(390, 844));
+    double top(String k) => t.getTopLeft(find.byKey(Key(k))).dy;
+    // 회사 | 작품 on one row, 화 | 파트 on the next.
+    expect(top('pick-client'), top('pick-work'));
+    expect(top('pick-episode'), top('pick-part'));
+    expect(top('pick-episode'), greaterThan(top('pick-work')));
+    expect(
+      t.getTopLeft(find.byKey(const Key('pick-work'))).dx,
+      greaterThan(t.getTopRight(find.byKey(const Key('pick-client'))).dx),
+    );
+    expect(t.takeException(), isNull);
+  });
+
   testWidgets('the foot: reset on the left, register on the right', (t) async {
     await pumpRegister(t, const Size(390, 844));
     final reset = t.getRect(find.byKey(const Key('register-reset')));

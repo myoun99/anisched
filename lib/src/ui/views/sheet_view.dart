@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../instant.dart';
@@ -26,7 +27,12 @@ class SheetView extends StatefulWidget {
     this.onShowDoneChanged,
     this.toolbar,
     this.onReorder,
+    this.reveal,
   });
+
+  /// A unit to bring forward (the dashboard's 「go to the card」): its
+  /// line opens and scrolls into sight.
+  final ValueListenable<String?>? reveal;
 
   /// What the lines and their opened details act through (the shell's).
   final UnitWiring wiring;
@@ -80,10 +86,35 @@ class _SheetViewState extends State<SheetView> {
   final _rows = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    widget.reveal?.addListener(_onReveal);
+  }
+
+  @override
   void dispose() {
+    widget.reveal?.removeListener(_onReveal);
     _rows.dispose();
     _lines.dispose();
     super.dispose();
+  }
+
+  void _onReveal() {
+    final key = widget.reveal?.value;
+    if (key == null) return;
+    final bundles = bundleUnits(_visible);
+    final i = bundles.indexWhere(
+      (b) => b.key == key || b.stages.any((g) => g.key == key),
+    );
+    if (i < 0) return;
+    final line = bundles[i].key;
+    if (!_lines.expanded.contains(line)) _lines.toggle(line);
+    // Closed lines above are one height; scroll there once laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_rows.hasClients) return;
+      final p = _rows.position;
+      _rows.jumpTo((i * 52.0).clamp(0, p.maxScrollExtent));
+    });
   }
 
   List<PartGroup> get _visible =>
