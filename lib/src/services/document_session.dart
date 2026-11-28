@@ -48,6 +48,13 @@ final class RemoteKeptLocal extends RemoteCheck {
   final RecoverySnapshot snapshot;
 }
 
+/// The document was found empty, or cut short while this device was
+/// writing it (the app killed mid-save), and was written again from this
+/// device's own copy of its last write.
+final class RemoteRepaired extends RemoteCheck {
+  const RemoteRepaired();
+}
+
 /// The document is gone from its place.
 final class RemoteMissing extends RemoteCheck {
   const RemoteMissing();
@@ -79,7 +86,10 @@ abstract interface class DocumentSessionBase {
   /// Whole-document copies to bring back.
   SnapshotShelf get snapshots;
 
-  /// Saves now if there is anything to save — leaving the app, closing it.
+  /// The app is leaving the screen or closing: makes the work safe. Where
+  /// the document cannot be replaced atomically (Android) it is NOT
+  /// written now — a kill mid-write would leave it cut short — the work
+  /// stays in the local database and is saved when the app is back.
   Future<void> flush();
 
   /// Writes the working database to the bound document when dirty.
@@ -97,6 +107,11 @@ abstract interface class DocumentSessionBase {
 
   /// Checks the bound document after the app comes back.
   Future<RemoteCheck> resume();
+
+  /// Writes this device's copy of what it last wrote to [ref] back over it
+  /// and opens it — for a document found empty or broken
+  /// (`NotADocumentKind.empty`). False when there is no such copy.
+  Future<bool> restoreLastWritten(DocumentRef ref);
 
   /// Starts a new untitled document (empty catalogue, seeded presets).
   Future<void> startUntitled();

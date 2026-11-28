@@ -118,3 +118,12 @@ Dart 쪽은 `lib/src/platform/documents.dart` (`platform` 층: services 위, ui 
 `foreignApp`(다른 앱의 SQLite) · `damaged`(quick_check 실패 · 열기 실패) · `tablesDiffer` · `migrateFailed`(이행 중 SqliteException, 원래 메시지 보존).
 진단: `size` · `head`(앞 16바이트) · `applicationId` · `userVersion` · `check` — `toString()` 에 모두 나온다. 화면은 kind 로 언어 표를 거쳐 보여 줄 것(UI).
 v18 문서(겸용 · 빠짐 · 보관 · 리테이크 · 이벤트 · C 붙은 번호와 충돌 · 핀 · 순서 · 구간 · 요율 · 마감 회차)를 v20 으로 여는 테스트: `test/document_upgrade_test.dart`.
+
+## 원본을 잃지 않는 저장 (유저 2026-11-28: 드라이브의 문서가 0바이트)
+
+경위: 저장 상태로 문서를 연 채 앱을 강제 종료 → 종료 순간의 자동 저장이 SAF 로 문서를 "wt"(먼저 0으로 자름)로 연 뒤 프로세스가 죽음 → 하나뿐인 원본이 0바이트.
+- `DocumentFiles.replacesAtomically`: Windows/Linux(임시파일 + rename) · iOS/macOS(NSFileCoordinator `.forReplacing` + `replaceItemAt`) = 원자 교체. Android SAF 스트림 = 아님.
+- `flush()`(화면을 떠남 · 종료): 원자 교체가 아니면 **문서를 건드리지 않는다** — 작업은 로컬 DB 에 있고 dirty 가 디스크에 남아, 돌아올 때(`resume` 이 자동 저장을 건다) · 다음 시작 때 저장.
+- 쓰기 직전 쓸 바이트 전체를 로컬 `last-written/<위치 해시>.anisched` + 메모(위치 · 크기 · 해시 · 쓰는 중)로 먼저 고정. 쓴 뒤 stat 크기 == 쓴 크기 확인(0.5초 뒤 한 번 더) — 다르면 `DocumentWriteMismatchException`, dirty 유지, 자동 재시도 2번.
+- `resume()`(시작 직후 · 돌아올 때): 바인딩된 문서가 0바이트이거나, 이 기기가 쓰던 중이었고 크기가 다르며 문서로 읽히지 않으면 → 로컬 사본을 다시 써서 복구, `RemoteRepaired`. 다른 기기가 그 뒤 정상 저장한 문서(문서로 읽힘)는 건드리지 않는다.
+- 열기에서 `NotADocumentKind.empty` 등이 나면 `restoreLastWritten(ref)` — 그 위치에 이 기기가 마지막으로 쓴 사본이 있으면 다시 쓰고 연다(없으면 false). 스냅샷(`snapshots`)도 그대로 쓸 수 있다.

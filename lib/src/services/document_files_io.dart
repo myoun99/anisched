@@ -18,6 +18,9 @@ class PathDocumentFiles implements DocumentFiles {
   final int retries;
 
   @override
+  bool get replacesAtomically => true;
+
+  @override
   Future<DocumentRef> reopen(DocumentRef ref) async => ref;
 
   @override
