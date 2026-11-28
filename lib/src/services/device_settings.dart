@@ -84,6 +84,7 @@ class DeviceSettings {
     this._monthView,
     this._shortcuts,
     this._ruler,
+    this._statsDetail,
   );
 
   /// Settings read from [json] (null, unreadable or partial gives the
@@ -119,6 +120,7 @@ class DeviceSettings {
                   if (rows[row.name] case final bool on) row: on,
               },
       },
+      m['statsDetail'] == true,
     );
   }
 
@@ -128,6 +130,15 @@ class DeviceSettings {
   bool _monthView;
   final Map<String, List<String>> _shortcuts;
   final Map<RulerTab, Map<RulerRow, bool>> _ruler;
+  bool _statsDetail;
+
+  /// The statistics show the per-cut drill-down. Default: off.
+  bool get statsDetail => _statsDetail;
+
+  set statsDetail(bool on) {
+    _statsDetail = on;
+    _save();
+  }
 
   /// Default: [ThemeChoice.system].
   ThemeChoice get themeMode => _theme;
@@ -194,6 +205,7 @@ class DeviceSettings {
       if (_language.tag != null) 'language': _language.tag,
       if (_monthView) 'monthView': true,
       if (_shortcuts.isNotEmpty) 'shortcuts': _shortcuts,
+      if (_statsDetail) 'statsDetail': true,
       if (_ruler.isNotEmpty)
         'rulerRows': {
           for (final MapEntry(key: tab, value: rows) in _ruler.entries)

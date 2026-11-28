@@ -1421,11 +1421,12 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               episodeLabel: t.episodeNumber,
               partId: t.partId,
               partLabel: t.partLabel,
-              cutKey: t.cutId != null ? 'c${t.cutId}' : 's${t.id}',
+              cutKey: t.cutId != null ? '${t.cutId}' : 's${t.id}',
               cutLabel: t.unitLabel,
               status: t.status,
               clientId: x['client_id'] as int?,
               clientName: x['client'] as String?,
+              clientColor: t.clientColor,
               take: t.take,
               submittedAt: _utcOrNull(x['submitted_at']),
               doneAt: _utcOrNull(x['done_at']),
@@ -1443,9 +1444,9 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
   }
 
   /// The statistics drill-down for the work days `[from, to)` (유저
-  /// 2026-11-28): client → work → episode → part → cut, every node with
+  /// 2026-11-28): client → work → episode → unit → cut, every node with
   /// the figures of a [StatsSlice] (the root's equal [stats]' total), cut
-  /// leaves with their stages. Narrowed like [stats].
+  /// leaves with their task's details. Narrowed like [stats].
   StatsNode statsTree({
     required DateTime from,
     required DateTime to,

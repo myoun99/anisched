@@ -25,11 +25,14 @@ void main() {
     expect(loadDeviceSettings(tmp.path).language, LanguageChoice.device);
   });
 
-  test('the month view choice is kept, and off by default', () {
+  test('the month view and stats detail choices are kept, off by default', () {
     final s = loadDeviceSettings(tmp.path);
-    expect(s.monthView, isFalse);
-    s.monthView = true;
+    expect((s.monthView, s.statsDetail), (false, false));
+    s
+      ..monthView = true
+      ..statsDetail = true;
     expect(loadDeviceSettings(tmp.path).monthView, isTrue);
+    expect(loadDeviceSettings(tmp.path).statsDetail, isTrue);
     expect(loadDeviceSettings(tmp.path).themeMode, ThemeChoice.system);
   });
 
