@@ -286,7 +286,20 @@ enum S {
     '新建“{name}”',
   ),
   cancel('Cancel', 'キャンセル', '취소', 'Annuler', '取消'),
-  ok('OK', 'OK', '확인', 'OK', '确定');
+  ok('OK', 'OK', '확인', 'OK', '确定'),
+
+  // On hold (waiting on someone else's material).
+  hold('On hold', '待ち', '대기', 'En attente', '等待'),
+  unhold('Resume', '待ち解除', '대기 해제', 'Reprendre', '解除等待'),
+  holdReason('Reason', '理由', '사유', 'Motif', '原因'),
+  holdExpected('Expected', '見込み', '예상일', 'Prévu', '预计'),
+  inHand('{n} in hand', '手元 {n}', '보유 {n}', '{n} en main', '在手 {n}'),
+  onHold('{n} on hold', '待ち {n}', '대기 {n}', '{n} en attente', '等待 {n}'),
+
+  // Deadline rounds (1st, 2nd … extensions).
+  dueRound('Round {n}', '{n}次', '{n}차', '{n}e échéance', '第{n}次'),
+  dueRounds('Deadlines', '締切履歴', '마감 차수', 'Échéances', '截止记录'),
+  addDueRound('New round', '次の締切', '새 차수', 'Nouvelle échéance', '新一次截止');
 
   const S(this.en, this.ja, this.ko, this.fr, this.zh);
 
