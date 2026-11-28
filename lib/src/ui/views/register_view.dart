@@ -24,13 +24,14 @@ import '../widgets.dart';
 import '../text/strings.dart';
 import '../notice.dart';
 
-/// Registering cuts, one step after another: 회사 → 작품 → 화수 → 파트 →
-/// 컷. Each of the first four picks from what is registered, with
-/// 「+ 새로 만들기」 at the bottom of its list. Stages come from a role
-/// chip (it checks the role's stages) or one checkbox at a time. Cuts are
-/// a first number and a count, plus cuts added by name at the grid's
-/// 「+」; picked cells (tap or drag across) can be left out, split A/B,
-/// paired as shared (still two cuts) or renamed.
+/// Registering cuts in four cards (유저 2026-11-28): [회사 · 작품 · 화 ·
+/// 파트] — each picks from what is registered, with 「+ 새로 만들기」 at
+/// the bottom of its list; [담당] — roles (several at once: their stages
+/// together) and one checkbox per stage; [일정] — each stage's dates; and
+/// [등록할 컷] — the list of cut blocks that will be saved, filled by the
+/// tools above it (「범위로 추가」: first cut to last; 「직접 추가」: one
+/// by name). Picked blocks (tap or drag across) can be paired as shared
+/// (one block, two cuts), renamed or deleted.
 class RegisterView extends StatefulWidget {
   const RegisterView({
     super.key,
@@ -85,10 +86,11 @@ class _RegisterViewState extends State<RegisterView> {
   PickOption<int>? _work;
   PickOption<int>? _episode;
   String? _part;
-  final _start = TextEditingController(text: '1');
-  final _count = TextEditingController(text: '100');
+  // The range tool's first and last cut.
+  final _first = TextEditingController(text: '1');
+  final _last = TextEditingController(text: '100');
   final _stages = <String>{};
-  CutDraft _cuts = CutDraft();
+  CutDraft _cuts = CutDraft(count: 0);
   Set<String> _taken = const {};
 
   final _picked = <String>{};
@@ -169,8 +171,8 @@ class _RegisterViewState extends State<RegisterView> {
   @override
   void dispose() {
     Folds.newCuts.removeListener(_refold);
-    _start.dispose();
-    _count.dispose();
+    _first.dispose();
+    _last.dispose();
     super.dispose();
   }
 
@@ -206,24 +208,31 @@ class _RegisterViewState extends State<RegisterView> {
     setState(() => _taken = {for (final c in cuts) c.number});
   }
 
+  /// The list in the work's notation, its blocks kept.
   void _rebuildCuts({String? prefix, int? width}) {
-    final start = int.tryParse(_start.text) ?? 1;
-    final count = (int.tryParse(_count.text) ?? 1).clamp(1, 2000);
     final old = _cuts;
     _cuts =
         CutDraft(
-            start: start,
-            count: count,
+            count: 0,
             prefix: prefix ?? old.prefix,
             width: width ?? old.width,
           )
           ..extras.addAll(old.extras)
           ..renames.addAll(old.renames)
-          ..removed.addAll(old.removed)
-          ..splits.addAll(old.splits)
           ..shared.addAll(old.shared);
     final cells = _cuts.cells.toSet();
     _picked.retainWhere(cells.contains);
+  }
+
+  int? get _firstNo => int.tryParse(_first.text.trim());
+  int? get _lastNo => int.tryParse(_last.text.trim());
+
+  /// 「범위로 추가」: the first cut to the last as blocks.
+  void _addRange() {
+    final a = _firstNo;
+    final b = _lastNo;
+    if (a == null || b == null) return;
+    setState(() => _cuts.addRange(a, b));
   }
 
   // ---- grid picking ----
@@ -253,6 +262,7 @@ class _RegisterViewState extends State<RegisterView> {
     });
   }
 
+  /// 「직접 추가」: one cut by name (12A, BANK).
   Future<void> _addCut() async {
     final name = await askName(
       context,
@@ -326,8 +336,8 @@ class _RegisterViewState extends State<RegisterView> {
     String? part,
     Set<String> stages,
     CutDraft cuts,
-    String start,
-    String count,
+    String first,
+    String last,
     Map<String, ({DateTime? kickoff, DateTime? due})> dates,
   })
   _snapshot() => (
@@ -337,13 +347,13 @@ class _RegisterViewState extends State<RegisterView> {
     part: _part,
     stages: {..._stages},
     cuts: _cuts,
-    start: _start.text,
-    count: _count.text,
+    first: _first.text,
+    last: _last.text,
     dates: {..._ownDates},
   );
 
   /// The form as the screen first opens it: nothing picked, the first
-  /// role's stages, cuts 1-100, starting today.
+  /// role's stages, no cuts yet, starting today.
   void _clear() {
     _client = null;
     _work = null;
@@ -352,9 +362,9 @@ class _RegisterViewState extends State<RegisterView> {
     _stages
       ..clear()
       ..addAll(widget.roles.isEmpty ? const [] : widget.roles.first.stages);
-    _start.text = '1';
-    _count.text = '100';
-    _cuts = CutDraft(prefix: _cuts.prefix, width: _cuts.width);
+    _first.text = '1';
+    _last.text = '100';
+    _cuts = CutDraft(count: 0, prefix: _cuts.prefix, width: _cuts.width);
     _ownDates.clear();
     _picked.clear();
     _taken = const {};
@@ -378,8 +388,8 @@ class _RegisterViewState extends State<RegisterView> {
             ..clear()
             ..addAll(was.stages);
           _cuts = was.cuts;
-          _start.text = was.start;
-          _count.text = was.count;
+          _first.text = was.first;
+          _last.text = was.last;
           _ownDates
             ..clear()
             ..addAll(was.dates);
@@ -456,17 +466,15 @@ class _RegisterViewState extends State<RegisterView> {
 
   // ---- build ----
 
-  /// The cut grids keep wide side margins on phones: room to drag the page
-  /// without starting a pick on a cell.
-  EdgeInsets get _gridPadding => widget.layout.size == SizeClass.narrow
-      ? const EdgeInsets.fromLTRB(36, 10, 36, 24)
-      : const EdgeInsets.fromLTRB(14, 10, 14, 24);
+  /// The cut list keeps wide side margins on phones: room to drag the page
+  /// without starting a pick on a block.
+  EdgeInsets get _listPadding => widget.layout.size == SizeClass.narrow
+      ? const EdgeInsets.symmetric(horizontal: 22)
+      : EdgeInsets.zero;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final cells = _cuts.cells;
-    final clashes = _clashes;
     return ColoredBox(
       color: c.panel,
       child: Column(
@@ -482,56 +490,52 @@ class _RegisterViewState extends State<RegisterView> {
               child: OwnScroll(
                 builder: (controller) => Scrollbar(
                   controller: controller,
-                  child: CustomScrollView(
+                  child: SingleChildScrollView(
                     key: _scrollKey,
                     controller: controller,
                     physics: _paint == null
                         ? null
                         : const NeverScrollableScrollPhysics(),
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                        sliver: SliverToBoxAdapter(child: _form(context)),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                        sliver: SliverToBoxAdapter(child: _summary(context)),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
-                        sliver: SliverToBoxAdapter(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FoldToggle(
-                              key: const Key('fold-new-cuts'),
-                              state: Folds.newCuts,
-                              label: '${cells.length} cut',
-                            ),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 10,
+                      children: [
+                        _section(
+                          key: 'reg-sec-work',
+                          icon: Icons.movie_outlined,
+                          title: S.title.t,
+                          child: _workPicks(context),
+                        ),
+                        _section(
+                          key: 'reg-sec-roles',
+                          icon: Icons.badge_outlined,
+                          title: S.roles.t,
+                          child: _roleRows(context),
+                        ),
+                        _section(
+                          key: 'reg-sec-dates',
+                          icon: Icons.event_outlined,
+                          title: S.schedule.t,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: 4,
+                            children: [
+                              // Each card the register makes (one per
+                              // stage) with its own production dates.
+                              for (final s in _checked) _stageDates(s),
+                            ],
                           ),
                         ),
-                      ),
-                      if (Folds.newCuts.value)
-                        SliverPadding(
-                          padding: _gridPadding,
-                          sliver: SliverGrid.builder(
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 60,
-                                  mainAxisExtent: 24,
-                                  mainAxisSpacing: 2,
-                                  crossAxisSpacing: 2,
-                                ),
-                            itemCount: cells.length + 1,
-                            itemBuilder: (context, i) => i == cells.length
-                                ? _plusCell(context)
-                                : _cell(
-                                    context,
-                                    cells[i],
-                                    clashes.contains(cells[i]),
-                                  ),
-                          ),
+                        _section(
+                          key: 'reg-sec-cuts',
+                          icon: Icons.view_module_outlined,
+                          title: S.cutsToRegister.t,
+                          trailing: _pickTools(context),
+                          child: _cutList(context),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -543,255 +547,272 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _form(BuildContext context) {
+  /// One card of the form: its icon and title on the left (any tools on
+  /// the right), then its contents.
+  Widget _section({
+    required String key,
+    required IconData icon,
+    required String title,
+    required Widget child,
+    Widget? trailing,
+  }) {
     final c = AppColors.of(context);
+    return Panel(
+      key: Key(key),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 10,
+        children: [
+          Row(
+            spacing: 6,
+            children: [
+              Icon(icon, size: 16, color: c.muted),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: c.muted,
+                ),
+              ),
+              if (trailing != null) Expanded(child: trailing),
+            ],
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _workPicks(BuildContext context) {
     final r = widget.reader;
     final wide = widget.layout.size != SizeClass.narrow;
     final fw = wide ? 200.0 : double.infinity;
     final sw = wide ? 130.0 : double.infinity;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: 12,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            ClientPick(
-              picked: _client,
-              reader: r,
-              colors: _clientColors,
-              width: fw,
-              onPicked: (x) => setState(() {
-                _client = x;
-                _work = null;
+        ClientPick(
+          picked: _client,
+          reader: r,
+          colors: _clientColors,
+          width: fw,
+          onPicked: (x) => setState(() {
+            _client = x;
+            _work = null;
+            _episode = null;
+            _part = null;
+          }),
+          onCreate: widget.onCreateClient,
+          inUse: _clientsUsed,
+          tools: _tools<int>(
+            inUse: (id) => _clientsUsed[id] ?? true,
+            rename: (s, id, name) => s.renameClient(id, name),
+            delete: (s, id) => s.deleteClient(id),
+            after: (id, name) {
+              if (_client?.value != id) return;
+              if (name == null) {
+                _client = _work = _episode = null;
+                _part = null;
+              } else {
+                _client = (value: id, title: name, note: null);
+              }
+            },
+            colorOf: (id) => clientColorOf(id, _clientColors[id]),
+            recolor: widget.onClientColor == null
+                ? null
+                : (id, col) {
+                    _clientColors[id] = col.toARGB32();
+                    widget.onClientColor!(id, col.toARGB32());
+                    setState(() {});
+                  },
+          ),
+          onColor: widget.onClientColor == null
+              ? null
+              : (id, argb) {
+                  widget.onClientColor!(id, argb);
+                  setState(() {});
+                },
+        ),
+        PickField<int>(
+          key: const Key('pick-work'),
+          current: _work?.value,
+          label: S.title.t,
+          width: fw,
+          value: _work?.title,
+          search: (q) async {
+            if (r == null) return const [];
+            final rows = await r.searchWorks(q, clientId: _client?.value);
+            for (final x in rows) {
+              _used[(CatalogueKind.work, x.id)] = x.inUse;
+            }
+            return [
+              for (final x in rows) (value: x.id, title: x.title, note: null),
+            ];
+          },
+          onPicked: _pickWork,
+          tools: _tools<int>(
+            inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
+            rename: (s, id, name) => s.renameWork(id, name),
+            delete: (s, id) => s.deleteWork(id),
+            after: (id, name) {
+              if (_work?.value != id) return;
+              if (name == null) {
+                _work = _episode = null;
+                _part = null;
+              } else {
+                _work = (value: id, title: name, note: null);
+              }
+            },
+          ),
+          onCreate: widget.onCreateWork == null
+              ? null
+              : (name) async => (
+                  value: widget.onCreateWork!(name, _client?.value),
+                  title: name,
+                  note: null,
+                ),
+        ),
+        PickField<int>(
+          key: const Key('pick-episode'),
+          current: _episode?.value,
+          label: S.episode.t,
+          width: sw,
+          enabled: _work != null,
+          value: _episode?.title,
+          search: (q) async {
+            final w = _work;
+            if (r == null || w == null) return const [];
+            final rows = await r.searchEpisodes(w.value, q);
+            for (final x in rows) {
+              _used[(CatalogueKind.episode, x.id)] = x.inUse;
+              _episodeTitles[x.id] = x.title;
+            }
+            return [
+              for (final x in rows)
+                (value: x.id, title: x.number, note: x.title),
+            ];
+          },
+          onPicked: _pickEpisode,
+          tools: _tools<int>(
+            inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
+            // The number changes; the subtitle stays.
+            rename: (s, id, name) =>
+                s.renameEpisode(id, name, title: _episodeTitles[id]),
+            delete: (s, id) => s.deleteEpisode(id),
+            after: (id, name) {
+              if (_episode?.value != id) return;
+              if (name == null) {
                 _episode = null;
                 _part = null;
-              }),
-              onCreate: widget.onCreateClient,
-              inUse: _clientsUsed,
-              tools: _tools<int>(
-                inUse: (id) => _clientsUsed[id] ?? true,
-                rename: (s, id, name) => s.renameClient(id, name),
-                delete: (s, id) => s.deleteClient(id),
-                after: (id, name) {
-                  if (_client?.value != id) return;
-                  if (name == null) {
-                    _client = _work = _episode = null;
-                    _part = null;
-                  } else {
-                    _client = (value: id, title: name, note: null);
-                  }
-                },
-                colorOf: (id) => clientColorOf(id, _clientColors[id]),
-                recolor: widget.onClientColor == null
-                    ? null
-                    : (id, col) {
-                        _clientColors[id] = col.toARGB32();
-                        widget.onClientColor!(id, col.toARGB32());
-                        setState(() {});
-                      },
-              ),
-              onColor: widget.onClientColor == null
-                  ? null
-                  : (id, argb) {
-                      widget.onClientColor!(id, argb);
-                      setState(() {});
-                    },
-            ),
-            PickField<int>(
-              key: const Key('pick-work'),
-              current: _work?.value,
-              label: S.title.t,
-              width: fw,
-              value: _work?.title,
-              search: (q) async {
-                if (r == null) return const [];
-                final rows = await r.searchWorks(q, clientId: _client?.value);
-                for (final x in rows) {
-                  _used[(CatalogueKind.work, x.id)] = x.inUse;
-                }
-                return [
-                  for (final x in rows)
-                    (value: x.id, title: x.title, note: null),
-                ];
-              },
-              onPicked: _pickWork,
-              tools: _tools<int>(
-                inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
-                rename: (s, id, name) => s.renameWork(id, name),
-                delete: (s, id) => s.deleteWork(id),
-                after: (id, name) {
-                  if (_work?.value != id) return;
-                  if (name == null) {
-                    _work = _episode = null;
-                    _part = null;
-                  } else {
-                    _work = (value: id, title: name, note: null);
-                  }
-                },
-              ),
-              onCreate: widget.onCreateWork == null
-                  ? null
-                  : (name) async => (
-                      value: widget.onCreateWork!(name, _client?.value),
-                      title: name,
-                      note: null,
-                    ),
-            ),
-            PickField<int>(
-              key: const Key('pick-episode'),
-              current: _episode?.value,
-              label: S.episode.t,
-              width: sw,
-              enabled: _work != null,
-              value: _episode?.title,
-              search: (q) async {
-                final w = _work;
-                if (r == null || w == null) return const [];
-                final rows = await r.searchEpisodes(w.value, q);
-                for (final x in rows) {
-                  _used[(CatalogueKind.episode, x.id)] = x.inUse;
-                  _episodeTitles[x.id] = x.title;
-                }
-                return [
-                  for (final x in rows)
-                    (value: x.id, title: x.number, note: x.title),
-                ];
-              },
-              onPicked: _pickEpisode,
-              tools: _tools<int>(
-                inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
-                // The number changes; the subtitle stays.
-                rename: (s, id, name) =>
-                    s.renameEpisode(id, name, title: _episodeTitles[id]),
-                delete: (s, id) => s.deleteEpisode(id),
-                after: (id, name) {
-                  if (_episode?.value != id) return;
-                  if (name == null) {
-                    _episode = null;
-                    _part = null;
-                  } else {
-                    _episode = (
-                      value: id,
-                      title: episodeShown(name),
-                      note: null,
-                    );
-                  }
-                },
-              ),
-              onCreate: widget.onCreateEpisode == null
-                  ? null
-                  : (name) async {
-                      final id = widget.onCreateEpisode!(_work!.value, name);
-                      return (value: id, title: episodeShown(name), note: null);
-                    },
-            ),
-            PickField<String>(
-              key: const Key('pick-part'),
-              current: _part,
-              label: S.part.t,
-              width: sw,
-              enabled: _episode != null,
-              value: _part,
-              search: (q) async {
-                if (r == null) return const [];
-                final e = _episode;
-                final rows = e == null
-                    ? const <PartRow>[]
-                    : await r.parts(e.value);
-                for (final x in rows) {
-                  _partIds[x.label] = (id: x.id, used: x.inUse);
-                }
-                return [
-                  (value: '', title: '—', note: null),
-                  for (final x in rows)
-                    if (x.label.contains(q))
-                      (value: x.label, title: x.label, note: '${x.cutCount}'),
-                ];
-              },
-              tools: _tools<String>(
-                // 「—」 (no part) and a typed new one are not saved parts.
-                editable: _partIds.containsKey,
-                inUse: (label) => _partIds[label]?.used ?? true,
-                rename: (s, label, name) =>
-                    s.renamePart(_partIds[label]!.id, name),
-                delete: (s, label) => s.deletePart(_partIds[label]!.id),
-                after: (label, name) {
-                  if (_part == label) _part = name;
-                },
-              ),
-              onPicked: (x) =>
-                  setState(() => _part = x.value.isEmpty ? null : x.value),
-              onCreate: (name) async => (value: name, title: name, note: null),
-            ),
-          ],
-        ),
-        Text(S.roles.t, style: TextStyle(fontSize: 12, color: c.muted)),
-        // One row the finger slides along: a role is a shortcut, most
-        // people use one or two.
-        SlidingRow(
-          key: const Key('roles-row'),
-          children: [
-            for (final role in widget.roles)
-              ToolbarButton(
-                key: Key('role-${role.name}'),
-                label: role.name,
-                selected:
-                    _stages.length == role.stages.length &&
-                    role.stages.every(_stages.contains),
-                onTap: () => setState(
-                  () => _stages
-                    ..clear()
-                    ..addAll(role.stages),
-                ),
-              ),
-          ],
-        ),
-        // Folded, only the checked stages show.
-        ValueListenableBuilder<bool>(
-          valueListenable: Folds.registerStages,
-          builder: (context, open, _) => Wrap(
-            spacing: 14,
-            runSpacing: 2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              FoldToggle(
-                key: const Key('fold-stages'),
-                state: Folds.registerStages,
-                label: S.stagesN.f({'n': _stages.length}),
-              ),
-              for (final s in _allStages)
-                if (open || _stages.contains(s)) _stageBox(s),
-            ],
+              } else {
+                _episode = (value: id, title: episodeShown(name), note: null);
+              }
+            },
           ),
+          onCreate: widget.onCreateEpisode == null
+              ? null
+              : (name) async {
+                  final id = widget.onCreateEpisode!(_work!.value, name);
+                  return (value: id, title: episodeShown(name), note: null);
+                },
         ),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.end,
-          children: [
-            CountStepper(
-              label: S.firstCut.t,
-              preview: _cuts.number(_cuts.start),
-              controller: _start,
-              fieldKey: const Key('reg-start'),
-              onChanged: () => setState(_rebuildCuts),
-            ),
-            CountStepper(
-              label: S.cutCount.t,
-              preview: '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
-              controller: _count,
-              fieldKey: const Key('reg-count'),
-              onChanged: () => setState(_rebuildCuts),
-            ),
-          ],
+        PickField<String>(
+          key: const Key('pick-part'),
+          current: _part,
+          label: S.part.t,
+          width: sw,
+          enabled: _episode != null,
+          value: _part,
+          search: (q) async {
+            if (r == null) return const [];
+            final e = _episode;
+            final rows = e == null ? const <PartRow>[] : await r.parts(e.value);
+            for (final x in rows) {
+              _partIds[x.label] = (id: x.id, used: x.inUse);
+            }
+            return [
+              (value: '', title: '—', note: null),
+              for (final x in rows)
+                if (x.label.contains(q))
+                  (value: x.label, title: x.label, note: '${x.cutCount}'),
+            ];
+          },
+          tools: _tools<String>(
+            // 「—」 (no part) and a typed new one are not saved parts.
+            editable: _partIds.containsKey,
+            inUse: (label) => _partIds[label]?.used ?? true,
+            rename: (s, label, name) => s.renamePart(_partIds[label]!.id, name),
+            delete: (s, label) => s.deletePart(_partIds[label]!.id),
+            after: (label, name) {
+              if (_part == label) _part = name;
+            },
+          ),
+          onPicked: (x) =>
+              setState(() => _part = x.value.isEmpty ? null : x.value),
+          onCreate: (name) async => (value: name, title: name, note: null),
         ),
-        // Each card the register makes (one per stage) with its own
-        // production dates, the stage above's until set.
-        for (final s in _checked) _stageDates(s),
       ],
     );
+  }
+
+  /// Roles first (several may be on: their stages together), then each
+  /// stage's own checkbox; folded, only the checked stages show.
+  Widget _roleRows(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    spacing: 6,
+    children: [
+      // One row the finger slides along: most people use one or two.
+      SlidingRow(
+        key: const Key('roles-row'),
+        children: [
+          for (final role in widget.roles)
+            ToolbarButton(
+              key: Key('role-${role.name}'),
+              label: role.name,
+              selected: _roleOn(role.stages),
+              onTap: () => setState(() => _toggleRole(role.stages)),
+            ),
+        ],
+      ),
+      ValueListenableBuilder<bool>(
+        valueListenable: Folds.registerStages,
+        builder: (context, open, _) => Wrap(
+          spacing: 14,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            FoldToggle(
+              key: const Key('fold-stages'),
+              state: Folds.registerStages,
+              label: S.stagesN.f({'n': _stages.length}),
+            ),
+            for (final s in _allStages)
+              if (open || _stages.contains(s)) _stageBox(s),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  /// A role is on when all its stages are checked.
+  bool _roleOn(List<String> stages) =>
+      stages.isNotEmpty && stages.every(_stages.contains);
+
+  /// Turns a role on (adds its stages) or off (drops those no other role
+  /// that stays on also takes).
+  void _toggleRole(List<String> stages) {
+    if (!_roleOn(stages)) {
+      _stages.addAll(stages);
+      return;
+    }
+    final kept = {
+      for (final r in widget.roles)
+        if (!identical(r.stages, stages) && _roleOn(r.stages)) ...r.stages,
+    };
+    _stages.removeWhere((s) => stages.contains(s) && !kept.contains(s));
   }
 
   Widget _stageBox(String s) => InkWell(
@@ -813,8 +834,9 @@ class _RegisterViewState extends State<RegisterView> {
     ),
   );
 
-  Widget _summary(BuildContext context) {
-    final c = AppColors.of(context);
+  /// The picked blocks' tools, on the section's right: shared, name,
+  /// delete, unpick.
+  Widget _pickTools(BuildContext context) {
     final picked = [
       for (final x in _cuts.cells)
         if (_picked.contains(x)) x,
@@ -826,30 +848,14 @@ class _RegisterViewState extends State<RegisterView> {
           _picked.clear();
         });
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.end,
+      spacing: 6,
+      runSpacing: 6,
       children: [
-        Text(
-          '${_cuts.total} cut',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        ),
-        Text('× ${_stages.length}', style: TextStyle(color: c.muted)),
-        ToolbarButton(
-          key: const Key('cut-remove'),
-          label: S.takeOut.t,
-          selected: false,
-          onTap: any ? act(() => _cuts.toggleRemoved(picked)) : null,
-        ),
-        ToolbarButton(
-          key: const Key('cut-split'),
-          label: 'A/B',
-          selected: false,
-          onTap: any ? act(() => _cuts.toggleSplit(picked)) : null,
-        ),
         ToolbarButton(
           key: const Key('cut-share'),
           label: S.shared.t,
+          icon: Icons.link,
           selected: false,
           onTap: _cuts.canShare(picked)
               ? act(() => _cuts.toggleShared(picked))
@@ -858,16 +864,146 @@ class _RegisterViewState extends State<RegisterView> {
         ToolbarButton(
           key: const Key('cut-rename'),
           label: S.name.t,
+          icon: Icons.drive_file_rename_outline,
           selected: false,
           onTap: picked.length == 1 ? () => _rename(picked.single) : null,
         ),
         ToolbarButton(
+          key: const Key('cut-delete'),
+          label: S.remove.t,
+          icon: Icons.delete_outline,
+          selected: false,
+          onTap: any ? act(() => _cuts.delete(picked)) : null,
+        ),
+        ToolbarButton(
           key: const Key('cut-clear'),
           label: S.clear.t,
+          icon: Icons.close,
           selected: false,
           onTap: any ? () => setState(_picked.clear) : null,
         ),
       ],
+    );
+  }
+
+  /// The tools that fill the list (first cut ~ last cut and 「범위로
+  /// 추가」, 「직접 추가」), the count, then the list itself: one block a
+  /// cut, a shared pair one block.
+  Widget _cutList(BuildContext context) {
+    final c = AppColors.of(context);
+    final clashes = _clashes;
+    final cells = _cuts.cells;
+    final a = _firstNo;
+    final b = _lastNo;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 10,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: [
+            CountStepper(
+              label: S.firstCut.t,
+              preview: a == null ? '' : _cuts.number(a),
+              controller: _first,
+              fieldKey: const Key('reg-first'),
+              onChanged: () => setState(() {}),
+            ),
+            CountStepper(
+              label: S.lastCut.t,
+              preview: b == null ? '' : _cuts.number(b),
+              controller: _last,
+              fieldKey: const Key('reg-last'),
+              onChanged: () => setState(() {}),
+            ),
+            FilledButton.tonalIcon(
+              key: const Key('cut-add-range'),
+              onPressed: a == null || b == null ? null : _addRange,
+              icon: const Icon(Icons.playlist_add, size: 18),
+              label: Text(S.addRange.t),
+            ),
+            OutlinedButton.icon(
+              key: const Key('cut-add-one'),
+              onPressed: _addCut,
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(S.addOne.t),
+            ),
+          ],
+        ),
+        Row(
+          spacing: 8,
+          children: [
+            FoldToggle(
+              key: const Key('fold-new-cuts'),
+              state: Folds.newCuts,
+              label: '${_cuts.total} cut',
+            ),
+            Text('× ${_stages.length}', style: TextStyle(color: c.muted)),
+          ],
+        ),
+        if (Folds.newCuts.value)
+          Padding(
+            padding: _listPadding,
+            child: Wrap(
+              key: const Key('cut-blocks'),
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final id in cells)
+                  // A shared pair is one block, on its first cell.
+                  if (!_cuts.shared.containsValue(id))
+                    _block(context, id, clashes),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// One block: a cut, or a shared pair (「C012/C013」); picked by a tap
+  /// or a drag across, renamed by a long press.
+  Widget _block(BuildContext context, String id, Set<String> clashes) {
+    final scheme = Theme.of(context).colorScheme;
+    final pair = _cuts.shared[id];
+    final ids = [id, ?pair];
+    final clash = ids.any(clashes.contains);
+    final on = ids.every(_picked.contains);
+    return MetaData(
+      metaData: id,
+      behavior: HitTestBehavior.opaque,
+      child: GestureDetector(
+        onLongPress: pair == null ? () => _rename(id) : null,
+        child: Listener(
+          onPointerDown: (e) {
+            if (e.kind == PointerDeviceKind.mouse &&
+                e.buttons != kPrimaryMouseButton) {
+              return;
+            }
+            _paintAt(e.position, start: true);
+          },
+          onPointerMove: (e) {
+            if (_paint != null) _paintAt(e.position);
+          },
+          child: CutBlock(
+            key: Key('cell-$id'),
+            picked: on,
+            edge: clash ? scheme.error : null,
+            children: [
+              Text(
+                ids.map(_cuts.shown).join('/'),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: clash ? scheme.error : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -907,90 +1043,6 @@ class _RegisterViewState extends State<RegisterView> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _cell(BuildContext context, String id, bool clash) {
-    final c = AppColors.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final removed = _cuts.removed.contains(id);
-    final split = _cuts.splits[id];
-    final paired = _cuts.partner(id) != null;
-    final on = _picked.contains(id);
-    final edge = clash
-        ? scheme.error
-        : paired
-        ? scheme.primary
-        : (on ? c.selected : c.line);
-    return MetaData(
-      metaData: id,
-      behavior: HitTestBehavior.opaque,
-      child: GestureDetector(
-        onLongPress: () => _rename(id),
-        child: Listener(
-          onPointerDown: (e) {
-            if (e.kind == PointerDeviceKind.mouse &&
-                e.buttons != kPrimaryMouseButton) {
-              return;
-            }
-            _paintAt(e.position, start: true);
-          },
-          onPointerMove: (e) {
-            if (_paint != null) _paintAt(e.position);
-          },
-          child: DecoratedBox(
-            key: Key('cell-$id'),
-            decoration: BoxDecoration(
-              color: on ? c.selected : (removed ? null : c.panel),
-              border: Border.all(color: edge, width: clash || paired ? 1.6 : 1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text.rich(
-                TextSpan(
-                  text: _cuts.label(id),
-                  children: [
-                    if (split != null)
-                      TextSpan(
-                        text: ' ${'ABCDEFGH'.substring(0, split)}',
-                        style: const TextStyle(fontSize: 9),
-                      ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: clash
-                      ? scheme.error
-                      : removed
-                      ? c.faint
-                      : (split != null || paired ? scheme.primary : null),
-                  fontWeight: split != null || paired ? FontWeight.w700 : null,
-                  decoration: removed ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _plusCell(BuildContext context) {
-    final c = AppColors.of(context);
-    return InkWell(
-      key: const Key('cell-add'),
-      onTap: _addCut,
-      borderRadius: BorderRadius.circular(4),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: c.line),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Icon(Icons.add, size: 16, color: c.muted),
       ),
     );
   }

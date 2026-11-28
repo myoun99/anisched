@@ -126,6 +126,36 @@ class CutDraft {
     return true;
   }
 
+  /// Adds the cuts [first] to [last] (either way round) as blocks in this
+  /// draft's notation, skipping numbers already there. Returns how many
+  /// were added.
+  int addRange(int first, int last) {
+    final (lo, hi) = first <= last ? (first, last) : (last, first);
+    if (lo < 0 || hi - lo >= maxCutRange) return 0;
+    final have = {for (final c in cells) valueOf(c)};
+    var n = 0;
+    for (var i = lo; i <= hi; i++) {
+      final name = number(i);
+      if (have.add(parseCutInput(name, style))) {
+        extras.add(name);
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /// Takes [ids] off the list for good: their names and shared pairs go
+  /// with them (a cell of the numbered run is marked removed instead).
+  void delete(Iterable<String> ids) {
+    for (final id in ids.toList()) {
+      if (!extras.remove(id)) removed.add(id);
+      renames.remove(id);
+      splits.remove(id);
+      shared.remove(id);
+      shared.removeWhere((_, v) => v == id);
+    }
+  }
+
   void rename(String id, String name) {
     final n = name.trim();
     if (n.isEmpty || n == id) {
