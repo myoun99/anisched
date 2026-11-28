@@ -240,4 +240,17 @@ void main() {
       );
     }
   });
+
+  // A number is its value (v20): what is typed — C012, 12 — is one cut;
+  // the grid shows it in the notation.
+  test('a typed number is its value, shown in the notation', () {
+    final d = CutDraft(count: 0)..add('C012');
+    final id = d.cells.single;
+    expect(d.valueOf(id), '12');
+    expect(d.shown(id), 'C012');
+    expect(d.clashes({'12'}), {id}, reason: '「12」 again: the same cut');
+    final e = CutDraft(count: 0)..add('12');
+    expect(e.shown(e.cells.single), 'C012');
+    expect(e.clashes({'C012'}), isNotEmpty);
+  });
 }

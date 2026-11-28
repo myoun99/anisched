@@ -9,6 +9,7 @@ import '../controllers/unit_actions.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/lanes.dart';
+import '../models/number_style.dart';
 import '../models/progress.dart';
 import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
@@ -426,17 +427,22 @@ class _AppShellState extends State<AppShell> {
           return k != 0 ? k : a.stageName.compareTo(b.stageName);
         });
     if (!mounted) return;
+    // A shared group is one cut here too: its first task, its numbers.
+    final units = cutUnits(rows);
+    final current = now == null
+        ? null
+        : units.firstWhere((u) => u.any((t) => t.id == now.id)).first.id;
     final picked = await showCenteredPicker<int>(
       context: context,
       title: S.cutName.t,
-      current: now?.id,
-      searchable: rows.length > 12,
+      current: current,
+      searchable: units.length > 12,
       search: (q) async => [
-        for (final t in rows)
-          if (q.isEmpty || taskLabel(t).contains(q))
+        for (final u in units)
+          if (u.first case final t when q.isEmpty || unitText(u).contains(q))
             (
               value: t.id,
-              title: taskLabel(t),
+              title: unitText(u),
               note: [
                 stageText(t.stageName),
                 if (t.partLabel case final p?) S.partTitle.f({'p': p}),
@@ -772,6 +778,68 @@ class _AppShellState extends State<AppShell> {
     _write((store) => addCutsToUnit(store, g, names));
   }
 
+  /// Joins the picked cuts as shared, or takes their group apart.
+  void _share() {
+    final picked = _pickedTasks;
+    final a = shareActionFor(picked);
+    if (a == null) return;
+    _write((s) => applyShare(s, picked, a));
+    _selection.clear();
+  }
+
+  /// Renames the one picked cut; a number already in its episode is
+  /// refused with a note.
+  Future<void> _renameCut() async {
+    final picked = _pickedTasks;
+    final cuts = pickedCuts(picked);
+    if (cuts.length != 1) return;
+    final t = picked.firstWhere((t) => t.cutId == cuts.single);
+    final style = widget.store!.settings.cutStyle;
+    // The value alone in the field (12, 12A); the notation outside it.
+    final name = await askName(
+      context,
+      title: S.cutName.t,
+      initial: parseCutInput(t.cutNumber ?? '', style),
+      prefix: style.prefix,
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    try {
+      _write((s) => s.renumberCuts({cuts.single: name.trim()}));
+      _selection.clear();
+    } on StateError {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('rename-clash'),
+            content: Text(S.cutsTaken.f({'names': name.trim()})),
+          ),
+        );
+    }
+  }
+
+  /// Takes the picked cuts out (missing numbers: every stage of them) at
+  /// once; the snack bar's undo puts them back.
+  void _takeOut() {
+    final cuts = pickedCuts(_pickedTasks);
+    if (cuts.isEmpty) return;
+    _write((s) => s.removeCutIds(cuts));
+    _selection.clear();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('takeout-snack'),
+          content: Text('${S.takeOut.t} · ${cuts.length} cut'),
+          action: SnackBarAction(
+            key: const Key('takeout-undo'),
+            label: S.undoDrop.t,
+            onPressed: () => _write((s) => putBack(s, cuts)),
+          ),
+        ),
+      );
+  }
+
   /// Deletes the picked tasks for good, after a confirmation that says
   /// what goes with them (cuts, emptied episodes and titles, timer time).
   Future<void> _delete() async {
@@ -878,9 +946,11 @@ class _AppShellState extends State<AppShell> {
       onAddCuts: writable ? (g) => unawaited(_addCuts(g)) : null,
       onTaskTap: widget.timer == null
           ? null
-          : (t) => _selection.isEmpty
-                ? _pickForTimer(t.id)
-                : _selection.toggleTask(t),
+          // A shared group's chip runs the timer on its first cut, and
+          // is picked whole.
+          : (u) => _selection.isEmpty
+                ? _pickForTimer(u.first.id)
+                : _selection.toggleUnit(u),
     );
     return switch (v) {
       AppView.list => SheetView(
@@ -958,10 +1028,11 @@ class _AppShellState extends State<AppShell> {
                 return id;
               }
             : null,
-        onEdit: writable ? _write : null,
         onClientColor: writable
             ? (id, argb) => _write((s) => s.setClientColor(id, argb))
             : null,
+        onWrite: writable ? _write : null,
+        onUndo: _undo,
         onRegister: writable
             ? (draft) {
                 var n = 0;
@@ -1022,6 +1093,18 @@ class _AppShellState extends State<AppShell> {
           onDelete: widget.store == null ? null : () => unawaited(_delete()),
           onEdit: widget.store == null ? null : () => unawaited(_edit()),
           canEdit: () => oneBundle(_pickedTasks),
+          onShare: widget.store == null ? null : _share,
+          share: () => shareActionFor(_pickedTasks),
+          onRename: widget.store == null ? null : () => unawaited(_renameCut()),
+          onSplit: widget.store == null
+              ? null
+              : () {
+                  final picked = _pickedTasks;
+                  _write((s) => splitPicked(s, picked));
+                  _selection.clear();
+                },
+          onTakeOut: widget.store == null ? null : _takeOut,
+          cutCount: () => pickedCuts(_pickedTasks).length,
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);

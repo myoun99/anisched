@@ -54,8 +54,18 @@ class CutDraft {
     return n >= start && n < start + count;
   }
 
-  /// The cut number a cell will be saved as.
+  /// What the user named a cell (as typed), or the cell itself.
   String nameOf(String id) => renames[id] ?? id;
+
+  /// The notation the grid is in.
+  NumberStyle get style => (prefix: prefix, digits: width);
+
+  /// A cell's number as the store will keep it: its value (`C012` → 12).
+  String valueOf(String id) => parseCutInput(nameOf(id), style);
+
+  /// A cell's number as the screens show it: the value in the notation
+  /// (12 → `C012`; a name such as BANK1 as it is).
+  String shown(String id) => shownNumber(valueOf(id), style);
 
   /// How many cuts will be saved.
   int get total => [
@@ -98,9 +108,7 @@ class CutDraft {
   /// pair (`C004-005`).
   String label(String id) {
     final tail = shared[id];
-    return tail == null
-        ? nameOf(id)
-        : sharedCutNumber(nameOf(id), nameOf(tail));
+    return tail == null ? shown(id) : sharedCutNumber(shown(id), shown(tail));
   }
 
   /// Adds a cut by name at the end. False if the name is empty.

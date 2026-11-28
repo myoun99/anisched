@@ -3,6 +3,7 @@
 /// widgets only ask and show.
 library;
 
+import '../models/catalogue.dart';
 import '../models/progress.dart';
 import '../services/catalogue_store.dart';
 
@@ -151,4 +152,51 @@ List<String> addCutsToUnit(
     }
   }
   return skipped;
+}
+
+/// The picked tasks' cuts, once each, in the order picked (storyboard
+/// tasks have none).
+List<int> pickedCuts(Iterable<TaskRow> picked) =>
+    {for (final t in picked) ?t.cutId}.toList();
+
+/// What 「겸용」 does for the picked cuts — the register screen's rule,
+/// on a card now: picked cuts all of one shared group come apart
+/// ([ShareAction.unlink]); two or more cuts of one episode are joined
+/// ([ShareAction.link]); anything else, nothing (null).
+enum ShareAction { link, unlink }
+
+ShareAction? shareActionFor(List<TaskRow> picked) {
+  if (picked.isEmpty || picked.any((t) => t.cutId == null)) return null;
+  final heads = {for (final t in picked) t.sharedHeadCutId};
+  if (heads.length == 1 && heads.single != null) return ShareAction.unlink;
+  final oneEpisode = {for (final t in picked) t.episodeId}.length == 1;
+  return oneEpisode && pickedCuts(picked).length >= 2 ? ShareAction.link : null;
+}
+
+/// Joins the picked cuts as shared, or takes their group apart.
+void applyShare(CatalogueStore store, List<TaskRow> picked, ShareAction a) {
+  final cuts = pickedCuts(picked);
+  switch (a) {
+    case ShareAction.link:
+      store.linkSharedCuts(cuts);
+    case ShareAction.unlink:
+      for (final c in cuts) {
+        store.unlinkSharedCut(c);
+      }
+  }
+}
+
+/// Splits each picked cut into A and B (the new B with the same stages).
+void splitPicked(CatalogueStore store, List<TaskRow> picked) {
+  for (final c in pickedCuts(picked)) {
+    store.splitCut(c, ['A', 'B']);
+  }
+}
+
+/// Brings cuts taken out ([CatalogueStore.removeCutIds]: missing
+/// numbers, every stage of them) back.
+void putBack(CatalogueStore store, List<int> cuts) {
+  for (final c in cuts) {
+    store.restore(ArchiveKind.cut, c);
+  }
 }

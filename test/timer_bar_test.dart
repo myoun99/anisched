@@ -13,7 +13,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
   });
 
   testWidgets('a picked cut waits paused; the toggle records and the total '

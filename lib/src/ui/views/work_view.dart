@@ -434,7 +434,6 @@ class _WorkViewState extends State<WorkView> {
   Widget _bar(Span s, ChartWindow window, Set<String> overflow, Color red) {
     final g = widget.parts[s.key];
     final label = g == null ? s.key : workBarLabel(g);
-    final pinned = widget.lanes!.pinned.contains(s.key);
     // The stage's colour; work past the lanes is ringed red.
     final color = g == null ? stageTones.first : stageColor(g.stageName);
     // Past the lanes, or overlapping in its own lane: ringed red.
@@ -448,7 +447,7 @@ class _WorkViewState extends State<WorkView> {
       color: color,
       textColor: barInk,
       outline: over ? red : null,
-      label: pinned ? '• $label' : label,
+      label: label,
       onDates: g == null || widget.onPlan == null
           ? null
           : (a, b) => widget.onPlan!(g, a, b),

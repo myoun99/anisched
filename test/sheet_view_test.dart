@@ -75,7 +75,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
   });
 
   testWidgets('submitted parts are hidden until asked for; done stay', (

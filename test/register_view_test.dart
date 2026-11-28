@@ -36,7 +36,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
     Folds.registerStages.value = false;
   });
 
@@ -163,64 +162,6 @@ void main() {
     final numbers = store.cuts(ep.id).map((c) => c.number).toSet();
     expect(numbers.length, 8);
     expect(numbers, contains('BANK1'));
-  });
-
-  testWidgets('an episode\'s saved cuts can be taken out and renamed', (
-    t,
-  ) async {
-    final store = await pumpRegister(t, const Size(1440, 1400));
-    await t.tap(find.byKey(const Key('pick-work')));
-    await t.pumpAndSettle();
-    await t.tap(find.text('별빛 정류장').last);
-    await t.pumpAndSettle();
-    await t.tap(find.byKey(const Key('pick-episode')));
-    await t.pumpAndSettle();
-    await t.tap(find.text('#07').last);
-    await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('reg-count')), '1');
-    await t.pump();
-    final saved = find.byKey(const Key('saved-C014'));
-    await t.ensureVisible(saved);
-    await t.tap(saved);
-    await t.pump();
-    await t.tap(find.byKey(const Key('saved-remove')));
-    await t.pump();
-    await t.pump();
-    final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
-    final ep = store.episodes(work.id).firstWhere((e) => e.number == '#07');
-    expect(store.cuts(ep.id).map((c) => c.number), isNot(contains('C014')));
-    expect(saved, findsOneWidget, reason: 'kept on the grid, crossed out');
-    await t.tap(saved);
-    await t.pump();
-    await t.tap(find.byKey(const Key('saved-remove')));
-    await t.pump();
-    await t.pump();
-    expect(store.cuts(ep.id).map((c) => c.number), contains('C014'));
-
-    await t.tap(find.byKey(const Key('saved-C014')));
-    await t.tap(find.byKey(const Key('saved-C015')));
-    await t.pump();
-    await t.tap(find.byKey(const Key('saved-share')));
-    await t.pump();
-    await t.pump();
-    bool shared(String n) =>
-        store.cuts(ep.id).firstWhere((c) => c.number == n).sharedLabel != null;
-    expect(shared('C014'), isTrue);
-    await t.tap(find.byKey(const Key('saved-C015')));
-    await t.pump();
-    await t.tap(find.byKey(const Key('saved-share')));
-    await t.pump();
-    await t.pump();
-    expect(shared('C015'), isFalse);
-
-    await t.tap(find.byKey(const Key('saved-C012')));
-    await t.pump();
-    await t.tap(find.byKey(const Key('saved-rename')));
-    await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('name-input')), 'C012X');
-    await t.tap(find.byKey(const Key('name-ok')));
-    await t.pumpAndSettle();
-    expect(store.cuts(ep.id).map((c) => c.number), contains('C012X'));
   });
 
   // LO and 原画 rarely share dates: each checked stage has its own row,
@@ -356,5 +297,20 @@ void main() {
     expect(find.textContaining('3 cut'), findsWidgets);
     expect(workPicked(t, '별빛 정류장'), isFalse);
     expect(find.text('100'), findsOneWidget);
+  });
+
+  testWidgets('a cell\'s name is edited as its value, the C outside', (
+    t,
+  ) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await t.longPress(find.byKey(const Key('cell-C012')));
+    await t.pumpAndSettle();
+    final field = t.widget<TextField>(find.byKey(const Key('name-input')));
+    expect(field.controller!.text, '12', reason: 'no C in the field');
+    expect(field.decoration!.prefixText, 'C');
+    await t.enterText(find.byKey(const Key('name-input')), '12A');
+    await t.tap(find.byKey(const Key('name-ok')));
+    await t.pumpAndSettle();
+    expect(find.text('C012A'), findsOneWidget);
   });
 }
