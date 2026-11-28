@@ -117,6 +117,9 @@ abstract interface class CatalogueReader {
     String query,
   );
 
+  /// See [CatalogueStore.timerTarget].
+  Future<int?> timerTarget();
+
   /// See [CatalogueStore.holidays].
   Future<List<Holiday>> holidays({
     required DateTime from,
@@ -293,6 +296,9 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>
       _run(store.numberStyles);
+
+  @override
+  Future<int?> timerTarget() => _run(store.timerTarget);
 
   @override
   Future<List<Holiday>> holidays({

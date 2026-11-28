@@ -431,3 +431,4 @@
 - 쓰기: `addRestDays(start, end:, title:)`(하루씩 이벤트, id 목록) · 지우기는 `deleteEvent(id)` · 일반 `addEvent(rest: true)` 도 됨.
 - 읽기: `restDays(from:)` · `events(from:, to:)` 의 null 키 + `EventRow.rest`.
 - 판정: `isRestDay` 의 `daysOff` = rest 이벤트 날짜(정기 쉬는 요일 · 공휴일과 함께, 함수 하나 그대로).
+- 타이머 대상 기억(유저 2026-11-28): 문서 settings `timer_target`. `setTimerTarget(id?)` · `timerTarget()`(스토어 · 리더) — 지워졌거나(보관) · 빠짐 · 제출된 작업이면 null 로 읽힘.

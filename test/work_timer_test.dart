@@ -301,6 +301,41 @@ void main() {
       expect(store.intervalsOf(a).single.taskId, a);
     });
 
+    test('the timer\'s target survives a reopen; a gone one reads null', () {
+      final dir = Directory.systemTemp.createTempSync('anisched-target');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final path = '${dir.path}/app.db';
+      var file = openAppDatabase(path);
+      var s = CatalogueStore(file);
+      final w = s.createWork('W');
+      final r = s.addEpisodeWithCuts(w, '#1', 'C001~C003');
+      final key = s.stages(w).firstWhere((x) => x.name == '원화').id;
+      final a = s.addTask(key, cutId: r.cutIds[0]);
+      final b = s.addTask(key, cutId: r.cutIds[1]);
+      final c = s.addTask(key, cutId: r.cutIds[2]);
+      expect(s.timerTarget(), isNull);
+      s.setTimerTarget(a);
+      file.close();
+      file = openAppDatabase(path);
+      s = CatalogueStore(file);
+      expect(s.timerTarget(), a);
+      s
+        ..archive(ArchiveKind.task, a)
+        ..setTimerTarget(a);
+      expect(s.timerTarget(), isNull); // deleted
+      s
+        ..setStatus(b, TaskStatus.submitted)
+        ..setTimerTarget(b);
+      expect(s.timerTarget(), isNull); // submitted
+      s
+        ..handOff([c])
+        ..setTimerTarget(c);
+      expect(s.timerTarget(), isNull); // handed off
+      s.setTimerTarget(null);
+      expect(s.settings.timerTargetId, isNull);
+      file.close();
+    });
+
     test('the cuts beside a task: same episode, done ones too', () {
       final w = store.createWork('W');
       final r1 = store.addEpisodeWithCuts(w, '#1', 'C001~C003');

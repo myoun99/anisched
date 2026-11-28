@@ -23,6 +23,7 @@ class SettingsStore {
   static const _parallelLanes = 'parallel_lanes';
   static const _laneNames = 'lane_names';
   static const _timerAutoStart = 'timer_auto_start';
+  static const _timerTarget = 'timer_target';
   static const _cutStyle = 'cut_style';
   static const _holidayCountry = 'holiday_country';
   static const _showHolidays = 'show_holidays';
@@ -124,6 +125,13 @@ class SettingsStore {
   bool get timerAutoStart => _get(_timerAutoStart) == '1';
 
   set timerAutoStart(bool follow) => _set(_timerAutoStart, follow ? '1' : '0');
+
+  /// The task the timer was last pointed at, as stored (see
+  /// `CatalogueStore.timerTarget`, which drops one that is gone).
+  int? get timerTargetId => int.tryParse(_get(_timerTarget) ?? '');
+
+  set timerTargetId(int? taskId) =>
+      _set(_timerTarget, taskId == null ? '' : '$taskId');
 
   /// Whose public holidays the calendar knows (유저 2026-11-28). Default:
   /// Japan.

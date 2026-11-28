@@ -281,6 +281,9 @@ class BackgroundCatalogueReader implements CatalogueReader {
   ) => _ask((s) => s.searchEpisodes(workId, query));
 
   @override
+  Future<int?> timerTarget() => _ask((s) => s.timerTarget());
+
+  @override
   Future<List<Holiday>> holidays({
     required DateTime from,
     required DateTime to,
