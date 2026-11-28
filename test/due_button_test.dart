@@ -44,7 +44,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
   });
 
   // The list D label: hold_rounds_test (it adds a round).

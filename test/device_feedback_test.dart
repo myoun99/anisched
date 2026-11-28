@@ -43,7 +43,6 @@ void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
-    Folds.savedCuts.value = true;
   });
 
   testWidgets('the filter menu opens and closes with no transition', (t) async {
@@ -146,8 +145,10 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('a desktop shows every action by name, no ⋯', (t) async {
-    const size = Size(1440, 900);
+  // Fifteen actions now (the cut tools joined): a wide desktop window
+  // holds them all; a 1440 one sends the last under ⋯.
+  testWidgets('a wide desktop shows every action by name, no ⋯', (t) async {
+    const size = Size(2560, 1000);
     await pumpShell(t, size);
     await pickOne(t);
     for (final key in const [

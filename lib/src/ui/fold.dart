@@ -17,9 +17,6 @@ abstract final class Folds {
 
   /// The register screen's stage boxes: folded, only the checked ones.
   static final registerStages = ValueNotifier<bool>(false);
-
-  /// The register screen's grid of an episode's saved cuts.
-  static final savedCuts = ValueNotifier<bool>(false);
 }
 
 /// A small 「컷 n ▸」 toggle that opens or closes a block of cuts.

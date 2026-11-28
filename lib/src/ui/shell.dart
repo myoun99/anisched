@@ -777,6 +777,65 @@ class _AppShellState extends State<AppShell> {
     _write((store) => addCutsToUnit(store, g, names));
   }
 
+  /// Joins the picked cuts as shared, or takes their group apart.
+  void _share() {
+    final picked = _pickedTasks;
+    final a = shareActionFor(picked);
+    if (a == null) return;
+    _write((s) => applyShare(s, picked, a));
+    _selection.clear();
+  }
+
+  /// Renames the one picked cut; a number already in its episode is
+  /// refused with a note.
+  Future<void> _renameCut() async {
+    final picked = _pickedTasks;
+    final cuts = pickedCuts(picked);
+    if (cuts.length != 1) return;
+    final t = picked.firstWhere((t) => t.cutId == cuts.single);
+    final name = await askName(
+      context,
+      title: S.cutName.t,
+      initial: t.cutNumber ?? '',
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    try {
+      _write((s) => s.renumberCuts({cuts.single: name.trim()}));
+      _selection.clear();
+    } on StateError {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('rename-clash'),
+            content: Text(S.cutsTaken.f({'names': name.trim()})),
+          ),
+        );
+    }
+  }
+
+  /// Takes the picked cuts out (missing numbers: every stage of them) at
+  /// once; the snack bar's undo puts them back.
+  void _takeOut() {
+    final cuts = pickedCuts(_pickedTasks);
+    if (cuts.isEmpty) return;
+    _write((s) => s.removeCutIds(cuts));
+    _selection.clear();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('takeout-snack'),
+          content: Text('${S.takeOut.t} · ${cuts.length} cut'),
+          action: SnackBarAction(
+            key: const Key('takeout-undo'),
+            label: S.undoDrop.t,
+            onPressed: () => _write((s) => putBack(s, cuts)),
+          ),
+        ),
+      );
+  }
+
   /// Deletes the picked tasks for good, after a confirmation that says
   /// what goes with them (cuts, emptied episodes and titles, timer time).
   Future<void> _delete() async {
@@ -965,7 +1024,6 @@ class _AppShellState extends State<AppShell> {
                 return id;
               }
             : null,
-        onEdit: writable ? _write : null,
         onClientColor: writable
             ? (id, argb) => _write((s) => s.setClientColor(id, argb))
             : null,
@@ -1029,6 +1087,18 @@ class _AppShellState extends State<AppShell> {
           onDelete: widget.store == null ? null : () => unawaited(_delete()),
           onEdit: widget.store == null ? null : () => unawaited(_edit()),
           canEdit: () => oneBundle(_pickedTasks),
+          onShare: widget.store == null ? null : _share,
+          share: () => shareActionFor(_pickedTasks),
+          onRename: widget.store == null ? null : () => unawaited(_renameCut()),
+          onSplit: widget.store == null
+              ? null
+              : () {
+                  final picked = _pickedTasks;
+                  _write((s) => splitPicked(s, picked));
+                  _selection.clear();
+                },
+          onTakeOut: widget.store == null ? null : _takeOut,
+          cutCount: () => pickedCuts(_pickedTasks).length,
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);

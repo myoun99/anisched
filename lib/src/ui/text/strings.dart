@@ -309,16 +309,10 @@ enum S {
   kickoff('Start', '着手', '착수', 'Début', '开工'),
   takeOut('Remove', '外す', '빼기', 'Retirer', '移除'),
   shared('Shared', '兼用', '겸용', 'Partagé', '兼用'),
+  unshare('Unshare', '兼用解除', '겸용 풀기', 'Dissocier', '取消兼用'),
   name('Name', '名前', '이름', 'Nom', '名称'),
   register('Add', '登録', '등록', 'Ajouter', '登记'),
   resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
-  savedCuts(
-    '{title} cuts {n}',
-    '{title} 登録済み {n}',
-    '{title} 등록된 컷 {n}',
-    '{title} cuts {n}',
-    '{title} 已登记 {n}',
-  ),
   createNew('Create new', '新規作成', '새로 만들기', 'Créer', '新建'),
   createNamed(
     'Create “{name}”',

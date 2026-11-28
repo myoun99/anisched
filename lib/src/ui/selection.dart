@@ -74,6 +74,7 @@ const pickActions = [
 const pickPriority = [
   'done',
   'edit',
+  'share',
   'submitted',
   'in_progress',
   'due',
@@ -81,6 +82,9 @@ const pickPriority = [
   'retake',
   'received',
   'drop',
+  'rename',
+  'split',
+  'takeout',
   'archive',
   'delete',
 ];

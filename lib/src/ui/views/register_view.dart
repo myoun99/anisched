@@ -6,10 +6,7 @@ import 'package:flutter/rendering.dart';
 
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
-import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
-import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
 import '../count_stepper.dart';
 import '../date_span.dart';
@@ -40,13 +37,8 @@ class RegisterView extends StatefulWidget {
     this.onCreateWork,
     this.onCreateEpisode,
     this.onRegister,
-    this.onEdit,
     this.onClientColor,
   });
-
-  /// Runs one edit of an episode's saved cuts (then the views reload);
-  /// null hides the editing buttons.
-  final void Function(void Function(CatalogueStore store) edit)? onEdit;
 
   final DateTime now;
   final ScreenLayout layout;
@@ -85,9 +77,6 @@ class _RegisterViewState extends State<RegisterView> {
   CutDraft _cuts = CutDraft();
   Set<String> _taken = const {};
 
-  /// The picked episode's saved cuts, and which of them are picked.
-  List<CutRow> _saved = const [];
-  final _pickedSaved = <int>{};
   final _picked = <String>{};
 
   /// The first stage's start until set: the day of registering.
@@ -114,7 +103,6 @@ class _RegisterViewState extends State<RegisterView> {
   void initState() {
     super.initState();
     Folds.newCuts.addListener(_refold);
-    Folds.savedCuts.addListener(_refold);
     if (widget.roles.isNotEmpty) _stages.addAll(widget.roles.first.stages);
   }
 
@@ -129,7 +117,6 @@ class _RegisterViewState extends State<RegisterView> {
   @override
   void dispose() {
     Folds.newCuts.removeListener(_refold);
-    Folds.savedCuts.removeListener(_refold);
     _start.dispose();
     _count.dispose();
     super.dispose();
@@ -160,16 +147,11 @@ class _RegisterViewState extends State<RegisterView> {
   Future<void> _loadTaken() async {
     final e = _episode;
     if (e == null) return;
-    final cuts = await widget.reader?.cuts(e.value, includeArchived: true);
+    // The episode's numbers, read only to warn of a clash: its saved
+    // cuts are edited on their cards now.
+    final cuts = await widget.reader?.cuts(e.value);
     if (!mounted || cuts == null) return;
-    setState(() {
-      _taken = {
-        for (final c in cuts)
-          if (!c.archived) c.number,
-      };
-      _saved = cuts;
-      _pickedSaved.retainWhere((id) => _saved.any((c) => c.id == id));
-    });
+    setState(() => _taken = {for (final c in cuts) c.number});
   }
 
   void _rebuildCuts({String? prefix, int? width}) {
@@ -201,8 +183,8 @@ class _RegisterViewState extends State<RegisterView> {
     box.hitTest(result, position: box.globalToLocal(global));
     for (final e in result.path) {
       final t = e.target;
-      if (t is RenderMetaData && (t.metaData is String || t.metaData is int)) {
-        return '${t.metaData is int ? '#' : ''}${t.metaData}';
+      if (t is RenderMetaData && t.metaData is String) {
+        return t.metaData as String;
       }
     }
     return null;
@@ -211,18 +193,11 @@ class _RegisterViewState extends State<RegisterView> {
   void _paintAt(Offset global, {bool start = false}) {
     final n = _cellAt(global);
     if (n == null) return;
-    final saved = n.startsWith('#') ? int.parse(n.substring(1)) : null;
     setState(() {
-      final has = saved == null
-          ? _picked.contains(n)
-          : _pickedSaved.contains(saved);
+      final has = _picked.contains(n);
       if (start) _paint = !has;
       if (_paint == null || _paint == has) return;
-      if (saved == null) {
-        _paint! ? _picked.add(n) : _picked.remove(n);
-      } else {
-        _paint! ? _pickedSaved.add(saved) : _pickedSaved.remove(saved);
-      }
+      _paint! ? _picked.add(n) : _picked.remove(n);
     });
   }
 
@@ -322,9 +297,7 @@ class _RegisterViewState extends State<RegisterView> {
     _cuts = CutDraft(prefix: _cuts.prefix, width: _cuts.width);
     _ownDates.clear();
     _picked.clear();
-    _pickedSaved.clear();
     _taken = const {};
-    _saved = const [];
   }
 
   /// 「초기화」: the form empties at once; the snack bar's undo puts back
@@ -501,28 +474,6 @@ class _RegisterViewState extends State<RegisterView> {
                                   ),
                           ),
                         ),
-                      if (_saved.isNotEmpty) ...[
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-                          sliver: SliverToBoxAdapter(child: _savedBar(context)),
-                        ),
-                        if (Folds.savedCuts.value)
-                          SliverPadding(
-                            padding: _gridPadding,
-                            sliver: SliverGrid.builder(
-                              gridDelegate:
-                                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 60,
-                                    mainAxisExtent: 24,
-                                    mainAxisSpacing: 2,
-                                    crossAxisSpacing: 2,
-                                  ),
-                              itemCount: _saved.length,
-                              itemBuilder: (context, i) =>
-                                  _savedCell(context, _saved[i]),
-                            ),
-                          ),
-                      ],
                     ],
                   ),
                 ),
@@ -883,175 +834,6 @@ class _RegisterViewState extends State<RegisterView> {
                       : (split != null || paired ? scheme.primary : null),
                   fontWeight: split != null || paired ? FontWeight.w700 : null,
                   decoration: removed ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _edit(void Function(CatalogueStore s) write) {
-    final cb = widget.onEdit;
-    if (cb == null) return;
-    cb(write);
-    setState(_pickedSaved.clear);
-    unawaited(_loadTaken());
-  }
-
-  Future<void> _renameSaved(CutRow cut) async {
-    final name = await askName(
-      context,
-      title: S.cutName.t,
-      initial: cut.number,
-    );
-    if (name == null || name.trim().isEmpty || !mounted) return;
-    if (_taken.contains(name.trim()) && name.trim() != cut.number) {
-      setState(() => _clashSaved = cut.id);
-      return;
-    }
-    _edit((s) => s.renumberCuts({cut.id: name.trim()}));
-  }
-
-  int? _clashSaved;
-
-  Widget _savedBar(BuildContext context) {
-    final picked = [
-      for (final x in _saved)
-        if (_pickedSaved.contains(x.id)) x,
-    ];
-    final can = widget.onEdit != null && picked.isNotEmpty;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        FoldToggle(
-          key: const Key('fold-saved-cuts'),
-          state: Folds.savedCuts,
-          label: S.savedCuts.f({
-            'title': _episode?.title ?? '',
-            'n': _saved.where((x) => !x.archived).length,
-          }).trim(),
-        ),
-        ToolbarButton(
-          key: const Key('saved-remove'),
-          label: S.takeOut.t,
-          selected: false,
-          onTap: can
-              ? () => _edit((s) {
-                  if (picked.every((x) => x.archived)) {
-                    for (final x in picked) {
-                      s.restore(ArchiveKind.cut, x.id);
-                    }
-                  } else {
-                    s.removeCutIds([
-                      for (final x in picked)
-                        if (!x.archived) x.id,
-                    ]);
-                  }
-                })
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-split'),
-          label: 'A/B',
-          selected: false,
-          onTap: can && picked.every((x) => !x.archived)
-              ? () => _edit((s) {
-                  for (final x in picked) {
-                    s.splitCut(x.id, ['A', 'B']);
-                  }
-                })
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-share'),
-          label: S.shared.t,
-          selected: false,
-          onTap: can && picked.every((x) => x.sharedLabel != null)
-              ? () => _edit((s) {
-                  for (final x in picked) {
-                    s.unlinkSharedCut(x.id);
-                  }
-                })
-              : can && picked.length >= 2 && picked.every((x) => !x.archived)
-              ? () => _edit(
-                  (s) => s.linkSharedCuts([for (final x in picked) x.id]),
-                )
-              : null,
-        ),
-        ToolbarButton(
-          key: const Key('saved-rename'),
-          label: S.name.t,
-          selected: false,
-          onTap: can && picked.length == 1 && !picked.single.archived
-              ? () => _renameSaved(picked.single)
-              : null,
-        ),
-        ToolbarButton(
-          label: S.clear.t,
-          selected: false,
-          onTap: picked.isEmpty ? null : () => setState(_pickedSaved.clear),
-        ),
-      ],
-    );
-  }
-
-  Widget _savedCell(BuildContext context, CutRow cut) {
-    final c = AppColors.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final on = _pickedSaved.contains(cut.id);
-    final clash = _clashSaved == cut.id;
-    final shared = cut.sharedLabel != null;
-    final head = cut.sharedHeadCutId == cut.id;
-    return MetaData(
-      metaData: cut.id,
-      behavior: HitTestBehavior.opaque,
-      child: GestureDetector(
-        onLongPress: widget.onEdit == null ? null : () => _renameSaved(cut),
-        child: Listener(
-          onPointerDown: (e) {
-            if (e.kind == PointerDeviceKind.mouse &&
-                e.buttons != kPrimaryMouseButton) {
-              return;
-            }
-            _clashSaved = null;
-            _paintAt(e.position, start: true);
-          },
-          onPointerMove: (e) {
-            if (_paint != null) _paintAt(e.position);
-          },
-          child: DecoratedBox(
-            key: Key('saved-${cut.number}'),
-            decoration: BoxDecoration(
-              color: on ? c.selected : (cut.archived ? null : c.panelAlt),
-              border: Border.all(
-                color: clash
-                    ? scheme.error
-                    : shared
-                    ? scheme.primary
-                    : (on ? c.selected : c.line),
-                width: clash || shared ? 1.6 : 1,
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                head ? cut.sharedLabel! : cut.number,
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: clash
-                      ? scheme.error
-                      : cut.archived
-                      ? c.faint
-                      : (shared ? scheme.primary : null),
-                  fontWeight: shared ? FontWeight.w700 : null,
-                  decoration: cut.archived ? TextDecoration.lineThrough : null,
-                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
