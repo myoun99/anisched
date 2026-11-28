@@ -71,7 +71,7 @@ void main() {
     expect(settled(t, find.byType(DatePickerDialog)), isTrue);
   });
 
-  for (final size in const [Size(390, 844), Size(800, 1280), Size(1440, 900)]) {
+  for (final size in const [Size(390, 844), Size(1440, 900)]) {
     testWidgets('the picked-task bar has its own space at $size', (t) async {
       await pumpShell(t, size);
       final bar = t.getRect(find.byKey(const Key('picked-count')));

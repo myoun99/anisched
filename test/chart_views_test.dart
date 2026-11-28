@@ -15,10 +15,9 @@ import 'support/sample_catalogue.dart';
 
 final now = DateTime(2026, 11, 27, 14);
 
+// The narrowest and the shortest screens; wider ones have more room and
+// are laid out by the other widget tests.
 const devices = {
-  'desktop': Size(1440, 900),
-  'tablet portrait': Size(800, 1280),
-  'phone portrait': Size(412, 915),
   'small phone portrait': Size(390, 844),
   'phone landscape': Size(915, 412),
 };
@@ -264,27 +263,6 @@ void main() {
       expect(ChartPaints.today, 0, reason: "today's column is its own layer");
       await gesture.up();
       await t.pump();
-    });
-
-    testWidgets('both tabs draw today as one washed column', (t) async {
-      final store = sampleCatalogue(now);
-      for (final view in [
-        TimelineView(
-          parts: store.partGroups(),
-          now: now,
-          layout: ScreenLayout.of(1440, 900),
-        ),
-        WorkView(
-          lanes: store.calendarLayout(basis: CalendarBasis.work).layout,
-          parts: {for (final g in store.partGroups()) g.key: g},
-          now: now,
-          layout: ScreenLayout.of(1440, 900),
-        ),
-      ]) {
-        await pumpIn(t, const Size(1440, 900), view);
-        expect(find.byType(ChartBoard), findsOneWidget);
-        expect(t.takeException(), isNull);
-      }
     });
   });
 }

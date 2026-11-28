@@ -46,15 +46,7 @@ void main() {
     Folds.savedCuts.value = true;
   });
 
-  testWidgets('the list D label sets the part deadline', (t) async {
-    final store = await pumpShell(t, AppView.list);
-    final g = store.partGroups().firstWhere((g) => g.partId != null);
-    await t.tap(find.byKey(Key('due-${g.key}')));
-    await t.pump();
-    await pickDay(t, '29');
-    final after = store.partGroups().firstWhere((x) => x.key == g.key);
-    expect(after.dueAt!.toLocal().day, 29);
-  });
+  // The list D label: hold_rounds_test (it adds a round).
 
   testWidgets('the details 마감 and a cut chip long press', (t) async {
     final store = await pumpShell(t, AppView.list);

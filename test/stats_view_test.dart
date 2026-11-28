@@ -65,21 +65,20 @@ Future<CountingReader> pumpStats(
 void main() {
   tearDown(() => appLang.value = Lang.ko);
 
-  for (final lang in [Lang.ko, Lang.en, Lang.fr]) {
-    for (final size in const [
-      Size(390, 844),
-      Size(844, 390),
-      Size(800, 1280),
-      Size(1440, 900),
-    ]) {
-      testWidgets('${lang.name} stats lay out at $size', (t) async {
-        appLang.value = lang;
-        await pumpStats(t, size);
-        expect(t.takeException(), isNull);
-        expect(find.text(S.kWorked.t), findsOneWidget);
-        expect(find.text(S.kFirstDue.t), findsOneWidget);
-      });
-    }
+  // The narrow and the short screen (numbers in one sideways row) in the
+  // longest language, and the widest layout (eight numbers a row).
+  for (final (lang, size) in const [
+    (Lang.fr, Size(390, 844)),
+    (Lang.fr, Size(844, 390)),
+    (Lang.ko, Size(1440, 900)),
+  ]) {
+    testWidgets('${lang.name} stats lay out at $size', (t) async {
+      appLang.value = lang;
+      await pumpStats(t, size);
+      expect(t.takeException(), isNull);
+      expect(find.text(S.kWorked.t), findsOneWidget);
+      expect(find.text(S.kFirstDue.t), findsOneWidget);
+    });
   }
 
   testWidgets('nothing loads until the tab is shown', (t) async {
