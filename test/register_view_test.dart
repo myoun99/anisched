@@ -370,6 +370,83 @@ void main() {
     );
   });
 
+  testWidgets('the add tools: two pills from the left, each 「추가」', (t) async {
+    await pumpRegister(t, const Size(390, 844));
+    final range = find.byKey(const Key('cut-range-pill'));
+    await t.ensureVisible(range);
+    await t.pump();
+    final card = t.getRect(find.byKey(const Key('reg-sec-cuts')));
+    expect(t.getRect(range).left, card.left + 12, reason: 'no gap on the left');
+    for (final k in ['cut-add-range', 'cut-add-one']) {
+      expect(
+        find.descendant(of: find.byKey(Key(k)), matching: find.text('추가')),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.descendant(of: range, matching: find.byIcon(Icons.linear_scale)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('cut-name-pill')),
+        matching: find.byIcon(Icons.edit_outlined),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an add empties its fields; the button lets the keyboard go, '
+      'Enter keeps typing', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    String text(String k) =>
+        t.widget<TextField>(find.byKey(Key(k))).controller!.text;
+    FocusNode node(String k) =>
+        t.widget<TextField>(find.byKey(Key(k))).focusNode!;
+    // The button: fields empty, no focus (a phone's keyboard closes).
+    await addRange(t, 3, 5);
+    expect(text('reg-first'), isEmpty);
+    expect(text('reg-last'), isEmpty);
+    expect(
+      FocusManager.instance.primaryFocus?.context?.widget is EditableText,
+      isFalse,
+    );
+    expect(node('reg-first').hasFocus, isFalse);
+    // Enter: added, and the first field keeps the focus for the next.
+    await t.enterText(find.byKey(const Key('reg-first')), '9');
+    await t.testTextInput.receiveAction(TextInputAction.done);
+    await t.pump();
+    expect(blocks(t), contains('C009'));
+    expect(node('reg-first').hasFocus, isTrue);
+    await t.enterText(find.byKey(const Key('cut-add-name')), 'BANK');
+    await t.testTextInput.receiveAction(TextInputAction.done);
+    await t.pump();
+    expect(text('cut-add-name'), isEmpty);
+    expect(node('cut-add-name').hasFocus, isTrue);
+    expect(blocks(t).last, 'BANK');
+  });
+
+  testWidgets('the block tools: by the fold, right end; faint with none '
+      'picked', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await addRange(t, 1, 3);
+    const tools = ['cut-share', 'cut-rename', 'cut-delete', 'cut-clear'];
+    bool on(String k) => t.widget<ToolbarButton>(find.byKey(Key(k))).enabled;
+    for (final k in tools) {
+      expect(on(k), isFalse, reason: '$k with nothing picked');
+    }
+    // On the fold's row, ending at the card's right padding.
+    final fold = t.getRect(find.byKey(const Key('fold-new-cuts')));
+    final card = t.getRect(find.byKey(const Key('reg-sec-cuts')));
+    final clear = t.getRect(find.byKey(const Key('cut-clear')));
+    expect((clear.center.dy - fold.center.dy).abs(), lessThan(4));
+    expect(clear.right, closeTo(card.right - 12, 1));
+    await tapIn(t, find.byKey(const Key('cell-C001')));
+    expect(on('cut-rename'), isTrue);
+    expect(on('cut-delete'), isTrue);
+    expect(on('cut-share'), isFalse, reason: 'two to pair');
+  });
+
   testWidgets('reset empties the form; its undo puts it back', (t) async {
     await pumpRegister(t, const Size(1440, 900));
     await pickWork(t);

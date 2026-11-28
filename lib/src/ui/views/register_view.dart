@@ -496,7 +496,6 @@ class _RegisterViewState extends State<RegisterView> {
                           key: 'reg-sec-cuts',
                           icon: Icons.view_module_outlined,
                           title: S.cutsToRegister.t,
-                          trailing: _pickTools(context),
                           child: _cutList(context),
                         ),
                       ],
@@ -814,8 +813,8 @@ class _RegisterViewState extends State<RegisterView> {
     ),
   );
 
-  /// The picked blocks' tools, on the section's right: shared, name,
-  /// delete, unpick.
+  /// The picked blocks' tools, by the blocks (the fold's row, right end):
+  /// shared, name, delete, unpick — icons, faint with nothing picked.
   Widget _pickTools(BuildContext context) {
     final picked = [
       for (final x in _cuts.cells)
@@ -834,6 +833,7 @@ class _RegisterViewState extends State<RegisterView> {
       children: [
         ToolbarButton(
           key: const Key('cut-share'),
+          enabled: _cuts.canShare(picked),
           label: S.shared.t,
           icon: Icons.link,
           selected: false,
@@ -843,6 +843,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('cut-rename'),
+          enabled: picked.length == 1,
           label: S.name.t,
           icon: Icons.drive_file_rename_outline,
           selected: false,
@@ -850,6 +851,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('cut-delete'),
+          enabled: any,
           label: S.remove.t,
           icon: Icons.delete_outline,
           selected: false,
@@ -857,6 +859,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         ToolbarButton(
           key: const Key('cut-clear'),
+          enabled: any,
           label: S.clear.t,
           icon: Icons.close,
           selected: false,
@@ -887,6 +890,7 @@ class _RegisterViewState extends State<RegisterView> {
               label: '${_cuts.total} cut',
             ),
             Text('× ${_stages.length}', style: TextStyle(color: c.muted)),
+            Expanded(child: _pickTools(context)),
           ],
         ),
         if (Folds.newCuts.value)

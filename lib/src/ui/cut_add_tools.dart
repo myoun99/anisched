@@ -51,7 +51,19 @@ class _CutAddToolsState extends State<CutAddTools> {
     super.dispose();
   }
 
-  void _addRange() {
+  /// After an add the fields empty. From the button the focus goes (a
+  /// phone's keyboard closes); from Enter it stays on the first field, to
+  /// type the next one (유저 2026-11-28).
+  void _after({required bool enter, required FocusNode first}) {
+    if (enter) {
+      first.requestFocus();
+    } else {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    widget.onChanged();
+  }
+
+  void _addRange({bool enter = false}) {
     final a = _a;
     final b = _b ?? a;
     if (a == null || b == null) return;
@@ -60,15 +72,13 @@ class _CutAddToolsState extends State<CutAddTools> {
       _first.clear();
       _last.clear();
     });
-    _firstFocus.requestFocus();
-    widget.onChanged();
+    _after(enter: enter, first: _firstFocus);
   }
 
-  void _addOne() {
+  void _addOne({bool enter = false}) {
     if (!widget.draft.add(_name.text)) return;
     setState(_name.clear);
-    _nameFocus.requestFocus();
-    widget.onChanged();
+    _after(enter: enter, first: _nameFocus);
   }
 
   /// A field inside a pill: no box of its own (the pill is the box), the
@@ -144,14 +154,14 @@ class _CutAddToolsState extends State<CutAddTools> {
               _first,
               width: 44,
               focus: _firstFocus,
-              onSubmit: _addRange,
+              onSubmit: () => _addRange(enter: true),
             ),
             Text('~', style: TextStyle(color: c.muted)),
             _field(
               const Key('reg-last'),
               _last,
               width: 44,
-              onSubmit: _addRange,
+              onSubmit: () => _addRange(enter: true),
             ),
             FilledButton.tonal(
               key: const Key('cut-add-range'),
@@ -171,7 +181,7 @@ class _CutAddToolsState extends State<CutAddTools> {
               _name,
               width: 64,
               focus: _nameFocus,
-              onSubmit: _addOne,
+              onSubmit: () => _addOne(enter: true),
               digits: false,
               hint: '12A',
             ),
