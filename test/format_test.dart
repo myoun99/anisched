@@ -30,13 +30,19 @@ void main() {
     test('counts whole local days from the production deadline', () {
       expect(dueLabel(on(30), now, w).text, 'D-3');
       expect(dueLabel(on(27), now, w).text, 'D-day');
-      expect(dueLabel(on(25), now, w).text, '2일 지남');
+      expect(dueLabel(on(25), now, w).text, 'D+2');
     });
 
     test('only a missed deadline on open work stands out', () {
       expect(dueLabel(on(29), now, w).tone, DueTone.quiet);
       expect(dueLabel(on(27), now, r).tone, DueTone.quiet);
       expect(dueLabel(on(25), now, t).tone, DueTone.late);
+    });
+
+    test('the deadline signal and the dashboard write days the same way', () {
+      expect(dueDaysText(-1), 'D+1');
+      expect(dueSignalLabel(const DueLate(1)).text, 'D+1');
+      expect(dueSignalLabel(const DueDaysLeft(0)).text, 'D-day');
     });
 
     test('handed-in work never looks late', () {
@@ -46,7 +52,7 @@ void main() {
 
     test('a late day start keeps the small hours on the previous day', () {
       final late = DateTime(2026, 11, 28, 2);
-      expect(dueLabel(on(27), late, w).text, '1일 지남');
+      expect(dueLabel(on(27), late, w).text, 'D+1');
       expect(dueLabel(on(27), late, w, dayStartMinutes: 4 * 60).text, 'D-day');
     });
   });

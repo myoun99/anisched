@@ -289,9 +289,7 @@ class _DashboardViewState extends State<DashboardView> {
         key: Key('dash-due-days-$k'),
         width: 64,
         child: FitText(
-          due.daysLeft < 0
-              ? S.daysLate.f({'n': -due.daysLeft})
-              : (due.daysLeft == 0 ? 'D-day' : 'D-${due.daysLeft}'),
+          dueDaysText(due.daysLeft),
           textAlign: TextAlign.right,
           style: TextStyle(
             fontWeight: FontWeight.w700,

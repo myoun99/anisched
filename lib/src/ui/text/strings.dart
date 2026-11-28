@@ -82,7 +82,6 @@ enum S {
   stRetake('Retake', 'リテイク', '리테이크', 'Retake', '返修'),
 
   // Counts and dates.
-  daysLate('{n}d late', '{n}日超過', '{n}일 지남', '{n} j de retard', '超期{n}天'),
   days('{n}d', '{n}日', '{n}일', '{n} j', '{n}天'),
   items('{n}', '{n}件', '{n}건', '{n}', '{n}项'),
   monthLabel('{m}', '{m}月', '{m}월', '{m}', '{m}月'),
