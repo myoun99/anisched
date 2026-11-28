@@ -11,9 +11,18 @@ import 'theme.dart';
 typedef ClientTag = ({String name, Color color});
 
 class ClientChip extends StatelessWidget {
-  const ClientChip(this.client, {super.key, this.compact = false});
+  const ClientChip(
+    this.client, {
+    super.key,
+    this.compact = false,
+    this.fitName = true,
+  });
 
   final ClientTag client;
+
+  /// Condense a long name ([FitText]); off inside menus, which measure
+  /// their items' natural widths.
+  final bool fitName;
 
   /// Only the square, with the name's first letter (tight places); the
   /// name shows on hover / long press.
@@ -59,7 +68,14 @@ class ClientChip extends StatelessWidget {
           children: [
             square,
             Flexible(
-              child: FitText(client.name, style: const TextStyle(fontSize: 11)),
+              child: fitName
+                  ? FitText(client.name, style: const TextStyle(fontSize: 11))
+                  : Text(
+                      client.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11),
+                    ),
             ),
           ],
         ),

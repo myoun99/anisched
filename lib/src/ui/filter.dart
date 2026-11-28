@@ -177,7 +177,7 @@ class FilterButton extends StatelessWidget {
           ),
           Flexible(
             child: client != null
-                ? ClientChip(client)
+                ? ClientChip(client, fitName: false)
                 : Text(
                     text,
                     maxLines: 1,

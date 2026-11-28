@@ -11,10 +11,7 @@ void main() {
     await t.pumpWidget(
       const MaterialApp(
         home: Column(
-          children: [
-            ClientChip(tag),
-            ClientChip(tag, compact: true),
-          ],
+          children: [ClientChip(tag), ClientChip(tag, compact: true)],
         ),
       ),
     );
@@ -23,9 +20,7 @@ void main() {
     expect(find.byTooltip('Studio Kumo'), findsOneWidget);
   });
 
-  testWidgets('the register screen sets a picked client\'s colour', (
-    t,
-  ) async {
+  testWidgets('the register screen sets a picked client\'s colour', (t) async {
     final store = await pumpRegister(t, const Size(1440, 900));
     final id = store.addClient('스튜디오 아침');
     await t.tap(find.byKey(const Key('pick-client')));

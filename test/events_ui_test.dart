@@ -43,6 +43,7 @@ void main() {
     t,
   ) async {
     final store = await pumpTimeline(t);
+    final before = allEvents(store).length;
     // The first row's days; its 3rd day from the left.
     final press = find.byType(ChartDayPress).first;
     final box = t.getRect(press);
@@ -50,47 +51,46 @@ void main() {
     final dw = box.width / window.days;
     await t.longPressAt(Offset(box.left + dw * 2.5, box.center.dy));
     await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('event-title')), 'アフレコ');
+    await t.enterText(find.byKey(const Key('event-title')), 'テスト収録');
     await t.enterText(find.byKey(const Key('event-note')), '스튜디오 B');
     await t.tap(find.byKey(const Key('event-ok')));
     await t.pumpAndSettle();
 
-    final added = allEvents(store);
-    expect(added, hasLength(1));
-    expect(added.single.title, 'アフレコ');
-    expect(added.single.note, '스튜디오 B');
-    expect(added.single.timeMinutes, isNull);
+    expect(allEvents(store), hasLength(before + 1));
+    final added = allEvents(store).singleWhere((e) => e.title == 'テスト収録');
+    expect(added.note, '스튜디오 B');
+    expect(added.timeMinutes, isNull);
     final day = window.dayAt(2);
-    expect(
-      (added.single.date.month, added.single.date.day),
-      (day.month, day.day),
-    );
+    expect((added.date.month, added.date.day), (day.month, day.day));
     // Shown on the rows of that episode.
-    expect(find.byType(EventMark), findsWidgets);
+    Finder mark(String title) =>
+        find.ancestor(of: find.text(title), matching: find.byType(EventMark));
+    expect(mark('テスト収録'), findsWidgets);
 
     // The mark opens the same window: rename, then remove.
-    await t.tap(find.byType(EventMark).first);
+    await t.tap(mark('テスト収録').first);
     await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('event-title')), '打ち合わせ');
+    await t.enterText(find.byKey(const Key('event-title')), '再収録');
     await t.tap(find.byKey(const Key('event-ok')));
     await t.pumpAndSettle();
-    expect(allEvents(store).single.title, '打ち合わせ');
-    await t.tap(find.byType(EventMark).first);
+    expect(allEvents(store).singleWhere((e) => e.id == added.id).title, '再収録');
+    await t.tap(mark('再収録').first);
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('event-delete')));
     await t.pumpAndSettle();
-    expect(allEvents(store), isEmpty);
-    expect(find.byType(EventMark), findsNothing);
+    expect(allEvents(store), hasLength(before));
+    expect(mark('再収録'), findsNothing);
   });
 
   testWidgets('an empty title saves nothing', (t) async {
     final store = await pumpTimeline(t);
+    final before = allEvents(store).length;
     final press = find.byType(ChartDayPress).first;
     await t.longPress(press);
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('event-ok')));
     await t.pumpAndSettle();
     expect(find.byKey(const Key('event-title')), findsOneWidget);
-    expect(allEvents(store), isEmpty);
+    expect(allEvents(store), hasLength(before));
   });
 }
