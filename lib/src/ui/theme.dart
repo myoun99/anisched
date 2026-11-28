@@ -22,6 +22,9 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.submitted,
     required this.retake,
     required this.done,
+    required this.restDay,
+    required this.dayOff,
+    required this.holiday,
   });
 
   final Color page;
@@ -44,6 +47,13 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color retake;
   final Color done;
 
+  // Days the chart marks (a faint wash of each over the column, the same
+  // colour on the day's number): the usual rest weekdays, the user's own
+  // days off, public holidays. Today keeps its red.
+  final Color restDay;
+  final Color dayOff;
+  final Color holiday;
+
   // Restrained neutrals with a faint cool bias, one indigo accent; status
   // colours tuned so each reads on both grounds (checked ≥ 3:1 against
   // the panel in both modes).
@@ -63,6 +73,9 @@ class AppColors extends ThemeExtension<AppColors> {
     submitted: Color(0xFFB7791F),
     retake: Color(0xFFD1453B),
     done: Color(0xFF2F9461),
+    restDay: Color(0xFF3B78E0),
+    dayOff: Color(0xFFE07B1F),
+    holiday: Color(0xFF9B4FD6),
   );
 
   static const dark = AppColors(
@@ -81,6 +94,9 @@ class AppColors extends ThemeExtension<AppColors> {
     submitted: Color(0xFFE0A642),
     retake: Color(0xFFF0706A),
     done: Color(0xFF52C08A),
+    restDay: Color(0xFF6E9EF5),
+    dayOff: Color(0xFFF0A055),
+    holiday: Color(0xFFC08AF5),
   );
 
   static AppColors of(BuildContext context) =>
@@ -109,6 +125,9 @@ class AppColors extends ThemeExtension<AppColors> {
       submitted: l(submitted, other.submitted),
       retake: l(retake, other.retake),
       done: l(done, other.done),
+      restDay: l(restDay, other.restDay),
+      dayOff: l(dayOff, other.dayOff),
+      holiday: l(holiday, other.holiday),
     );
   }
 }

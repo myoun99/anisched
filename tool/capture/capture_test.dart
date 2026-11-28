@@ -211,6 +211,38 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 9: clients on works; bars in their stage's colour.
+  'r9-list': (AppView.list, (t, size) async {}),
+  'r9-timeline': (AppView.timeline, (t, size) async {}),
+  'r9-timeline-open': (
+    AppView.timeline,
+    (t, size) async {
+      await t.tap(byKeyPrefix('tl-label-').at(1));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  'r9-work-open': (
+    AppView.work,
+    (t, size) async {
+      await t.tap(byKeyPrefix('work-open-').at(0), warnIfMissed: false);
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Round 10: rest weekdays (blue), a day off (orange), a holiday
+  // (purple: 11/23) and today (red) on the chart backgrounds; one-day
+  // bars at half-day grips; nothing picked (no actions).
+  'r10-timeline': (AppView.timeline, (t, size) async {}),
+  'r10-work': (AppView.work, (t, size) async {}),
+  'r10-list': (AppView.list, (t, size) async {}),
+  'r10-settings': (
+    AppView.settings,
+    (t, size) async {
+      await t.ensureVisible(find.byKey(const Key('holiday-JP')));
+      await t.pump();
+    },
+  ),
   // Round 7: the register screen's top (how many rows the roles take).
   'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
@@ -285,19 +317,17 @@ void main() {
 
   // Round 8: bars drawn 4× on the chart (today's column included): grips
   // 〈 〉 at the ends, the label between them; short bars by proposal.
-  for (final style in ShortBarGrips.values) {
+  for (final days in [8, 16]) {
     for (final dark in [false, true]) {
-      final name = 'bar-zoom-${style.name}${dark ? '-dark' : ''}';
+      final name = 'bar-zoom-$days${dark ? '-dark' : ''}';
       if (only != null && !only.contains('bar-zoom')) continue;
       testWidgets(name, (t) async {
-        shortBarGrips = style;
-        addTearDown(() => shortBarGrips = ShortBarGrips.outside);
         const size = Size(420, 300);
         t.view.physicalSize = size * 4;
         t.view.devicePixelRatio = 4;
         addTearDown(t.view.reset);
         final shot = GlobalKey();
-        final window = ChartWindow(DateTime(2026, 11, 20), 8);
+        final window = ChartWindow(DateTime(2026, 11, 20), days);
         // (days, opened)
         const rows = [
           (1, true),
@@ -317,7 +347,7 @@ void main() {
                   body: ChartBoard(
                     window: window,
                     today: DateTime(2026, 11, 21, 14),
-                    restWeekdays: const {DateTime.saturday, DateTime.sunday},
+                    days: const ChartDays(),
                     labelWidth: 56,
                     rowCount: rows.length,
                     label: (context, r) => Center(
@@ -334,7 +364,6 @@ void main() {
                         color: Theme.of(context).colorScheme.primary,
                         textColor: Colors.white,
                         label: '별빛 정류장 #07 · 원화 · 4 cut',
-                        selected: rows[r].$2,
                         onDates: (a, b) {},
                       ),
                     ],
@@ -379,6 +408,15 @@ void main() {
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
           if (base.startsWith('bundle')) prepareBundles(store);
+          if (base.startsWith('r9')) prepareClients(store);
+          if (base.startsWith('r10')) {
+            // A day off of the user's own next week; Japan's holidays.
+            store.addDaysOff(
+              DateTime(2026, 12, 1),
+              end: DateTime(2026, 12, 2),
+              note: '여행',
+            );
+          }
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
@@ -463,4 +501,29 @@ void prepareBundles(CatalogueStore store) {
       DateTime(now.year, now.month, now.day + 5 + i * 4, 23, 59),
     );
   }
+}
+
+/// Clients on three of the works (round 9's chips) and two events on
+/// 별빛 #07: one on its bars, one past them.
+void prepareClients(CatalogueStore store) {
+  final a = store.addClient('스튜디오 아침', color: 0xFFE0843B);
+  final b = store.addClient('Studio Kumo', color: 0xFF2E9E6B);
+  final groups = store.partGroups();
+  final works = {for (final g in groups) g.workTitle: g.workId};
+  store.setWorkClient(works['별빛 정류장']!, a);
+  store.setWorkClient(works['마법소녀 리코']!, b);
+  store.setWorkClient(works['여름 끝에서']!, a);
+  final star = groups.firstWhere((g) => g.workTitle == '별빛 정류장');
+  store.addEvent(
+    episodeId: star.episodeId,
+    date: now.add(const Duration(days: 2)),
+    timeMinutes: 13 * 60,
+    title: 'アフレコ',
+  );
+  store.addEvent(
+    episodeId: star.episodeId,
+    date: now.add(const Duration(days: 9)),
+    title: '打ち合わせ',
+    note: '스튜디오 B',
+  );
 }

@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/size_class.dart';
+import '../../models/progress.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import '../fit_text.dart';
+import '../palette.dart';
 
 /// Local calendar day as a UTC midnight, so day differences are exact.
 DateTime chartDay(DateTime t) {
@@ -406,18 +408,71 @@ double chartNumberWidth(BuildContext context) {
   )..layout()).width;
 }
 
-/// The bands' grey: light enough that bars and the today wash read over
-/// it, dark enough to count days by.
-Color chartStripe(BuildContext context) {
-  final c = AppColors.of(context);
-  return Color.lerp(c.panel, c.line, 0.32)!;
+/// What a day is to the chart's background and header.
+enum DayKind { plain, rest, off, holiday }
+
+/// The days a chart marks: the usual rest weekdays, the user's own days
+/// off and public holidays (by UTC midnight, with their names). One rule
+/// for every chart's background and header: a day off wins over a
+/// holiday, a holiday over a rest weekday.
+@immutable
+class ChartDays {
+  const ChartDays({
+    this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
+    this.daysOff = const [],
+    this.holidays = const {},
+  });
+
+  final Set<int> restWeekdays;
+  final List<DaysOff> daysOff;
+  final Map<DateTime, String> holidays;
+
+  static DateTime _key(DateTime d) => DateTime.utc(d.year, d.month, d.day);
+
+  DayKind kindOf(DateTime day) {
+    if (daysOff.any((o) => o.contains(day))) return DayKind.off;
+    if (holidays.containsKey(_key(day))) return DayKind.holiday;
+    if (restWeekdays.contains(day.weekday)) return DayKind.rest;
+    return DayKind.plain;
+  }
+
+  /// The holiday's name on [day], if it is one.
+  String? holidayName(DateTime day) => holidays[_key(day)];
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChartDays &&
+      setEquals(other.restWeekdays, restWeekdays) &&
+      listEquals(
+        [for (final o in other.daysOff) (o.start, o.end)],
+        [for (final o in daysOff) (o.start, o.end)],
+      ) &&
+      mapEquals(other.holidays, holidays);
+
+  @override
+  int get hashCode =>
+      Object.hash(restWeekdays.length, daysOff.length, holidays.length);
 }
 
-/// Rest days: a step darker than a band, so both show.
-Color chartRestShade(BuildContext context) {
+/// Marked days' colours: their numbers, and (faintly) their columns.
+Map<DayKind, Color> dayMarkColors(BuildContext context) {
   final c = AppColors.of(context);
-  return c.line.withValues(alpha: 0.45);
+  return {
+    DayKind.rest: c.restDay,
+    DayKind.off: c.dayOff,
+    DayKind.holiday: c.holiday,
+  };
 }
+
+/// The bands' grey: barely there, enough to count days by.
+Color chartStripe(BuildContext context) {
+  final c = AppColors.of(context);
+  return Color.lerp(c.panel, c.line, 0.14)!;
+}
+
+/// How strongly a marked day's colour washes its column.
+double chartMarkAlpha(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark ? 0.13 : 0.075;
 
 /// The colour today's column is washed with, light or dark.
 Color chartTodayWash(BuildContext context) {
@@ -431,20 +486,20 @@ Color chartTodayWash(BuildContext context) {
 class _BackgroundPainter extends CustomPainter {
   _BackgroundPainter({
     required this.window,
-    required this.rest,
+    required this.days,
     required this.stripe,
-    required this.shade,
+    required this.wash,
     required this.numberWidth,
   });
 
   final ChartWindow window;
-  final Set<int> rest;
+  final ChartDays days;
 
   /// Every other numbered stretch (Excel-like bands).
   final Color stripe;
 
-  /// Rest days, over the bands.
-  final Color shade;
+  /// Marked days' washes, over the bands.
+  final Map<DayKind, Color> wash;
   final double numberWidth;
 
   @override
@@ -453,11 +508,12 @@ class _BackgroundPainter extends CustomPainter {
     final dw = size.width / window.days;
     final labels = DayLabels(window, dw, numberWidth);
     final band = Paint()..color = stripe;
-    final off = Paint()..color = shade;
     for (var i = 0; i < window.days; i++) {
       final r = Rect.fromLTWH(i * dw, 0, dw, size.height);
       if (labels.shaded(i)) canvas.drawRect(r, band);
-      if (rest.contains(window.dayAt(i).weekday)) canvas.drawRect(r, off);
+      if (wash[days.kindOf(window.dayAt(i))] case final w?) {
+        canvas.drawRect(r, Paint()..color = w);
+      }
     }
   }
 
@@ -465,9 +521,9 @@ class _BackgroundPainter extends CustomPainter {
   bool shouldRepaint(_BackgroundPainter old) =>
       old.window != window ||
       old.stripe != stripe ||
-      old.shade != shade ||
+      !mapEquals(old.wash, wash) ||
       old.numberWidth != numberWidth ||
-      !setEquals(old.rest, rest);
+      old.days != days;
 }
 
 /// The today layer: today's whole column, washed, on the same day grid
@@ -505,12 +561,12 @@ class _DayLayers extends StatelessWidget {
   const _DayLayers({
     required this.window,
     required this.today,
-    required this.restWeekdays,
+    required this.days,
   });
 
   final ChartWindow window;
   final DateTime today;
-  final Set<int> restWeekdays;
+  final ChartDays days;
 
   @override
   Widget build(BuildContext context) {
@@ -521,9 +577,12 @@ class _DayLayers extends StatelessWidget {
           child: CustomPaint(
             painter: _BackgroundPainter(
               window: window,
-              rest: restWeekdays,
+              days: days,
               stripe: chartStripe(context),
-              shade: chartRestShade(context),
+              wash: {
+                for (final e in dayMarkColors(context).entries)
+                  e.key: e.value.withValues(alpha: chartMarkAlpha(context)),
+              },
               numberWidth: chartNumberWidth(context),
             ),
           ),
@@ -548,12 +607,12 @@ class ChartHeader extends StatelessWidget {
     super.key,
     required this.window,
     required this.today,
-    required this.restWeekdays,
+    this.days = const ChartDays(),
   });
 
   final ChartWindow window;
   final DateTime today;
-  final Set<int> restWeekdays;
+  final ChartDays days;
 
   @override
   Widget build(BuildContext context) {
@@ -564,13 +623,14 @@ class ChartHeader extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _DayLayers(window: window, today: today, restWeekdays: restWeekdays),
+          _DayLayers(window: window, today: today, days: days),
           RepaintBoundary(
             child: CustomPaint(
               painter: _HeaderPainter(
                 window: window,
                 today: window.indexOf(today),
-                rest: restWeekdays,
+                days: days,
+                marks: dayMarkColors(context),
                 ink: style.color ?? c.muted,
                 muted: c.muted,
                 faint: c.faint,
@@ -581,6 +641,30 @@ class ChartHeader extends StatelessWidget {
               ),
             ),
           ),
+          // A holiday's name on hover / long press over its day.
+          if (days.holidays.isNotEmpty)
+            LayoutBuilder(
+              builder: (context, box) {
+                final dw = box.maxWidth / window.days;
+                return Stack(
+                  children: [
+                    for (var i = 0; i < window.days; i++)
+                      if (days.holidayName(window.dayAt(i)) case final name?)
+                        Positioned(
+                          left: i * dw,
+                          width: dw,
+                          top: 0,
+                          bottom: 0,
+                          child: Tooltip(
+                            key: Key('holiday-$i'),
+                            message: name,
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                  ],
+                );
+              },
+            ),
         ],
       ),
     );
@@ -591,7 +675,8 @@ class _HeaderPainter extends CustomPainter {
   _HeaderPainter({
     required this.window,
     required this.today,
-    required this.rest,
+    required this.days,
+    required this.marks,
     required this.ink,
     required this.muted,
     required this.faint,
@@ -604,7 +689,10 @@ class _HeaderPainter extends CustomPainter {
   final double numberWidth;
   final ChartWindow window;
   final int today;
-  final Set<int> rest;
+  final ChartDays days;
+
+  /// The numbers' colours for marked days.
+  final Map<DayKind, Color> marks;
   final Color ink;
   final Color muted;
   final Color faint;
@@ -647,7 +735,7 @@ class _HeaderPainter extends CustomPainter {
       if (i != today && (!labels.labelled(i) || near)) continue;
       final t = _text(
         '${d.day}',
-        i == today ? red : (rest.contains(d.weekday) ? faint : muted),
+        i == today ? red : (marks[days.kindOf(d)] ?? muted),
         bold: i == today,
       );
       final x = labels.step == 1 ? i * dw + (dw - t.width) / 2 : i * dw + 2;
@@ -664,7 +752,8 @@ class _HeaderPainter extends CustomPainter {
       old.muted != muted ||
       old.lang != lang ||
       old.numberWidth != numberWidth ||
-      !setEquals(old.rest, rest);
+      !mapEquals(old.marks, marks) ||
+      old.days != days;
 }
 
 /// The bar being dragged: where it would land, painted on its own layer.
@@ -725,7 +814,7 @@ class ChartBoard extends StatefulWidget {
     super.key,
     required this.window,
     required this.today,
-    required this.restWeekdays,
+    this.days = const ChartDays(),
     required this.labelWidth,
     required this.rowCount,
     required this.label,
@@ -744,7 +833,9 @@ class ChartBoard extends StatefulWidget {
 
   final ChartWindow window;
   final DateTime today;
-  final Set<int> restWeekdays;
+
+  /// Rest weekdays, days off and holidays, marked on the background.
+  final ChartDays days;
   final double labelWidth;
   final int rowCount;
 
@@ -851,7 +942,7 @@ class _ChartBoardState extends State<ChartBoard> {
                   child: ChartHeader(
                     window: widget.window,
                     today: widget.today,
-                    restWeekdays: widget.restWeekdays,
+                    days: widget.days,
                   ),
                 ),
               ],
@@ -866,7 +957,7 @@ class _ChartBoardState extends State<ChartBoard> {
                   child: _DayLayers(
                     window: widget.window,
                     today: widget.today,
-                    restWeekdays: widget.restWeekdays,
+                    days: widget.days,
                   ),
                 ),
                 RepaintBoundary(
@@ -927,52 +1018,54 @@ class _ChartBoardState extends State<ChartBoard> {
 /// Which end of a bar a drag moves.
 enum BarEdge { start, end }
 
-/// Where a bar too short for grips and a label keeps its grips — two
-/// proposals until the user picks one.
-enum ShortBarGrips {
-  /// Just outside the bar's ends, always.
-  outside,
-
-  /// Only on the opened (selected) bar, outside its ends.
-  whenSelected,
-}
-
-/// The proposal in use (captures switch it).
-ShortBarGrips shortBarGrips = ShortBarGrips.outside;
-
 /// A bar's end grip: a small button of another colour with 〈 or 〉, the
 /// whole of it the place to drag. Only bars whose dates can be dragged
 /// have them ([ChartBar.onDates]).
 class BarGrip extends StatelessWidget {
-  const BarGrip({super.key, required this.edge, required this.barColor});
+  const BarGrip({
+    super.key,
+    required this.edge,
+    required this.ink,
+    this.width = maxWidth,
+  });
 
   final BarEdge edge;
-  final Color barColor;
+
+  /// The bar's ink: the grip's border and arrow.
+  final Color ink;
 
   /// The grip's width, which is also its drag area.
-  static const width = 16.0;
+  final double width;
 
-  /// The least room a label needs between two grips.
-  static const minLabel = 24.0;
+  /// The widest a grip gets; on narrow days, half a day ([widthFor]).
+  static const maxWidth = 16.0;
+
+  /// The least room a label needs between two grips; less hides it.
+  static const minLabel = 8.0;
+
+  /// A grip's width for days [dayWidth] wide: at most half a day, so a
+  /// one-day bar is just its two grips however far out the zoom goes.
+  static double widthFor(double dayWidth) =>
+      dayWidth / 2 < maxWidth ? dayWidth / 2 : maxWidth;
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     return SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.all(2),
         child: DecoratedBox(
+          // Bars are light in both themes: a near-white face reads on them.
           decoration: BoxDecoration(
-            color: c.panel,
-            border: Border.all(color: barColor),
+            color: const Color(0xF2FFFFFF),
+            border: Border.all(color: ink.withValues(alpha: 0.55)),
             borderRadius: BorderRadius.circular(3),
           ),
           child: Center(
             child: Icon(
               edge == BarEdge.start ? Icons.chevron_left : Icons.chevron_right,
               size: 12,
-              color: barColor,
+              color: ink,
             ),
           ),
         ),
@@ -997,11 +1090,11 @@ class ChartBar extends StatefulWidget {
     this.onDates,
     this.faded = false,
     this.wrapBody,
-    this.selected = false,
+    this.outline,
   });
 
-  /// The bar is the one opened or picked (its short-bar grips may show).
-  final bool selected;
+  /// A border round the bar (e.g. red for work past the lanes).
+  final Color? outline;
 
   final ChartWindow window;
   final DateTime start;
@@ -1063,7 +1156,7 @@ class _ChartBarState extends State<ChartBar> {
     context.getInheritedWidgetOfExactType<_DragScope>()?.drag.value = null;
   }
 
-  Widget _handle(BarEdge edge) => GestureDetector(
+  Widget _handle(BarEdge edge, double width) => GestureDetector(
     key: Key('bar-${edge.name}'),
     behavior: HitTestBehavior.opaque,
     // Measured from where the finger went down, so nothing is lost while
@@ -1092,18 +1185,22 @@ class _ChartBarState extends State<ChartBar> {
     },
     child: MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
-      child: BarGrip(edge: edge, barColor: widget.color),
+      child: BarGrip(
+        edge: edge,
+        width: width,
+        ink: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
+      ),
     ),
   );
 
-  Widget _face() {
-    // The label uses the bar's whole width, no padding; tight bars
+  Widget _face({required bool label}) {
+    // The label uses all the room it is given, no padding; tight bars
     // condense it (FitText). A bar that is a drag source keeps its long
     // press, so no tooltip there.
     final face = SizedBox.expand(
       child: Align(
         alignment: Alignment.centerLeft,
-        child: widget.label == null
+        child: widget.label == null || !label
             ? null
             : FitText(
                 widget.label!,
@@ -1130,33 +1227,33 @@ class _ChartBarState extends State<ChartBar> {
         final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
-        final draggable = widget.onDates != null;
-        // Grips inside the bar when the label still has room between
-        // them; on a short bar they sit just outside its ends.
-        final inside = width >= 2 * BarGrip.width + BarGrip.minLabel;
-        final grips =
-            draggable &&
-            (inside ||
-                shortBarGrips == ShortBarGrips.outside ||
-                widget.selected);
+        final grips = widget.onDates != null;
+        final grip = BarGrip.widthFor(dw);
+        // The label gets the room between the grips, or none at all.
+        final room = grips ? width - 2 * grip : width;
+        final showLabel = room >= BarGrip.minLabel;
         final bar = Opacity(
           opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: widget.color,
               borderRadius: BorderRadius.circular(4),
+              // A faint edge keeps near-white bars (LO) visible.
+              border: widget.outline == null
+                  ? Border.all(color: barInk.withValues(alpha: 0.18))
+                  : Border.all(color: widget.outline!, width: 1.5),
             ),
             // The label takes every pixel between the grips.
-            child: grips && inside
+            child: grips
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _handle(BarEdge.start),
-                      Expanded(child: _face()),
-                      _handle(BarEdge.end),
+                      _handle(BarEdge.start, grip),
+                      Expanded(child: _face(label: showLabel)),
+                      _handle(BarEdge.end, grip),
                     ],
                   )
-                : _face(),
+                : _face(label: showLabel),
           ),
         );
         return Stack(
@@ -1169,22 +1266,78 @@ class _ChartBarState extends State<ChartBar> {
               height: ChartBoard.barHeight,
               child: bar,
             ),
-            if (grips && !inside) ...[
-              Positioned(
-                left: left - BarGrip.width,
-                width: BarGrip.width,
-                top: ChartBoard.barTop,
-                height: ChartBoard.barHeight,
-                child: _handle(BarEdge.start),
-              ),
-              Positioned(
-                left: left + width,
-                width: BarGrip.width,
-                top: ChartBoard.barTop,
-                height: ChartBoard.barHeight,
-                child: _handle(BarEdge.end),
-              ),
-            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A row's empty date area answering a long press with the day under the
+/// finger (a new event there). Goes first among a row's bars, so bars and
+/// marks stay on top.
+class ChartDayPress extends StatelessWidget {
+  const ChartDayPress({
+    super.key,
+    required this.window,
+    required this.onLongPress,
+  });
+
+  final ChartWindow window;
+  final ValueChanged<DateTime> onLongPress;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (d) {
+        final i = (d.localPosition.dx / (box.maxWidth / window.days)).floor();
+        onLongPress(window.dayAt(i.clamp(0, window.days - 1)));
+      },
+    ),
+  );
+}
+
+/// Something placed in one day's cell of a row, at bar height (an
+/// event's mark); nothing when the day is out of the window.
+class ChartDayBox extends StatelessWidget {
+  const ChartDayBox({
+    super.key,
+    required this.window,
+    required this.day,
+    required this.child,
+    this.minWidth = 0,
+  });
+
+  final ChartWindow window;
+  final DateTime day;
+  final Widget child;
+
+  /// At least this wide, running on over the next days (a title to read).
+  final double minWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final i = window.indexOf(day);
+    if (i < 0 || i >= window.days) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, box) {
+        final dw = box.maxWidth / window.days;
+        final left = i * dw;
+        final width = (dw > minWidth ? dw : minWidth).clamp(
+          0.0,
+          box.maxWidth - left,
+        );
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: left,
+              width: width,
+              top: ChartBoard.barTop,
+              height: ChartBoard.barHeight,
+              child: child,
+            ),
           ],
         );
       },

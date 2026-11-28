@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'client_chip.dart';
 import 'instant.dart';
 
 import '../models/progress.dart';
@@ -137,7 +138,7 @@ class FilterButton extends StatelessWidget {
   final ValueChanged<ViewFilter> onChanged;
 
   /// Client names by id.
-  final Map<int, String> clients;
+  final Map<int, ClientTag> clients;
 
   /// Work titles by id.
   final Map<int, String> works;
@@ -145,7 +146,7 @@ class FilterButton extends StatelessWidget {
   String get _label {
     final parts = [
       if (filter.range != DueRange.all) filter.range.label,
-      if (filter.clientId != null) clients[filter.clientId] ?? '',
+      if (filter.clientId != null) clients[filter.clientId]?.name ?? '',
       if (filter.workId != null) works[filter.workId] ?? '',
       if (filter.showDone) S.fWithDone.t,
       if (filter.showHandedOff) S.dropped.t,
@@ -158,32 +159,38 @@ class FilterButton extends StatelessWidget {
     // Compact rows: a small check, the label; section names as dim
     // captions. No Material check-row padding.
     final c = AppColors.of(context);
-    PopupMenuItem<_Choice> item(_Choice v, String text, bool on) =>
-        PopupMenuItem<_Choice>(
-          value: v,
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            spacing: 6,
-            children: [
-              SizedBox(
-                width: 14,
-                child: on ? const Icon(Icons.check, size: 14) : null,
-              ),
-              Flexible(
-                child: Text(
-                  text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: on ? FontWeight.w700 : null,
-                  ),
-                ),
-              ),
-            ],
+    PopupMenuItem<_Choice> item(
+      _Choice v,
+      String text,
+      bool on, {
+      ClientTag? client,
+    }) => PopupMenuItem<_Choice>(
+      value: v,
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        spacing: 6,
+        children: [
+          SizedBox(
+            width: 14,
+            child: on ? const Icon(Icons.check, size: 14) : null,
           ),
-        );
+          Flexible(
+            child: client != null
+                ? ClientChip(client, fitName: false)
+                : Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: on ? FontWeight.w700 : null,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
     PopupMenuItem<_Choice> head(String text) => PopupMenuItem<_Choice>(
       enabled: false,
       height: 22,
@@ -211,7 +218,12 @@ class FilterButton extends StatelessWidget {
           head(S.client.t),
           item(const _Client(null), S.allClients.t, filter.clientId == null),
           for (final e in clients.entries)
-            item(_Client(e.key), e.value, filter.clientId == e.key),
+            item(
+              _Client(e.key),
+              e.value.name,
+              filter.clientId == e.key,
+              client: e.value,
+            ),
         ],
         head(S.title.t),
         item(const _Work(null), S.allTitles.t, filter.workId == null),

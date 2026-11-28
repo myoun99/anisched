@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/holidays.dart';
+
 import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
@@ -191,6 +193,57 @@ class _SettingsViewState extends State<SettingsView> {
                 ),
             ],
           ),
+        ),
+        // Public holidays: which country's, shown on the charts, and
+        // whether they are days off.
+        _Field(
+          icon: Icons.flag_outlined,
+          label: S.holidays.t,
+          child: _FillRow(
+            children: [
+              for (final h in HolidayCountry.values)
+                SegmentButton(
+                  key: Key('holiday-${h.code}'),
+                  compact: true,
+                  label: h == HolidayCountry.none ? '—' : h.code,
+                  tooltip: switch (h) {
+                    HolidayCountry.none => S.countryNone.t,
+                    HolidayCountry.japan => S.countryJapan.t,
+                    HolidayCountry.korea => S.countryKorea.t,
+                    HolidayCountry.france => S.countryFrance.t,
+                    HolidayCountry.china => S.countryChina.t,
+                  },
+                  selected: widget.store?.settings.holidayCountry == h,
+                  onTap: () => _set((st) => st.settings.holidayCountry = h),
+                ),
+            ],
+          ),
+        ),
+        _Line(
+          children: [
+            Icon(Icons.visibility_outlined, size: 18, color: c.muted),
+            Expanded(child: Text(S.showHolidays.t)),
+            Switch(
+              key: const Key('holiday-show'),
+              value: widget.store?.settings.showHolidays ?? true,
+              onChanged: widget.store == null
+                  ? null
+                  : (v) => _set((st) => st.settings.showHolidays = v),
+            ),
+          ],
+        ),
+        _Line(
+          children: [
+            Icon(Icons.beach_access_outlined, size: 18, color: c.muted),
+            Expanded(child: Text(S.restOnHolidays.t)),
+            Switch(
+              key: const Key('holiday-rest'),
+              value: widget.store?.settings.restOnHolidays ?? false,
+              onChanged: widget.store == null
+                  ? null
+                  : (v) => _set((st) => st.settings.restOnHolidays = v),
+            ),
+          ],
         ),
         for (final o in off)
           _Line(

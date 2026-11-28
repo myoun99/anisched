@@ -9,6 +9,7 @@ import '../instant.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import 'chart.dart';
+import '../palette.dart';
 import '../fit_text.dart';
 import '../part_line.dart';
 
@@ -24,7 +25,7 @@ class WorkView extends StatefulWidget {
     required this.parts,
     required this.now,
     required this.layout,
-    this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
+    this.days = const ChartDays(),
     this.onPin,
     this.onClearPins,
     this.onPlan,
@@ -55,7 +56,9 @@ class WorkView extends StatefulWidget {
   final Map<String, PartGroup> parts;
   final DateTime now;
   final ScreenLayout layout;
-  final Set<int> restWeekdays;
+
+  /// Rest weekdays, days off and holidays for the background.
+  final ChartDays days;
 
   final void Function(String groupKey, int lane)? onPin;
   final VoidCallback? onClearPins;
@@ -101,7 +104,6 @@ class _WorkViewState extends State<WorkView> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final red = Theme.of(context).colorScheme.error;
-    final accent = Theme.of(context).colorScheme.primary;
     final lanes = widget.lanes;
     final window = ChartWindow.of(
       widget.now,
@@ -154,7 +156,7 @@ class _WorkViewState extends State<WorkView> {
                 child: ChartBoard(
                   window: window,
                   today: widget.now,
-                  restWeekdays: widget.restWeekdays,
+                  days: widget.days,
                   labelWidth: _labelWidth,
                   rowCount: rowCount,
                   corner: _corner(context),
@@ -162,7 +164,7 @@ class _WorkViewState extends State<WorkView> {
                   bars: (context, r) => [
                     for (final s in lanes!.spans)
                       if (lanes.laneOf[s.key] == r)
-                        _bar(s, window, lanes.overflow, accent, red),
+                        _bar(s, window, lanes.overflow, red),
                   ],
                   rowTint: (r) =>
                       r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
@@ -205,7 +207,9 @@ class _WorkViewState extends State<WorkView> {
           onDue: w.onDue == null ? null : (d) => w.onDue!(g, d),
           onTap: _close,
         ),
-        Flexible(child: SingleChildScrollView(child: w.details(g))),
+        Flexible(
+          child: SingleChildScrollView(child: w.details(g, client: true)),
+        ),
       ],
     );
   }
@@ -365,25 +369,21 @@ class _WorkViewState extends State<WorkView> {
     edit(r, name: answer.name, remove: answer.remove);
   }
 
-  Widget _bar(
-    Span s,
-    ChartWindow window,
-    Set<String> overflow,
-    Color accent,
-    Color red,
-  ) {
+  Widget _bar(Span s, ChartWindow window, Set<String> overflow, Color red) {
     final g = widget.parts[s.key];
     final label = g == null ? s.key : workBarLabel(g);
     final pinned = widget.lanes!.pinned.contains(s.key);
-    final color = overflow.contains(s.key) ? red : accent;
+    // The stage's colour; work past the lanes is ringed red.
+    final color = g == null ? stageTones.first : stageColor(g.stageName);
+    final over = overflow.contains(s.key);
     return ChartBar(
       key: Key('work-bar-${s.key}'),
-      selected: _open == s.key,
       window: window,
       start: s.start,
       end: s.end,
       color: color,
-      textColor: Colors.white,
+      textColor: barInk,
+      outline: over ? red : null,
       label: pinned ? '• $label' : label,
       onDates: g == null || widget.onPlan == null
           ? null
@@ -394,10 +394,7 @@ class _WorkViewState extends State<WorkView> {
             ? DecoratedBox(
                 position: DecorationPosition.foreground,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    width: 2,
-                  ),
+                  border: Border.all(color: barInk, width: 2),
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: face,
@@ -415,7 +412,7 @@ class _WorkViewState extends State<WorkView> {
                 style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: barInk,
                 ),
               ),
             ),
