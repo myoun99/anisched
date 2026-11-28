@@ -553,173 +553,188 @@ class _RegisterViewState extends State<RegisterView> {
   Widget _workPicks(BuildContext context) {
     final r = widget.reader;
     final wide = widget.layout.size != SizeClass.narrow;
-    final fw = wide ? 200.0 : double.infinity;
-    final sw = wide ? 130.0 : double.infinity;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        ClientPick(
-          picked: _client,
-          reader: r,
-          colors: _clientColors,
-          width: fw,
-          onPicked: (x) => setState(() {
-            _client = x;
-            _work = null;
-            _episode = null;
-            _part = null;
-          }),
-          onCreate: widget.onCreateClient,
-          inUse: _clientsUsed,
-          tools: _tools<int>(
-            inUse: (id) => _clientsUsed[id] ?? true,
-            rename: (s, id, name) => s.renameClient(id, name),
-            delete: (s, id) => s.deleteClient(id),
-            after: (id, name) {
-              if (_client?.value != id) return;
-              if (name == null) {
-                _client = _work = _episode = null;
-                _part = null;
-              } else {
-                _client = (value: id, title: name, note: null);
-              }
-            },
-            colorOf: (id) => clientColorOf(id, _clientColors[id]),
-            recolor: widget.onClientColor == null
-                ? null
-                : (id, col) {
-                    _clientColors[id] = col.toARGB32();
-                    widget.onClientColor!(id, col.toARGB32());
-                    setState(() {});
-                  },
-          ),
-          onColor: widget.onClientColor == null
-              ? null
-              : (id, argb) {
-                  widget.onClientColor!(id, argb);
-                  setState(() {});
-                },
-        ),
-        PickField<int>(
-          key: const Key('pick-work'),
-          current: _work?.value,
-          label: S.title.t,
-          width: fw,
-          value: _work?.title,
-          search: (q) async {
-            if (r == null) return const [];
-            final rows = await r.searchWorks(q, clientId: _client?.value);
-            for (final x in rows) {
-              _used[(CatalogueKind.work, x.id)] = x.inUse;
-            }
-            return [
-              for (final x in rows) (value: x.id, title: x.title, note: null),
-            ];
-          },
-          onPicked: _pickWork,
-          tools: _tools<int>(
-            inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
-            rename: (s, id, name) => s.renameWork(id, name),
-            delete: (s, id) => s.deleteWork(id),
-            after: (id, name) {
-              if (_work?.value != id) return;
-              if (name == null) {
-                _work = _episode = null;
-                _part = null;
-              } else {
-                _work = (value: id, title: name, note: null);
-              }
-            },
-          ),
-          onCreate: widget.onCreateWork == null
-              ? null
-              : (name) async => (
-                  value: widget.onCreateWork!(name, _client?.value),
-                  title: name,
-                  note: null,
-                ),
-        ),
-        PickField<int>(
-          key: const Key('pick-episode'),
-          current: _episode?.value,
-          label: S.episode.t,
-          width: sw,
-          enabled: _work != null,
-          value: _episode?.title,
-          search: (q) async {
-            final w = _work;
-            if (r == null || w == null) return const [];
-            final rows = await r.searchEpisodes(w.value, q);
-            for (final x in rows) {
-              _used[(CatalogueKind.episode, x.id)] = x.inUse;
-              _episodeTitles[x.id] = x.title;
-            }
-            return [
-              for (final x in rows)
-                (value: x.id, title: x.number, note: x.title),
-            ];
-          },
-          onPicked: _pickEpisode,
-          tools: _tools<int>(
-            inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
-            // The number changes; the subtitle stays.
-            rename: (s, id, name) =>
-                s.renameEpisode(id, name, title: _episodeTitles[id]),
-            delete: (s, id) => s.deleteEpisode(id),
-            after: (id, name) {
-              if (_episode?.value != id) return;
-              if (name == null) {
+    // A phone held upright: two a row (회사 | 작품, 화 | 파트), the
+    // words fitted (유저 2026-11-28).
+    return LayoutBuilder(
+      builder: (context, box) {
+        final half = ((box.maxWidth - 10) / 2).floorToDouble();
+        final fw = wide ? 200.0 : half;
+        final sw = wide ? 130.0 : half;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            ClientPick(
+              picked: _client,
+              reader: r,
+              colors: _clientColors,
+              width: fw,
+              onPicked: (x) => setState(() {
+                _client = x;
+                _work = null;
                 _episode = null;
                 _part = null;
-              } else {
-                _episode = (value: id, title: episodeShown(name), note: null);
-              }
-            },
-          ),
-          onCreate: widget.onCreateEpisode == null
-              ? null
-              : (name) async {
-                  final id = widget.onCreateEpisode!(_work!.value, name);
-                  return (value: id, title: episodeShown(name), note: null);
+              }),
+              onCreate: widget.onCreateClient,
+              inUse: _clientsUsed,
+              tools: _tools<int>(
+                inUse: (id) => _clientsUsed[id] ?? true,
+                rename: (s, id, name) => s.renameClient(id, name),
+                delete: (s, id) => s.deleteClient(id),
+                after: (id, name) {
+                  if (_client?.value != id) return;
+                  if (name == null) {
+                    _client = _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _client = (value: id, title: name, note: null);
+                  }
                 },
-        ),
-        PickField<String>(
-          key: const Key('pick-part'),
-          current: _part,
-          label: S.part.t,
-          width: sw,
-          enabled: _episode != null,
-          value: _part,
-          search: (q) async {
-            if (r == null) return const [];
-            final e = _episode;
-            final rows = e == null ? const <PartRow>[] : await r.parts(e.value);
-            for (final x in rows) {
-              _partIds[x.label] = (id: x.id, used: x.inUse);
-            }
-            return [
-              (value: '', title: '—', note: null),
-              for (final x in rows)
-                if (x.label.contains(q))
-                  (value: x.label, title: x.label, note: '${x.cutCount}'),
-            ];
-          },
-          tools: _tools<String>(
-            // 「—」 (no part) and a typed new one are not saved parts.
-            editable: _partIds.containsKey,
-            inUse: (label) => _partIds[label]?.used ?? true,
-            rename: (s, label, name) => s.renamePart(_partIds[label]!.id, name),
-            delete: (s, label) => s.deletePart(_partIds[label]!.id),
-            after: (label, name) {
-              if (_part == label) _part = name;
-            },
-          ),
-          onPicked: (x) =>
-              setState(() => _part = x.value.isEmpty ? null : x.value),
-          onCreate: (name) async => (value: name, title: name, note: null),
-        ),
-      ],
+                colorOf: (id) => clientColorOf(id, _clientColors[id]),
+                recolor: widget.onClientColor == null
+                    ? null
+                    : (id, col) {
+                        _clientColors[id] = col.toARGB32();
+                        widget.onClientColor!(id, col.toARGB32());
+                        setState(() {});
+                      },
+              ),
+              onColor: widget.onClientColor == null
+                  ? null
+                  : (id, argb) {
+                      widget.onClientColor!(id, argb);
+                      setState(() {});
+                    },
+            ),
+            PickField<int>(
+              key: const Key('pick-work'),
+              current: _work?.value,
+              label: S.title.t,
+              width: fw,
+              value: _work?.title,
+              search: (q) async {
+                if (r == null) return const [];
+                final rows = await r.searchWorks(q, clientId: _client?.value);
+                for (final x in rows) {
+                  _used[(CatalogueKind.work, x.id)] = x.inUse;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.title, note: null),
+                ];
+              },
+              onPicked: _pickWork,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
+                rename: (s, id, name) => s.renameWork(id, name),
+                delete: (s, id) => s.deleteWork(id),
+                after: (id, name) {
+                  if (_work?.value != id) return;
+                  if (name == null) {
+                    _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _work = (value: id, title: name, note: null);
+                  }
+                },
+              ),
+              onCreate: widget.onCreateWork == null
+                  ? null
+                  : (name) async => (
+                      value: widget.onCreateWork!(name, _client?.value),
+                      title: name,
+                      note: null,
+                    ),
+            ),
+            PickField<int>(
+              key: const Key('pick-episode'),
+              current: _episode?.value,
+              label: S.episode.t,
+              width: sw,
+              enabled: _work != null,
+              value: _episode?.title,
+              search: (q) async {
+                final w = _work;
+                if (r == null || w == null) return const [];
+                final rows = await r.searchEpisodes(w.value, q);
+                for (final x in rows) {
+                  _used[(CatalogueKind.episode, x.id)] = x.inUse;
+                  _episodeTitles[x.id] = x.title;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.number, note: x.title),
+                ];
+              },
+              onPicked: _pickEpisode,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
+                // The number changes; the subtitle stays.
+                rename: (s, id, name) =>
+                    s.renameEpisode(id, name, title: _episodeTitles[id]),
+                delete: (s, id) => s.deleteEpisode(id),
+                after: (id, name) {
+                  if (_episode?.value != id) return;
+                  if (name == null) {
+                    _episode = null;
+                    _part = null;
+                  } else {
+                    _episode = (
+                      value: id,
+                      title: episodeShown(name),
+                      note: null,
+                    );
+                  }
+                },
+              ),
+              onCreate: widget.onCreateEpisode == null
+                  ? null
+                  : (name) async {
+                      final id = widget.onCreateEpisode!(_work!.value, name);
+                      return (value: id, title: episodeShown(name), note: null);
+                    },
+            ),
+            PickField<String>(
+              key: const Key('pick-part'),
+              current: _part,
+              label: S.part.t,
+              width: sw,
+              enabled: _episode != null,
+              value: _part,
+              search: (q) async {
+                if (r == null) return const [];
+                final e = _episode;
+                final rows = e == null
+                    ? const <PartRow>[]
+                    : await r.parts(e.value);
+                for (final x in rows) {
+                  _partIds[x.label] = (id: x.id, used: x.inUse);
+                }
+                return [
+                  (value: '', title: '—', note: null),
+                  for (final x in rows)
+                    if (x.label.contains(q))
+                      (value: x.label, title: x.label, note: '${x.cutCount}'),
+                ];
+              },
+              tools: _tools<String>(
+                // 「—」 (no part) and a typed new one are not saved parts.
+                editable: _partIds.containsKey,
+                inUse: (label) => _partIds[label]?.used ?? true,
+                rename: (s, label, name) =>
+                    s.renamePart(_partIds[label]!.id, name),
+                delete: (s, label) => s.deletePart(_partIds[label]!.id),
+                after: (label, name) {
+                  if (_part == label) _part = name;
+                },
+              ),
+              onPicked: (x) =>
+                  setState(() => _part = x.value.isEmpty ? null : x.value),
+              onCreate: (name) async => (value: name, title: name, note: null),
+            ),
+          ],
+        );
+      },
     );
   }
 

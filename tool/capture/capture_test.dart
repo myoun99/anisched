@@ -17,6 +17,7 @@ import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/document_trouble.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
+import 'package:anisched/src/ui/pick_field.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
@@ -80,6 +81,30 @@ typedef Scenario = Future<void> Function(WidgetTester t, Size size);
 final scenarios = <String, (AppView, Scenario)>{
   // Round 2: an opened line (cuts folded, D label is a button) and a cut
   // on the time bar, paused.
+  // The dashboard tab.
+  'dashboard': (
+    AppView.dashboard,
+    (t, size) async {
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Save As: the name window.
+  'save-as-name': (
+    AppView.list,
+    (t, size) async {
+      unawaited(
+        askName(
+          t.element(find.byType(AppShell)),
+          title: S.fileSave.t,
+          initial: '11월 일정',
+          suffix: '.anisched',
+          icon: Icons.save_as_outlined,
+        ),
+      );
+      await t.pump();
+    },
+  ),
   // The catalogue browser from an empty time bar, two levels down.
   'browser': (
     AppView.list,

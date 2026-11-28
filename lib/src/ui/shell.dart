@@ -40,6 +40,7 @@ import 'timer_bar.dart';
 import 'undo.dart';
 import 'widgets.dart';
 import 'views/chart.dart';
+import 'views/dashboard_view.dart';
 import 'views/register_view.dart';
 import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
@@ -53,6 +54,8 @@ import 'notice.dart';
 /// The app's views: the list, the production timeline, the user's own
 /// work on parallel lanes, registration and settings.
 enum AppView {
+  // First on the bar, as an icon (유저 2026-11-28).
+  dashboard(S.viewDashboard, Icons.dashboard_outlined),
   list(S.viewList),
   timeline(S.viewTimeline),
   work(S.viewWork),
@@ -60,9 +63,12 @@ enum AppView {
   stats(S.viewStats),
   settings(S.viewSettings);
 
-  const AppView(this.word);
+  const AppView(this.word, [this.icon]);
 
   final S word;
+
+  /// Shown in place of the word on the bar (the word is its tooltip).
+  final IconData? icon;
 
   String get label => word.t;
 }
@@ -144,6 +150,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _reveal.dispose();
     unawaited(_doc?.cancel());
     widget.remote?.removeListener(_onRemote);
     _selection.dispose();
@@ -392,8 +399,7 @@ class _AppShellState extends State<AppShell> {
           : () => _browseForTimer(browsePathTo(target.$2, BrowseLevel.work)),
       onPickEpisode: target == null
           ? null
-          : () =>
-                _browseForTimer(browsePathTo(target.$2, BrowseLevel.episode)),
+          : () => _browseForTimer(browsePathTo(target.$2, BrowseLevel.episode)),
       onPickStage: target == null
           ? null
           : () => _pickTimerStage(target.$1, target.$2),
@@ -898,6 +904,16 @@ class _AppShellState extends State<AppShell> {
     if (v != _view) setState(() => _view = v);
   }
 
+  /// A unit for the list to open and bring into sight.
+  final _reveal = ValueNotifier<String?>(null);
+
+  /// The dashboard's 「go to the card」: the list, that card open.
+  void _openCard(PartGroup g) {
+    _select(AppView.list);
+    _reveal.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal.value = g.key);
+  }
+
   Widget _viewFor(AppView v, ScreenLayout layout) {
     const plans = {AppView.list, AppView.timeline, AppView.work};
     if (_loaded && _works.isEmpty && plans.contains(v)) {
@@ -936,6 +952,15 @@ class _AppShellState extends State<AppShell> {
                 : _selection.toggleUnit(u),
     );
     return switch (v) {
+      AppView.dashboard => DashboardView(
+        now: now,
+        layout: layout,
+        reader: widget.reader,
+        visible: _view == AppView.dashboard,
+        refresh: _refresh,
+        clientOf: _clientOf,
+        onOpen: _openCard,
+      ),
       AppView.list => SheetView(
         parts: shown,
         now: now,
@@ -944,6 +969,7 @@ class _AppShellState extends State<AppShell> {
         wiring: wiring,
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
+        reveal: _reveal,
       ),
       AppView.timeline => TimelineView(
         parts: shown,
@@ -1327,14 +1353,24 @@ class _ViewButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Center(
                 widthFactor: 1,
-                child: FitText(
-                  view.label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: selected ? ink : c.muted,
+                child: switch (view.icon) {
+                  final icon? => Tooltip(
+                    message: view.label,
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color: selected ? ink : c.muted,
+                    ),
                   ),
-                ),
+                  null => FitText(
+                    view.label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: selected ? ink : c.muted,
+                    ),
+                  ),
+                },
               ),
             ),
           ),

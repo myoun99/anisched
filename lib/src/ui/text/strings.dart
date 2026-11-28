@@ -67,6 +67,7 @@ Lang resolveLang(LanguageChoice choice, Iterable<Locale> device) =>
 /// `{name}` marks a value filled in by [f].
 enum S {
   // Views.
+  viewDashboard('Dashboard', 'ダッシュボード', '대시보드', 'Tableau de bord', '仪表板'),
   viewList('List', 'リスト', '목록', 'Liste', '列表'),
   viewTimeline('Timeline', 'タイムライン', '타임라인', 'Planning', '时间线'),
   viewWork('Work', '作業', '작업', 'Travail', '工作'),
@@ -87,6 +88,27 @@ enum S {
   items('{n}', '{n}件', '{n}건', '{n}', '{n}项'),
   monthLabel('{m}', '{m}月', '{m}월', '{m}', '{m}月'),
   today('Today', '今日', '오늘', "Aujourd'hui", '今天'),
+  tomorrow('Tomorrow', '明日', '내일', 'Demain', '明天'),
+  dashAsk('To do today', '今日の分', '오늘 할 컷', "À faire aujourd'hui", '今天要做'),
+  dashHanded(
+    'Handed in today',
+    '今日渡した',
+    '오늘 넘긴 컷',
+    "Rendus aujourd'hui",
+    '今天交付',
+  ),
+  dashWorked('Worked today', '今日の作業', '오늘 작업', "Travail aujourd'hui", '今天工作'),
+  dashDue('Due soon', 'もうすぐ締切', '곧 마감', 'Bientôt dus', '即将截止'),
+  dashAgenda(
+    'Today · tomorrow',
+    '今日・明日',
+    '오늘·내일',
+    "Aujourd'hui · demain",
+    '今天·明天',
+  ),
+  dashAttention('Needs a look', '要確認', '주의', 'À surveiller', '需注意'),
+  dashWeek('This week', '今週', '이번 주', 'Cette semaine', '本周'),
+  dashHandedWeek('Handed in', '渡した数', '넘긴 컷', 'Rendus', '交付数'),
 
   // Units of work.
   partTitle('Part {p}', '{p}パート', '{p}파트', 'Partie {p}', '{p}部分'),
