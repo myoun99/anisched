@@ -71,20 +71,33 @@ void main() {
     expect(settled(t, find.byType(DatePickerDialog)), isTrue);
   });
 
-  for (final size in const [Size(390, 844), Size(1440, 900)]) {
-    testWidgets('the picked-task bar has its own space at $size', (t) async {
+  // The picked-task actions sit in the app-name bar: every button on
+  // screen without a sideways scroll — words on wide screens, icons alone
+  // on a phone. The narrowest phone held upright and sideways (the bar
+  // shares the row with the view switcher there) and a desktop.
+  for (final (size, words) in const [
+    (Size(390, 844), false),
+    (Size(844, 390), false),
+    (Size(1440, 900), true),
+  ]) {
+    testWidgets('the picked-task actions fit the top bar at $size', (t) async {
       await pumpShell(t, size);
-      final bar = t.getRect(find.byKey(const Key('picked-count')));
       final rows = t.getRect(find.byKey(const Key('sheet-rows')));
-      expect(bar.bottom, lessThanOrEqualTo(rows.top));
-      final sheet = find.byKey(const Key('sheet-rows'));
-      expect(
-        find.descendant(
-          of: sheet,
-          matching: find.byKey(const Key('picked-count')),
-        ),
-        findsNothing,
-      );
+      for (final key in const [
+        'picked-count',
+        'apply-in_progress',
+        'apply-submitted',
+        'apply-done',
+        'pick-hold',
+        'pick-drop',
+        'pick-clear',
+      ]) {
+        final r = t.getRect(find.byKey(Key(key)));
+        expect(r.bottom, lessThanOrEqualTo(rows.top), reason: key);
+        expect(r.right, lessThanOrEqualTo(size.width), reason: key);
+        expect(r.left, greaterThanOrEqualTo(0), reason: key);
+      }
+      expect(find.text('제출'), words ? findsWidgets : findsNothing);
       expect(t.takeException(), isNull);
     });
   }

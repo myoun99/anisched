@@ -50,6 +50,53 @@ void main() {
     );
   });
 
+  group('day labels', () {
+    final w = ChartWindow(DateTime.utc(2026, 11, 2), 70);
+
+    test('every day while a number fits, sparser only when it does not', () {
+      expect(DayLabels(w, 20, 13).step, 1);
+      expect(DayLabels(w, 19, 13).step, 1, reason: 'just fits: kept');
+      expect(DayLabels(w, 18, 13).step, 2);
+      expect(DayLabels(w, 3, 13).step, 7);
+    });
+
+    test('numbered days stay put while the window scrolls', () {
+      final a = DayLabels(w, 9, 13);
+      final b = DayLabels(
+        ChartWindow(w.start.add(const Duration(days: 1)), 70),
+        9,
+        13,
+      );
+      for (var i = 2; i < 60; i++) {
+        expect(b.labelled(i - 1), a.labelled(i), reason: 'day $i');
+        expect(b.shaded(i - 1), a.shaded(i), reason: 'day $i');
+      }
+    });
+
+    test('a band runs from one number to the next, alternating', () {
+      final l = DayLabels(w, 10, 13); // every 2 days
+      expect(l.step, 2);
+      final firsts = [
+        for (var i = 0; i < 20; i++)
+          if (l.labelled(i)) i,
+      ];
+      for (var k = 0; k + 1 < firsts.length; k++) {
+        final band = l.shaded(firsts[k]);
+        for (var i = firsts[k]; i < firsts[k + 1]; i++) {
+          expect(l.shaded(i), band);
+        }
+        expect(l.shaded(firsts[k + 1]), isNot(band));
+      }
+      final weekly = DayLabels(w, 3, 13);
+      expect(weekly.step, 7);
+      for (var i = 1; i < 70; i++) {
+        if (weekly.labelled(i)) {
+          expect(w.dayAt(i).weekday, DateTime.monday);
+        }
+      }
+    });
+  });
+
   test('zoom stays between a week and fifteen weeks', () {
     expect(const ChartView().zoomed(3).days, ChartView.minDays);
     expect(const ChartView().zoomed(500).days, ChartView.maxDays);
@@ -82,6 +129,7 @@ void main() {
         (g) =>
             g.dueAt != null &&
             g.kickoffAt != null &&
+            !g.dueAt!.isBefore(g.kickoffAt!) &&
             w.indexOf(g.kickoffAt!) >= 0 &&
             w.indexOf(g.dueAt!) < 25,
       );
@@ -199,16 +247,20 @@ void main() {
       );
     });
 
-    testWidgets('zoom buttons and Ctrl + wheel change the days shown', (
-      t,
-    ) async {
+    testWidgets('dragging the zoom right zooms in, left zooms out', (t) async {
       await pumpTimeline(t);
-      await t.tap(find.byKey(const Key('chart-zoom-in')));
+      final zoom = find.byKey(const Key('chart-zoom'));
+      await t.drag(zoom, const Offset(ZoomDrag.stepPixels * 2 + 4, 0));
       await t.pump();
-      expect(chartView.value.days, 28);
-      await t.tap(find.byKey(const Key('chart-zoom-out')));
+      expect(chartView.value.days, 21, reason: 'two steps in from 35');
+      await t.drag(zoom, const Offset(-ZoomDrag.stepPixels * 3 - 4, 0));
       await t.pump();
-      expect(chartView.value.days, 35);
+      expect(chartView.value.days, 49, reason: 'three steps out');
+      expect(find.text('49일'), findsOneWidget);
+    });
+
+    testWidgets('Ctrl + wheel zooms the date area', (t) async {
+      await pumpTimeline(t);
       await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await t.sendEventToBinding(
         const PointerScrollEvent(
@@ -219,7 +271,40 @@ void main() {
       await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await t.pump();
       expect(chartView.value.days, 49);
-      expect(find.text('49'), findsNothing);
+    });
+
+    testWidgets('Space + drag pans, even over a bar', (t) async {
+      final store = sampleCatalogue(now);
+      final groups = store.partGroups();
+      (PartGroup, DateTime, DateTime)? moved;
+      await pumpIn(
+        t,
+        const Size(1440, 900),
+        TimelineView(
+          parts: groups,
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+          onSchedule: (g, a, b) => moved = (g, a, b),
+        ),
+      );
+      const dayWidth = (1440 - 250) / 35;
+      final withBar = groups.firstWhere(
+        (g) => g.kickoffAt != null && !g.dueAt!.isBefore(g.kickoffAt!),
+      );
+      final bar = find.byKey(Key('tl-bar-${withBar.key}'));
+      await t.sendKeyDownEvent(LogicalKeyboardKey.space);
+      await t.pump();
+      final g = await t.startGesture(
+        t.getCenter(bar),
+        kind: PointerDeviceKind.mouse,
+        buttons: kPrimaryButton,
+      );
+      await g.moveBy(const Offset(-dayWidth * 3 - 2, 0));
+      await g.up();
+      await t.sendKeyUpEvent(LogicalKeyboardKey.space);
+      await t.pump();
+      expect(chartView.value.shift, 3);
+      expect(moved, isNull, reason: 'the bar did not move');
     });
 
     testWidgets('a pinch zooms', (t) async {
@@ -240,7 +325,10 @@ void main() {
     testWidgets('dragging a bar end redraws only the preview layer', (t) async {
       final store = sampleCatalogue(now);
       final g = store.partGroups().firstWhere(
-        (g) => g.dueAt != null && g.kickoffAt != null,
+        (g) =>
+            g.dueAt != null &&
+            g.kickoffAt != null &&
+            !g.dueAt!.isBefore(g.kickoffAt!),
       );
       await pumpIn(
         t,

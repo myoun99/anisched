@@ -56,11 +56,11 @@ void main() {
     await t.tap(find.byKey(const Key('role-작감')));
     await t.pump();
     final lo = find.descendant(
-      of: find.byKey(const Key('stage-LO 작감 수정')),
+      of: find.byKey(const Key('stage-LO/작감')),
       matching: find.byType(Checkbox),
     );
     expect(t.widget<Checkbox>(lo).value, isTrue);
-    await t.tap(find.byKey(const Key('stage-LO 작감 수정')));
+    await t.tap(find.byKey(const Key('stage-LO/작감')));
     await t.pump();
     expect(t.widget<Checkbox>(lo).value, isFalse);
   });
@@ -113,7 +113,8 @@ void main() {
     await t.pump();
     await t.pump();
     final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
-    final ep = store.episodes(work.id).firstWhere((e) => e.number == '#99');
+    // Typed 「#99」: the 「#」 is display only.
+    final ep = store.episodes(work.id).firstWhere((e) => e.number == '99');
     final numbers = store.cuts(ep.id).map((c) => c.number).toSet();
     expect(numbers.length, 8);
     expect(numbers, contains('BANK1'));

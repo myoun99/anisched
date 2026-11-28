@@ -34,7 +34,9 @@ enum DueTone { none, quiet, late }
 
 /// [dueLabel] from days already counted (negative = late, null = none).
 ({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
-  if (days == null || status == TaskStatus.done) {
+  // Handed in: no deadline to watch any more. Done but not handed in still
+  // counts down — it has yet to go.
+  if (days == null || status.isHanded) {
     return (text: '—', tone: DueTone.none);
   }
   final text = days < 0
@@ -103,6 +105,20 @@ String groupTitle(PartGroup g) => switch (g.kind) {
 /// 「4컷」 for cuts, 「1건」 for a storyboard.
 String groupCount(PartGroup g) =>
     g.kind == GroupKind.storyboard ? S.items.f({'n': 1}) : '${g.total} cut';
+
+/// An episode as the screens show it: a number gets a 「#」 (#07), the way
+/// a cut gets its C; a name (극장판, MV) stays as it is. Display only — the
+/// stored number has no 「#」.
+String episodeLabel(String number) {
+  final n = number.trim();
+  return RegExp(r'^\d+$').hasMatch(n) ? '#$n' : n;
+}
+
+/// What to store for an episode the user typed: 「#07」 is 07.
+String episodeNumberOf(String typed) {
+  final n = typed.trim();
+  return RegExp(r'^#\d+$').hasMatch(n) ? n.substring(1) : n;
+}
 
 /// A task's own name: its cut number or storyboard label.
 String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';

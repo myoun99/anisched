@@ -5,6 +5,7 @@ import '../../models/lanes.dart';
 import '../../models/progress.dart';
 import '../format.dart';
 import '../theme.dart';
+import '../instant.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import 'chart.dart';
@@ -24,7 +25,20 @@ class WorkView extends StatefulWidget {
     this.onPin,
     this.onClearPins,
     this.onPlan,
+    this.laneNames = const [],
+    this.onAddLane,
+    this.onEditLane,
   });
+
+  /// The user's lane names (null = the number).
+  final List<String?> laneNames;
+
+  /// Adds a lane at the bottom (the header's +).
+  final VoidCallback? onAddLane;
+
+  /// A lane's edit window answered: a new name (blank = number), or
+  /// removal.
+  final void Function(int lane, {String? name, bool remove})? onEditLane;
 
   /// The data lane's layout (basis: work); null while loading.
   final LaneLayout? lanes;
@@ -111,15 +125,7 @@ class _WorkViewState extends State<WorkView> {
                     ),
                   ),
                 ),
-              ChartPager(
-                onShift: (d) => chartView.value = chartView.value.scrolled(d),
-                onToday: () =>
-                    chartView.value = ChartView(days: chartView.value.days),
-                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
-                  window.days,
-                  zoomIn: zoomIn,
-                ),
-              ),
+              ChartPager(days: window.days),
             ],
           ),
           Expanded(
@@ -132,6 +138,7 @@ class _WorkViewState extends State<WorkView> {
                 restWeekdays: widget.restWeekdays,
                 labelWidth: _labelWidth,
                 rowCount: rowCount,
+                corner: _corner(context),
                 label: (context, r) => _laneLabel(context, lanes!, r),
                 bars: (context, r) => [
                   for (final s in lanes!.spans)
@@ -161,15 +168,50 @@ class _WorkViewState extends State<WorkView> {
     );
   }
 
+  /// 「라인」 over the lane labels, with + to add one.
+  Widget _corner(BuildContext context) {
+    final c = AppColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              S.laneHead.t,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: c.muted),
+            ),
+          ),
+          if (widget.onAddLane != null)
+            IconButton(
+              key: const Key('lane-add'),
+              tooltip: S.addLane.t,
+              onPressed: widget.onAddLane,
+              icon: const Icon(Icons.add, size: 18),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+              padding: EdgeInsets.zero,
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _laneName(int r) =>
+      widget.laneNames.elementAtOrNull(r) ?? S.laneN.f({'n': r + 1});
+
   Widget _laneLabel(BuildContext context, LaneLayout lanes, int r) {
     final over = r >= lanes.lanes;
     final red = Theme.of(context).colorScheme.error;
-    return Align(
+    final label = Align(
       alignment: Alignment.centerLeft,
       child: Padding(
-        padding: const EdgeInsets.only(left: 10),
+        padding: const EdgeInsets.only(left: 10, right: 4),
         child: Text(
-          over ? S.overflow.t : S.laneN.f({'n': r + 1}),
+          over ? S.overflow.t : _laneName(r),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -178,6 +220,65 @@ class _WorkViewState extends State<WorkView> {
         ),
       ),
     );
+    final edit = widget.onEditLane;
+    if (over || edit == null) return label;
+    // A long press opens the lane's edit window.
+    return InkWell(
+      key: Key('lane-label-$r'),
+      onLongPress: () => _editLane(context, r, lanes.lanes, edit),
+      child: label,
+    );
+  }
+
+  Future<void> _editLane(
+    BuildContext context,
+    int r,
+    int count,
+    void Function(int lane, {String? name, bool remove}) edit,
+  ) async {
+    final name = TextEditingController(
+      text: widget.laneNames.elementAtOrNull(r) ?? '',
+    );
+    final answer = await showInstantDialog<({String? name, bool remove})>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(S.laneN.f({'n': r + 1})),
+        content: TextField(
+          key: const Key('lane-name'),
+          controller: name,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: S.name.t,
+            hintText: S.laneN.f({'n': r + 1}),
+          ),
+          onSubmitted: (v) =>
+              Navigator.of(context).pop((name: v, remove: false)),
+        ),
+        actions: [
+          TextButton.icon(
+            key: const Key('lane-delete'),
+            onPressed: count <= 1
+                ? null
+                : () => Navigator.of(context).pop((name: null, remove: true)),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: Text(S.deleteLane.t),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(S.cancel.t),
+          ),
+          FilledButton(
+            key: const Key('lane-ok'),
+            onPressed: () =>
+                Navigator.of(context).pop((name: name.text, remove: false)),
+            child: Text(S.ok.t),
+          ),
+        ],
+      ),
+    );
+    name.dispose();
+    if (answer == null) return;
+    edit(r, name: answer.name, remove: answer.remove);
   }
 
   Widget _bar(
@@ -228,5 +329,5 @@ class _WorkViewState extends State<WorkView> {
 
 /// 「별빛 정류장 #07 · 원화 · 4 cut」.
 String workBarLabel(PartGroup g) =>
-    '${g.workTitle} ${g.episodeNumber} · ${g.stageName} · '
+    '${g.workTitle} ${episodeLabel(g.episodeNumber)} · ${g.stageName} · '
     '${g.kind == GroupKind.storyboard ? groupCount(g) : '${g.total} cut'}';

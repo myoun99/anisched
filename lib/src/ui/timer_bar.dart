@@ -106,7 +106,7 @@ class _TimerBarState extends State<TimerBar> {
                       if (g != null)
                         TextSpan(
                           text:
-                              '  ${g.workTitle} ${g.episodeNumber} · '
+                              '  ${g.workTitle} ${episodeLabel(g.episodeNumber)} · '
                               '${g.stageName}',
                           style: TextStyle(
                             fontWeight: FontWeight.normal,

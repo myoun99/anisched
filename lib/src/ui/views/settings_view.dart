@@ -97,6 +97,7 @@ class _SettingsViewState extends State<SettingsView> {
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
+      title: S.daysOff.t,
     );
     if (r == null || !mounted) return;
     _set((s) => s.addDaysOff(r.start, end: r.end));
@@ -107,7 +108,6 @@ class _SettingsViewState extends State<SettingsView> {
     final c = AppColors.of(context);
     final s = widget.store?.settings;
     final rest = s?.restWeekdays ?? {DateTime.saturday, DateTime.sunday};
-    final lanes = s?.parallelLanes ?? 2;
     final dayStart = s?.dayStartMinutes ?? 0;
     final rounding = s?.secondsRounding ?? SecondsRounding.nearest;
     final off = widget.store?.daysOff() ?? const [];
@@ -229,21 +229,7 @@ class _SettingsViewState extends State<SettingsView> {
       icon: Icons.view_timeline_outlined,
       title: S.viewWork.t,
       children: [
-        _Field(
-          icon: Icons.layers_outlined,
-          label: S.lanes.t,
-          child: _FillRow(
-            children: [
-              for (var n = 1; n <= 4; n++)
-                SegmentButton(
-                  key: Key('lanes-$n'),
-                  label: '$n',
-                  selected: lanes == n,
-                  onTap: () => _set((st) => st.settings.parallelLanes = n),
-                ),
-            ],
-          ),
-        ),
+        // Lanes are added and named in the work tab's header now.
         _Field(
           icon: Icons.wb_twilight_outlined,
           label: S.dayStart.t,

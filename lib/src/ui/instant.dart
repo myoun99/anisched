@@ -18,12 +18,14 @@ Future<DateTime?> showInstantDatePicker({
   required DateTime firstDate,
   required DateTime lastDate,
   DateTime? initialDate,
+  String? title,
 }) => showInstantDialog<DateTime>(
   context: context,
   builder: (_) => DatePickerDialog(
     firstDate: firstDate,
     lastDate: lastDate,
     initialDate: initialDate,
+    helpText: title,
   ),
 );
 
@@ -32,10 +34,14 @@ Future<DateTimeRange?> showInstantDateRangePicker({
   required BuildContext context,
   required DateTime firstDate,
   required DateTime lastDate,
+  String? title,
 }) => showInstantDialog<DateTimeRange>(
   context: context,
-  builder: (_) =>
-      DateRangePickerDialog(firstDate: firstDate, lastDate: lastDate),
+  builder: (_) => DateRangePickerDialog(
+    firstDate: firstDate,
+    lastDate: lastDate,
+    helpText: title,
+  ),
 );
 
 /// Every text field ends editing when the user taps anywhere outside it

@@ -97,7 +97,7 @@ CatalogueStore sampleCatalogue(DateTime now) {
 
   final riko = store.createWork('마법소녀 리코');
   final riko11 = store.addEpisode(riko, '#11');
-  part(riko, riko11, 'B', '원화 작감 수정', 1, const Rate(RateUnit.fixed, 2000), [
+  part(riko, riko11, 'B', '원화/작감', 1, const Rate(RateUnit.fixed, 2000), [
     ('C108', s, 1, '3+18', null),
     ('C109', t, 2, '2+00', -1),
     ('C110', d, 1, '1+00', null),
