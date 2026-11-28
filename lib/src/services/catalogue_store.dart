@@ -2892,9 +2892,8 @@ GROUP BY s.name;''',
   /// Nothing is hidden for a later planned start — such entries carry
   /// `beforePlan` so the view can dim them ("starts 12/7").
   /// Sorted by days left (no deadline last), then urgency.
-  /// Each entry carries its [Pace]. `late` counts late groups plus late
-  /// cuts whose own deadline overrides their part's — only those with
-  /// work left ([PartGroup.hasWork]).
+  /// Each entry carries its [Pace]. `late` counts late open groups plus
+  /// late open cuts whose own deadline overrides their part's.
   /// `cutsToday` sums what every open group asks of today — not only the
   /// listed ones — so overlapping parts add up.
   TodayView today({int horizonDays = 4}) {
@@ -2920,9 +2919,9 @@ GROUP BY s.name;''',
     for (final g in groups) {
       final status = g.status;
       final days = left(g.dueAt);
-      if (g.hasWork && days != null && days < 0) late++;
+      if (status.isOpen && days != null && days < 0) late++;
       for (final t in g.tasks) {
-        if (t.dueOverridden && t.status.needsWork) {
+        if (t.dueOverridden && t.isOpen) {
           final d = left(t.ownDueAt);
           if (d != null && d < 0) late++;
         }
@@ -2990,9 +2989,8 @@ GROUP BY s.name;''',
     for (final g in groups) {
       if (!g.status.isOpen) continue;
       final due = g.dueAt;
-      final hasWork = g.hasWork;
       final days = due == null ? null : dueInDays(due, now, dayStart);
-      if (hasWork && days != null && days <= dueWithinDays) {
+      if (days != null && days <= dueWithinDays) {
         dueSoon.add(
           DashboardDue(group: g, daysLeft: days, pace: signals[g.key]?.pace),
         );
