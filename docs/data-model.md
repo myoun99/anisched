@@ -32,7 +32,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v11)
+## 구조 (v12)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -194,6 +194,23 @@
   ⇒ **목록용 / 상세용 쿼리로 나눠도 얻는 게 없음.** 비용은 행 수(쌓이는 완료 이력)에 비례.
 - 줄이는 길: ① 보기 목록에서 오래된 완료분을 빼는 범위 조건(예: 완료 후 N일 지난 묶음 제외)
   ② 읽기를 백그라운드 isolate 로(보고 13 제안). 실사용 규모(손에 든 일 수백 건)에선 둘 다 아직 불필요.
+
+## 마감 차수 (v12, 유저 2026-11-28)
+
+- 마감은 여러 번: 상담해서 늘리면 **1차 → 2차 …**. `due_revisions` 가 파트×공정 마감과 작업(컷 덮어쓰기·콘티) 마감의 차수를 전부 기록(날짜 · 만든 시각).
+- **지금 마감 = 마지막 차수**. 기존 `part_stage_dues.due_at` · `tasks.due_at` 는 그 값을 그대로 들고 있어(스토어가 맞춰 둠) D-day · 신호 · 하루 몇 컷 · 달력이 전부 그대로 돈다.
+- API(`DueTarget.part(partId, stageId)` / `DueTarget.task(taskId)`): `extendDue`(새 차수 — 마감을 눌러 바꿀 때) · `editDueRevision(n, 날짜)`(1차 자체 고치기 등) · `removeDueRevision(n)`(뒤 차수 번호 당김) · `dueRevisions`(리더에도).
+  `setPartDue` / `setTaskDue` 는 **지금 차수 고치기**(없으면 1차 만들기), `setTaskDue(null)` · `clearPartDue` 는 차수 전부 삭제.
+- 컷 자체 마감은 파트 차수를 잇는다: 파트 1차 뒤 컷 덮어쓰기 = 그 컷의 2차(`TaskRow.dueRevision`, `firstDueAt` = 파트 1차). `PartGroup.dueRevision` · `firstDueAt`.
+- 기존 마감은 v12 에서 1차가 됨.
+- 통계: `lateness`(제출 때 마감 = 그때 최신 차수) + `latenessFirst`(1차 기준) · `onTimeFirst`/`lateFirst` · `extensions`(연장 횟수→컷) · `extendedDays`(늘어난 작업일→컷).
+
+## 대기 (v12, 유저 2026-11-28)
+
+- 「작업 가능」은 **대기 하나로**(의존 규칙·착수 조건 없음). 상태 5단계와 별개 축 — 대기 중에도 상태는 그대로.
+- 파트×공정에 걸면(`setPartWaiting(part, stage, waiting:, reason:, until:)`, 사유·예상일 선택) 그 컷 전부. 컷별 덮어쓰기(`setTaskWaiting` · 일괄 `setWaitingMany` 한 트랜잭션 · 파트 따르기로 되돌림 `followPartWaiting`) — 마감과 같은 패턴.
+- **보유 = 열린 컷 중 대기 아닌 것**(`TaskRow.inHand`, `PartGroup.inHand`, 전체 `holding()` → `(inHand, waiting)`, 리더에도). 대기 수는 `PartGroup.waiting`.
+- **하루 몇 컷엔 대기 컷도 넣는다**(마감은 그대로 — 해야 할 양). `paceFor` 는 바뀌지 않음.
 
 ## 타이머 = 작업 시간 기록 (유저 2026-11-27)
 

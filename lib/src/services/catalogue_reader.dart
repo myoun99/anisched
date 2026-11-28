@@ -57,6 +57,12 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.runningTimer].
   Future<WorkInterval?> runningTimer();
 
+  /// See [CatalogueStore.dueRevisions].
+  Future<List<DueRevision>> dueRevisions(DueTarget target);
+
+  /// See [CatalogueStore.holding].
+  Future<({int inHand, int waiting})> holding();
+
   /// See [CatalogueStore.stats].
   Future<Stats> stats({
     required DateTime from,
@@ -171,6 +177,13 @@ class SyncCatalogueReader implements CatalogueReader {
 
   @override
   Future<WorkInterval?> runningTimer() => _run(store.runningTimer);
+
+  @override
+  Future<List<DueRevision>> dueRevisions(DueTarget target) =>
+      _run(() => store.dueRevisions(target));
+
+  @override
+  Future<({int inHand, int waiting})> holding() => _run(store.holding);
 
   @override
   Future<Stats> stats({
@@ -416,6 +429,13 @@ class BackgroundCatalogueReader implements CatalogueReader {
 
   @override
   Future<WorkInterval?> runningTimer() => _ask((s) => s.runningTimer());
+
+  @override
+  Future<List<DueRevision>> dueRevisions(DueTarget target) =>
+      _ask((s) => s.dueRevisions(target));
+
+  @override
+  Future<({int inHand, int waiting})> holding() => _ask((s) => s.holding());
 
   @override
   Future<Stats> stats({

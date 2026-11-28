@@ -52,6 +52,16 @@ class TaskRow {
     this.sharedLabel,
     this.pay,
     this.worked = Duration.zero,
+    this.ownDueRevisions = 0,
+    this.partDueRevisions = 0,
+    this.ownFirstDueAt,
+    this.partFirstDueAt,
+    this.ownWaitState,
+    this.ownWaitReason,
+    this.ownWaitUntil,
+    this.partWaiting = false,
+    this.partWaitReason,
+    this.partWaitUntil,
   });
 
   final int id;
@@ -114,6 +124,56 @@ class TaskRow {
 
   /// The deadline that applies: the task's own, else its part's.
   DateTime? get dueAt => ownDueAt ?? partDueAt;
+
+  /// How many revisions the task's own deadline and its part's have
+  /// (1st, 2nd … — see [CatalogueStore.extendDue]).
+  final int ownDueRevisions;
+  final int partDueRevisions;
+
+  /// Revision 1 of each.
+  final DateTime? ownFirstDueAt;
+  final DateTime? partFirstDueAt;
+
+  /// Which revision [dueAt] is: a cut's own deadline continues its part's
+  /// (part 1st → the cut's own = 2nd), 0 with no deadline.
+  int get dueRevision => dueAt == null
+      ? 0
+      : ownDueAt != null
+      ? ownDueRevisions + (partId != null ? partDueRevisions : 0)
+      : partDueRevisions;
+
+  /// The first deadline ever given: the part's revision 1, else the task's.
+  DateTime? get firstDueAt => partFirstDueAt ?? ownFirstDueAt ?? dueAt;
+
+  /// Times the deadline was extended (revisions after the first).
+  int get dueExtensions => dueRevision > 1 ? dueRevision - 1 : 0;
+
+  /// The task's own waiting override: 1 waiting, 0 not, null = follow the
+  /// part × stage.
+  final int? ownWaitState;
+  final String? ownWaitReason;
+  final DateTime? ownWaitUntil;
+
+  /// The part × stage is on hold.
+  final bool partWaiting;
+  final String? partWaitReason;
+  final DateTime? partWaitUntil;
+
+  /// On hold (대기): not yet workable — not counted as in hand, still
+  /// counted in the daily pace (the deadline does not move).
+  bool get waiting => ownWaitState == null ? partWaiting : ownWaitState == 1;
+
+  /// True when [waiting] comes from the part × stage.
+  bool get waitingFromPart => ownWaitState == null && partWaiting;
+
+  /// Why, and until when it is expected (both optional).
+  String? get waitReason =>
+      ownWaitState == null ? partWaitReason : ownWaitReason;
+  DateTime? get waitUntil =>
+      ownWaitState == null ? partWaitUntil : ownWaitUntil;
+
+  /// In the user's hands: open and not waiting.
+  bool get inHand => status.isOpen && !waiting;
 
   /// True when [dueAt] is the part's deadline (the task set none).
   bool get dueFromPart => ownDueAt == null && partDueAt != null;
@@ -198,6 +258,30 @@ enum GroupKind {
 }
 
 /// The name the views use for a schedule unit.
+/// Where a deadline lives: a part × stage, or one task's own (a cut's
+/// override, a storyboard task).
+class DueTarget {
+  const DueTarget.part(int this.partId, int this.stageId) : taskId = null;
+  const DueTarget.task(int this.taskId) : partId = null, stageId = null;
+
+  final int? partId;
+  final int? stageId;
+  final int? taskId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DueTarget &&
+      other.partId == partId &&
+      other.stageId == stageId &&
+      other.taskId == taskId;
+
+  @override
+  int get hashCode => Object.hash(partId, stageId, taskId);
+}
+
+/// One revision of a deadline: 1 = the first, 2 = after one extension …
+typedef DueRevision = ({int revision, DateTime dueAt, DateTime createdAt});
+
 typedef PartStageRow = PartGroup;
 
 /// A schedule unit: a part × stage with its cut tasks, the part-less cuts
@@ -245,6 +329,34 @@ class PartGroup {
 
   /// Tasks submitted or done — the 3 in "3/6".
   int get handed => tasks.where((t) => t.status.isHanded).length;
+
+  /// Open cuts in hand (not waiting) — the 「보유」 count.
+  int get inHand => tasks.where((t) => t.inHand).length;
+
+  /// Open cuts on hold.
+  int get waiting => tasks.where((t) => t.status.isOpen && t.waiting).length;
+
+  /// The part × stage itself is on hold (cuts may override).
+  bool get partWaiting => _first.partWaiting;
+  String? get partWaitReason => _first.partWaitReason;
+  DateTime? get partWaitUntil => _first.partWaitUntil;
+
+  /// Which revision the group's deadline is (1st, 2nd …), 0 with none.
+  int get dueRevision => switch (kind) {
+    GroupKind.part => _first.partDueAt == null ? 0 : _first.partDueRevisions,
+    GroupKind.storyboard => _first.dueRevision,
+    GroupKind.noPart => tasks.fold(
+      0,
+      (m, t) => t.dueRevision > m ? t.dueRevision : m,
+    ),
+  };
+
+  /// The group's first deadline (revision 1).
+  DateTime? get firstDueAt => switch (kind) {
+    GroupKind.part => _first.partFirstDueAt ?? _first.partDueAt,
+    GroupKind.storyboard => _first.firstDueAt,
+    GroupKind.noPart => _earliest(tasks.map((t) => t.firstDueAt)),
+  };
 
   TaskStatus get status => deriveStatus(counts);
 
