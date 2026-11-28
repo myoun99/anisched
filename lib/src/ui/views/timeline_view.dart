@@ -150,7 +150,7 @@ class _TimelineViewState extends State<TimelineView> {
     final start = g.kickoffAt;
     final end = g.dueAt;
     if (start == null || end == null || end.isBefore(start)) return const [];
-    final handed = !g.status.isOpen || g.status == TaskStatus.submitted;
+    final handed = !g.status.isOpen; // submitted or done
     final onSchedule = widget.onSchedule;
     return [
       ChartBar(
