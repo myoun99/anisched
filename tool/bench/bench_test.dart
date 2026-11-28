@@ -133,14 +133,28 @@ void main() {
       );
     }
     rows.add(('start: open + reader + first partGroups', median(start)));
+    final boot = <double>[];
+    for (var i = 0; i < 3; i++) {
+      boot.add(
+        await timeAsync(() async {
+          db = openAppDatabase(path);
+          final reader = await BackgroundCatalogueReader.open(path, writer: db);
+          await reader.close();
+          db.close();
+        }),
+      );
+    }
+    rows.add((
+      'start: open + reader ready (before the first frame)',
+      median(boot),
+    ));
     db = openAppDatabase(path);
     store = CatalogueStore(db, clock: () => now);
     final reader = await BackgroundCatalogueReader.open(path, writer: db);
     rows.add((
       'reader partGroups (isolate round trip)',
       median([
-        for (var i = 0; i < runs; i++)
-          await timeAsync(reader.partGroups),
+        for (var i = 0; i < runs; i++) await timeAsync(reader.partGroups),
       ]),
     ));
     await reader.close();

@@ -97,3 +97,60 @@
 `core < models < services < controllers` — 안쪽만 import. `platform/` 은 services 위 · ui 아래, flutter 는
 `services` · `foundation` 까지. 이 다섯 층은 `ui/` · material · widgets · cupertino 를 import 하지 않는다.
 예외 장부는 0개로 시작(`test/architecture/import_direction_test.dart` 의 `_ledger`).
+
+## 2회차 (2026-11-28) — 성능을 숫자로 + 정리
+
+측정: `flutter test tool/bench/bench_test.dart`(테스트 스위트 밖). 합성 문서 = 작품 20 × 화 5 × 파트 4 × 컷 25 = **컷 1만 · 작업 2만**
+(LO · 원화), 상태 섞음 · 타이머 구간 5천 · 이벤트 · 쉬는 날. 파일 DB(WAL), 5회 중앙값, 컨테이너(실행마다 ±15% 흔들림).
+
+| 측정 | 전 (ms) | 후 (ms) | 무엇을 |
+|---|---:|---:|---|
+| taskRows (기본 목록) | 549 | 291 | 제출 작업마다 하던 상관 검색 → 열린 묶음을 CTE 로 한 번 |
+| partGroups | 503 | 298 | 〃 |
+| calendarLayout | 568 | 322 | 〃 |
+| today | 663 | 382 | 〃 |
+| signals | 604 | 361 | 〃 |
+| stats (1년 · 월별) | 2521 | 473 | 작업일 변환 캐시 · 2벌 만들던 날짜 줄이기 · 계획 동시 진행 = 스윕 · 사실을 이번/직전 기간에 한 번만 읽기 |
+| **날짜 쓰기 1회 (자리 굳힘 포함)** | **571** | **23** | `holdPlaces` 전에 싼 확인 쿼리 — 다 굳어 있으면 건너뜀 |
+| 날짜 쓰기, 처음(굳힐 것 있음) | 623 | 335 | taskRows 개선 몫 |
+| 저장 (VACUUM INTO) | 51 | 44 | — |
+| 열기 (검사 · 이행 · 행 교체) | 404 | 408 | — (대부분 SQLite 안 INSERT SELECT) |
+| 시작: DB + 리더 준비(첫 프레임 전) | — | 2 | 첫 프레임을 막는 데이터 작업 없음 |
+| 시작: + 첫 partGroups(리더) | 696 | 427 | taskRows 개선 몫 |
+| 리더 partGroups(isolate 왕복) | 670 | 410 | 〃 — 메인 isolate 가 아니라 리더에서 |
+
+- 인덱스: 쿼리 계획(EXPLAIN QUERY PLAN)상 남은 검색은 모두 인덱스/자동 인덱스 — 새 인덱스 불필요.
+- N+1: 없음(목록은 쿼리 한 번 + 설정 읽기). 통계가 같은 목록을 두 번 읽던 것 하나 → 한 번.
+- 무거운 계산 위치: 화면 읽기는 전부 리더 isolate. 메인 isolate 에 남은 것은 쓰기뿐이고, 그중 자리 굳힘이 이번에 23ms 로.
+
+### 손 뮤테이션 (이번에 바꾼 곳)
+
+| 뮤턴트 | 1차 | 처리 |
+|---|---|---|
+| 자리 확인 SQL 의 그룹 키 모양 바꾸기 | 잡힘 | `placesHeld` 테스트(키가 `TaskRow.groupKey` 와 같아야 굳힘 후 true) |
+| 계획 스윕: 끝 다음 날 −1 → 끝 날 | 생존 | 보강 — 범위 앞/뒤로 걸친 계획 · 끝 날 포함(`rules_edges_test`) |
+| 계획 스윕: 범위 밖 계획 건너뛰기 빼기 | 생존 | 〃 |
+| 계획 스윕: 앞에서 시작한 계획 0 으로 자르기 | 생존 | 〃 |
+| `workDayOf`: 하루 시작 전 → 전날 빼기 | 생존 | 보강 — 4:59 / 5:00 경계 |
+| 「굳히기 끄기」(날짜 쓰기 전 holdPlaces 안 부름) | 잡힘 | 라인 · 행 순서 테스트 |
+
+2차: 5개 모두 잡힘.
+
+### 인지 복잡도 15 초과 (경고 — 게이트 아님)
+
+| 함수 | 전 | 후 | 판단 |
+|---|---:|---:|---|
+| `models/stats.dart` `computeStats` | 126 | 단계 함수로 — `timer` 24 · `days` 23 · `_handed` 16 | 나눔: 사실 · 제출 · 완료 · 시급 · 타이머 · 하루 · 정렬이 각자 이름을 가짐 |
+| `models/lanes.dart` `layoutLanes` | 38 | 50 | 유지 — 겹침 표시가 더해짐, 지역 함수로 이미 나뉨 |
+| `controllers/registration.dart` `register` | 49 | 49 | 유지(1회차 판단) |
+| `services/schema.dart` `_v16NumbersAsValues` | — | 38 | 유지 — 한 번 돌고 끝나는 이행, 리터럴 사본 규칙상 묶어 둠 |
+| `services/catalogue_store.dart` `today` | 37 | 36 | 유지 |
+| `models/holidays.dart` `_korea` · `_japan` | — | 33 · 24 | 유지 — 법 조문 순서대로 읽히는 편이 낫다 |
+| `models/progress.dart` `groupRows` | 28 | 28 | 유지 |
+
+### 정리 · 감사
+
+- 테스트: 전체 395 → 403(경계 보강 +3 · 자리 확인 +0(기존 테스트에 덧붙임) · 기타 이번 라운드 기능 테스트). 가장 느린 테스트 0.46초(리더 대조, 실 isolate) — 데이터 양이 아니라 법 때문이라 유지.
+- 중복 핀: 새로 넣은 테스트는 각자 가장 싼 층 하나(스윕 경계 = 순수 함수, 자리 확인 = 스토어).
+- 안 쓰는 API: 앱에서 아직 안 부르는 스토어 쓰기 API(이름 바꾸기 · 프리셋 · 역할 · 단가 등)는 1회차 결정대로 UI 연결 대기 — 유지.
+- 조사용 임시 프로브는 지움. 벤치는 `tool/bench/` 에 남김(다시 돌릴 수 있게).
