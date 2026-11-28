@@ -30,7 +30,7 @@ void main() {
   setUp(() {
     db = openAppDatabase(':memory:');
     store = CatalogueStore(db, clock: () => now);
-    final client = store.addClient('회사');
+    final client = store.addClient('회사', color: 0xFF336699);
     final work = store.createWork('작품', clientId: client);
     final lo = store.stages(work).firstWhere((s) => s.name == 'LO').id;
     final ep = store.addEpisode(work, '1');
@@ -62,21 +62,26 @@ void main() {
     final client = only(root);
     final work = only(client);
     final episode = only(work);
-    final partNode = only(episode);
-    expect([client, work, episode, partNode].map((n) => (n.kind, n.label)), [
-      (StatsNodeKind.client, '회사'),
-      (StatsNodeKind.work, '작품'),
-      (StatsNodeKind.episode, '#01'),
-      (StatsNodeKind.part, 'A'),
+    final unit = only(episode);
+    expect([client, work, episode, unit].map((n) => (n.level, n.label)), [
+      (StatsLevel.client, '회사'),
+      (StatsLevel.work, '작품'),
+      (StatsLevel.episode, '#01'),
+      (StatsLevel.unit, 'A'),
     ]);
-    expect(partNode.id, part);
-    expect(partNode.children.map((c) => c.label), ['C001', 'C002', 'C003']);
-    final leaf = partNode.children.first;
-    expect(leaf.kind, StatsNodeKind.cut);
-    final lo = leaf.stages['LO']!;
+    expect((client.clientColor, unit.clientColor), (0xFF336699, 0xFF336699));
+    expect(unit.key, startsWith('unit:part:$part:'));
+    expect(unit.stageName, 'LO');
+    expect((root.dueKept, root.dueTotal, root.retakes), (1, 1, 0));
+    expect(root.payByCurrency, root.earned);
+    expect(unit.children.map((c) => c.label), ['C001', 'C002', 'C003']);
+    final leaf = unit.children.first;
+    expect(leaf.level, StatsLevel.cut);
+    expect(leaf.key, startsWith('cut:'));
+    expect(leaf.workedByStage, {'LO': const Duration(hours: 2)});
     expect(
-      (lo.worked, lo.intervals, lo.take, lo.pay, lo.status),
-      (const Duration(hours: 2), 1, 1, 1000, TaskStatus.submitted),
+      (leaf.intervals, leaf.retakeRound, leaf.taskPay, leaf.status),
+      (1, 1, 1000, TaskStatus.submitted),
     );
   });
 
@@ -103,7 +108,7 @@ void main() {
     final root = store.statsTree(from: from, to: to);
     expect(root.worked, const Duration(hours: 2)); // 1 h at the edge + 1 h
     final leaves = only(only(only(only(root)))).children;
-    expect(leaves.map((c) => c.stages['LO']!.intervals), [1, 0, 1]);
+    expect(leaves.map((c) => c.intervals), [1, 0, 1]);
     expect(leaves.first.worked, const Duration(hours: 1));
     expect(root.firstWorkAt, DateTime(2026, 11).toUtc());
   });
