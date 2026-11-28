@@ -334,6 +334,26 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       });
     });
 
+    test('rows carry their stage\'s place in the work\'s list', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#1');
+      final c = store.addCut(ep, 'C1');
+      final lo = stageId(w, 'LO');
+      final key = stageId(w, '원화');
+      store
+        ..addTask(lo, cutId: c)
+        ..addTask(key, cutId: c);
+      Map<String, int> places() => {
+        for (final g in store.partGroups()) g.stageName: g.stagePosition,
+      };
+      expect(places()['LO']! < places()['원화']!, isTrue);
+      final order = [for (final s in store.stages(w)) s.id]
+        ..remove(key)
+        ..insert(0, key);
+      store.reorderStages(w, order);
+      expect(places()['원화']! < places()['LO']!, isTrue);
+    });
+
     test('numbers are stored as values and shown in the current style', () {
       final w = store.createWork('작품A');
       final ep = store.addEpisode(w, '#7');
