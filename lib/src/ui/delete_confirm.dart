@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import '../models/catalogue.dart';
@@ -5,6 +6,7 @@ import 'format.dart';
 import 'instant.dart';
 import 'text/strings.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Asks before deleting for good (완전 삭제): what goes — the cuts, the
 /// episodes and titles left empty, the timer time on them — and that it
@@ -23,10 +25,14 @@ Future<bool?> confirmDelete(BuildContext context, DeletionSummary sum) =>
         return AlertDialog(
           key: const Key('delete-confirm'),
           scrollable: true,
-          icon: Icon(Icons.delete_outline, color: danger),
-          title: Text(S.deleteAsk.t),
+          title: DialogTitle(
+            Icons.delete_outline,
+            S.deleteAsk.t,
+            color: danger,
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 6,
             children: [
               Text(

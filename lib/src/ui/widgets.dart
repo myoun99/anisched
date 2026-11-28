@@ -461,3 +461,22 @@ class MenuLine extends StatelessWidget {
     );
   }
 }
+
+/// A dialog's title: its icon, then its words, from the left like every
+/// name (the buttons sit on the right).
+class DialogTitle extends StatelessWidget {
+  const DialogTitle(this.icon, this.text, {super.key, this.color});
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    spacing: 8,
+    children: [
+      Icon(icon, color: color),
+      Flexible(child: Text(text)),
+    ],
+  );
+}

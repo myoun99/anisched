@@ -3,6 +3,7 @@
 /// removes one.
 library;
 
+
 import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
@@ -10,6 +11,7 @@ import 'format.dart';
 import 'instant.dart';
 import 'text/strings.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// What the window answers: the event to save, or its removal.
 sealed class EventAnswer {
@@ -109,13 +111,7 @@ class _EventEditorState extends State<_EventEditor> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return AlertDialog(
-      title: Row(
-        spacing: 8,
-        children: [
-          const Icon(Icons.event_note_outlined),
-          Text(formatDate(widget.day)),
-        ],
-      ),
+      title: DialogTitle(Icons.event_note_outlined, formatDate(widget.day)),
       content: SizedBox(
         width: 360,
         child: Column(

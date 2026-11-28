@@ -1197,7 +1197,7 @@ class _TopBar extends StatelessWidget {
     this.undo,
   });
 
-  /// ↶ ↷ beside the document's menu, picking or not.
+  /// ↶ ↷ on the right, before the actions when picking.
   final Widget? undo;
 
   /// Something is picked: the actions show (only then; with nothing picked
@@ -1232,22 +1232,36 @@ class _TopBar extends StatelessWidget {
     );
   }
 
-  Widget _row() => Row(
-    children: [
-      const Text(
-        'Anisched',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(width: 10),
-      if (title != null && !(picking && narrow)) Flexible(child: title!),
-      ?undo,
-      const SizedBox(width: 10),
-      Expanded(
-        child: picking
-            ? Align(alignment: Alignment.centerRight, child: actions)
-            : const SizedBox.shrink(),
-      ),
-    ],
+  /// Names on the left (the app, the document); the tools on the right,
+  /// ending at the bar's edge: ↶ ↷, then the picked-task actions.
+  Widget _row() => LayoutBuilder(
+    builder: (context, box) => Row(
+      children: [
+        const Text(
+          'Anisched',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(width: 10),
+        if (title != null && !(picking && narrow))
+          ConstrainedBox(
+            // The name never takes the tools' room.
+            constraints: BoxConstraints(maxWidth: box.maxWidth * 0.3),
+            child: title,
+          ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Row(
+            key: const Key('top-tools'),
+            mainAxisAlignment: MainAxisAlignment.end,
+            spacing: 6,
+            children: [
+              ?undo,
+              if (picking) Flexible(child: actions),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 

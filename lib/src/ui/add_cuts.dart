@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import '../controllers/registration.dart';
@@ -7,6 +8,7 @@ import 'instant.dart';
 import 'pick_field.dart';
 import 'text/strings.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Asks which cuts to add to a unit: a first number and a count (the
 /// register screen's steppers), plus cuts typed by name (its 「+」), shown
@@ -87,10 +89,7 @@ class _AddCutsState extends State<_AddCuts> {
     return AlertDialog(
       key: const Key('add-cuts'),
       scrollable: true,
-      title: Row(
-        spacing: 8,
-        children: [const Icon(Icons.add_box_outlined), Text(S.addCut.t)],
-      ),
+      title: DialogTitle(Icons.add_box_outlined, S.addCut.t),
       content: SizedBox(
         width: 360,
         child: Column(

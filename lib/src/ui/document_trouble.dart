@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,6 +8,7 @@ import '../services/document_session.dart';
 import '../services/schema.dart';
 import 'instant.dart';
 import 'text/strings.dart';
+import 'widgets.dart';
 
 /// What went wrong with a document, as the user can act on it.
 enum DocumentTroubleKind {
@@ -100,14 +102,18 @@ class _DocumentTroubleDialogState extends State<DocumentTroubleDialog> {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       key: const Key('doc-trouble'),
-      icon: Icon(t.kind.icon, color: scheme.error),
+      title: DialogTitle(
+        t.kind.icon,
+        t.kind.text,
+        key: const Key('doc-trouble-text'),
+        color: scheme.error,
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           spacing: 8,
           children: [
-            Text(t.kind.text, key: const Key('doc-trouble-text')),
             TextButton.icon(
               key: const Key('doc-trouble-details'),
               onPressed: () => setState(() => _open = !_open),

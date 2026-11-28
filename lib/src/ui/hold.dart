@@ -1,6 +1,7 @@
 /// On-hold (대기) and deadline-round (차수) pieces shared by the views.
 library;
 
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import 'format.dart';
 import 'instant.dart';
 import 'text/strings.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// What the hold dialog answers: a short reason and an expected day, both
 /// optional.
@@ -46,10 +48,7 @@ class _HoldDialogState extends State<_HoldDialog> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return AlertDialog(
-      title: Row(
-        spacing: 8,
-        children: [const Icon(Icons.pause_circle_outline), Text(S.hold.t)],
-      ),
+      title: DialogTitle(Icons.pause_circle_outline, S.hold.t),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
