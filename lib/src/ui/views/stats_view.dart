@@ -35,7 +35,17 @@ class StatsView extends StatefulWidget {
     this.reader,
     this.visible = true,
     this.refresh = 0,
+    this.clientId,
+    this.workId,
+    this.filter,
   });
+
+  /// The shared filter's client and work (null = all).
+  final int? clientId;
+  final int? workId;
+
+  /// The shared filter button, shown first in the toolbar.
+  final Widget? filter;
 
   final DateTime now;
   final ScreenLayout layout;
@@ -67,7 +77,10 @@ class _StatsViewState extends State<StatsView> {
   @override
   void didUpdateWidget(StatsView old) {
     super.didUpdateWidget(old);
-    if (widget.visible && (_loaded != widget.refresh || _stats == null)) {
+    final refilter =
+        old.clientId != widget.clientId || old.workId != widget.workId;
+    if (widget.visible &&
+        (_loaded != widget.refresh || _stats == null || refilter)) {
       unawaited(_load());
     }
   }
@@ -80,7 +93,13 @@ class _StatsViewState extends State<StatsView> {
     final n = widget.now;
     final to = DateTime(n.year, n.month, n.day + 1);
     final from = DateTime(to.year, to.month, to.day - _range.days);
-    final s = await r.stats(from: from, to: to, bucket: _bucket);
+    final s = await r.stats(
+      from: from,
+      to: to,
+      bucket: _bucket,
+      clientId: widget.clientId,
+      workId: widget.workId,
+    );
     if (mounted && ask == _asked) setState(() => _stats = s);
   }
 
@@ -103,6 +122,7 @@ class _StatsViewState extends State<StatsView> {
         children: [
           ViewToolbar(
             children: [
+              ?widget.filter,
               SegmentGroup(
                 children: [
                   for (final (b, w) in [

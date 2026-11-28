@@ -231,6 +231,7 @@ class PartLine extends StatelessWidget {
     final fade =
         dimmed ||
         (g.waiting > 0 && g.inHand == 0) ||
+        g.tasks.every((t) => t.handedOff) ||
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
@@ -425,7 +426,9 @@ class PartDetails extends StatelessWidget {
                           children: [
                             for (final t in g.tasks)
                               _CutChip(
-                                waiting: t.waiting && t.status.isOpen,
+                                waiting:
+                                    t.handedOff ||
+                                    (t.waiting && t.status.isOpen),
                                 task: t,
                                 highlighted: t.id == highlighted,
                                 onTap: onTask == null ? null : () => onTask!(t),
@@ -462,7 +465,13 @@ class PartDetails extends StatelessWidget {
                                       spacing: 6,
                                       children: [
                                         Dot(c.of(t.status)),
-                                        if (t.waiting && t.status.isOpen)
+                                        if (t.handedOff)
+                                          Icon(
+                                            Icons.person_remove_outlined,
+                                            size: 12,
+                                            color: c.muted,
+                                          )
+                                        else if (t.waiting && t.status.isOpen)
                                           const HoldMark(),
                                         Flexible(
                                           child: Text.rich(
@@ -470,8 +479,12 @@ class PartDetails extends StatelessWidget {
                                               children: [
                                                 TextSpan(
                                                   text: taskLabel(t),
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontWeight: FontWeight.w700,
+                                                    decoration: t.handedOff
+                                                        ? TextDecoration
+                                                              .lineThrough
+                                                        : null,
                                                   ),
                                                 ),
                                                 if (t.sharedLabel != null)

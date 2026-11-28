@@ -146,7 +146,10 @@ class _AppShellState extends State<AppShell> {
     if (reader == null) return;
     final done = _filter.showDone;
     final (groups, signals, paces, lanes, works, clients, roles) = await (
-      reader.partGroups(includeDone: done),
+      reader.partGroups(
+        includeDone: done,
+        includeHandedOff: _filter.showHandedOff,
+      ),
       reader.signals(includeDone: done),
       reader.stagePaces(),
       reader.calendarLayout(basis: CalendarBasis.work),
@@ -223,7 +226,9 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _setFilter(ViewFilter f) {
-    final reload = f.showDone != _filter.showDone;
+    final reload =
+        f.showDone != _filter.showDone ||
+        f.showHandedOff != _filter.showHandedOff;
     setState(() => _filter = f);
     if (reload) unawaited(_loadGroups());
   }
@@ -248,6 +253,17 @@ class _AppShellState extends State<AppShell> {
     ]);
   });
 
+  /// The shared filter: the list, the timeline and the statistics.
+  Widget _filterButton() => FilterButton(
+    filter: _filter,
+    onChanged: _setFilter,
+    clients: _clients,
+    works: {
+      for (final w in _works.entries)
+        if (_groups.any((g) => g.workId == w.key)) w.key: w.value.title,
+    },
+  );
+
   List<Widget> _toolbar(int count) => [
     ToolbarButton(
       key: const Key('sort-by-due'),
@@ -257,15 +273,7 @@ class _AppShellState extends State<AppShell> {
           ? null
           : () => _write((s) => s.clearGroupOrder()),
     ),
-    FilterButton(
-      filter: _filter,
-      onChanged: _setFilter,
-      clients: _clients,
-      works: {
-        for (final w in _works.entries)
-          if (_groups.any((g) => g.workId == w.key)) w.key: w.value.title,
-      },
-    ),
+    _filterButton(),
     SizedBox(
       height: 34,
       child: Center(
@@ -373,6 +381,34 @@ class _AppShellState extends State<AppShell> {
       }
     });
     _selection.clear();
+  }
+
+  /// Takes the picked tasks off the user (work moved to someone else) at
+  /// once, with an undo; picked tasks already pulled come back instead.
+  void _handOff() {
+    final picked = _pickedTasks;
+    if (widget.store == null || picked.isEmpty) return;
+    final back = picked.every((t) => t.handedOff);
+    final ids = [
+      for (final t in picked)
+        if (t.handedOff == back) t.id,
+    ];
+    _write((store) => back ? store.undoHandOff(ids) : store.handOff(ids));
+    _selection.clear();
+    if (back) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('dropped-snack'),
+          content: Text('${S.dropped.t} · ${S.items.f({'n': ids.length})}'),
+          action: SnackBarAction(
+            key: const Key('dropped-undo'),
+            label: S.undoDrop.t,
+            onPressed: () => _write((store) => store.undoHandOff(ids)),
+          ),
+        ),
+      );
   }
 
   /// The picked tasks, for the selection bar's hold button.
@@ -496,6 +532,9 @@ class _AppShellState extends State<AppShell> {
         reader: widget.reader,
         visible: _view == AppView.stats,
         refresh: _refresh,
+        clientId: _filter.clientId,
+        workId: _filter.workId,
+        filter: _filterButton(),
       ),
       AppView.settings => SettingsView(
         now: now,
@@ -529,6 +568,11 @@ class _AppShellState extends State<AppShell> {
           onHold: widget.store == null
               ? null
               : () => unawaited(_toggleHold(_pickedTasks)),
+          onHandOff: widget.store == null ? null : _handOff,
+          allHandedOff: () {
+            final p = _pickedTasks;
+            return p.isNotEmpty && p.every((t) => t.handedOff);
+          },
           allWaiting: () {
             final open = _pickedTasks.where((t) => t.status.isOpen);
             return open.isNotEmpty && open.every((t) => t.waiting);

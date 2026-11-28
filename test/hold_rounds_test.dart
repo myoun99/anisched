@@ -11,11 +11,15 @@ import 'support/sample_catalogue.dart';
 
 final now = DateTime(2026, 11, 27, 14);
 
-Future<CatalogueStore> pumpShell(WidgetTester t, {Size? size}) async {
+Future<CatalogueStore> pumpShell(
+  WidgetTester t, {
+  Size? size,
+  CatalogueStore? existing,
+}) async {
   t.view.physicalSize = size ?? const Size(1280, 800);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
-  final store = sampleCatalogue(now);
+  final store = existing ?? sampleCatalogue(now);
   await t.pumpWidget(
     MaterialApp(
       theme: AppTheme.light(),
@@ -134,9 +138,51 @@ void main() {
       now.add(const Duration(days: 9)),
     );
     store.setPartWaiting(g.partId!, g.stageId, waiting: true, reason: '素材待ち');
-    await pumpShell(t, size: const Size(390, 844));
+    await t.pumpWidget(const SizedBox());
+    await pumpShell(t, size: const Size(390, 844), existing: store);
     await t.tap(find.byKey(Key('line-${g.key}')).first);
     await t.pump();
     expect(t.takeException(), isNull);
+  });
+
+  testWidgets('picked cuts are pulled at once, with an undo', (t) async {
+    final store = await pumpShell(t);
+    final g = store.partGroups().firstWhere(
+      (g) => g.kind == GroupKind.part && g.inHand > 0,
+    );
+    await t.longPress(find.byKey(Key('line-${g.key}')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('pick-drop')));
+    await t.pump();
+    await t.pump();
+    expect(store.partGroups().where((x) => x.key == g.key), isEmpty);
+    expect(
+      store
+          .partGroups(includeHandedOff: true)
+          .firstWhere((x) => x.key == g.key)
+          .tasks
+          .every((x) => x.handedOff),
+      isTrue,
+    );
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.byKey(const Key('dropped-undo')));
+    await t.pump();
+    await t.pump();
+    expect(store.partGroups().where((x) => x.key == g.key), hasLength(1));
+  });
+
+  testWidgets('the filter can show pulled work again', (t) async {
+    final store = await pumpShell(t);
+    final g = store.partGroups().firstWhere((g) => g.kind == GroupKind.part);
+    store.handOffPart(g.partId!, g.stageId);
+    await t.pumpWidget(const SizedBox());
+    await pumpShell(t, existing: store);
+    expect(find.byKey(Key('line-${g.key}')), findsNothing);
+    await t.tap(find.byKey(const Key('filter-button')));
+    await t.pump();
+    await t.tap(find.text('빠진 것도 보기'));
+    await t.pump();
+    await t.pump();
+    expect(find.byKey(Key('line-${g.key}')), findsOneWidget);
   });
 }

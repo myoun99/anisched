@@ -388,7 +388,13 @@ enum S {
   // Taken off the user (work moved to someone else, 引き上げ).
   dropped('Pulled', '引き上げ', '빠짐', 'Retiré', '收回'),
   undoDrop('Undo', '元に戻す', '되돌리기', 'Annuler', '撤销'),
-  showDropped('Show pulled', '引き上げも表示', '빠진 것도 보기', 'Afficher retirés', '显示已收回'),
+  showDropped(
+    'Show pulled',
+    '引き上げも表示',
+    '빠진 것도 보기',
+    'Afficher retirés',
+    '显示已收回',
+  ),
 
   // Deadline rounds (1st, 2nd … extensions).
   dueRound('Round {n}', '{n}次', '{n}차', '{n}e échéance', '第{n}次'),

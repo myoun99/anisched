@@ -14,15 +14,25 @@ class CountingReader extends SyncCatalogueReader {
   CountingReader(super.store);
 
   final asked = <StatsBucket>[];
+  final askedWorks = <int?>[];
 
   @override
   Future<Stats> stats({
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   }) {
     asked.add(bucket);
-    return super.stats(from: from, to: to, bucket: bucket);
+    askedWorks.add(workId);
+    return super.stats(
+      from: from,
+      to: to,
+      bucket: bucket,
+      clientId: clientId,
+      workId: workId,
+    );
   }
 }
 
@@ -99,5 +109,16 @@ void main() {
     expect(reader.asked.length, before + 1);
     expect(find.text('12달'), findsOneWidget);
     expect(t.takeException(), isNull);
+  });
+
+  testWidgets('the shared filter narrows the statistics', (t) async {
+    final reader = await pumpStats(t, const Size(1440, 900));
+    final work = reader.store.partGroups().first;
+    await t.tap(find.byKey(const Key('filter-button')));
+    await t.pump();
+    await t.tap(find.text(work.workTitle).last);
+    await t.pump();
+    await t.pump();
+    expect(reader.askedWorks.last, work.workId);
   });
 }

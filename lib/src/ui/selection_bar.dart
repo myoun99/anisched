@@ -16,7 +16,14 @@ class SelectionBar extends StatelessWidget {
     required this.onApply,
     this.onHold,
     this.allWaiting,
+    this.onHandOff,
+    this.allHandedOff,
   });
+
+  /// Takes the picked tasks off the user (引き上げ), or brings back ones
+  /// already pulled; null hides it.
+  final VoidCallback? onHandOff;
+  final bool Function()? allHandedOff;
 
   /// Puts the picked tasks on hold (or takes them off); null hides it.
   final VoidCallback? onHold;
@@ -69,6 +76,17 @@ class SelectionBar extends StatelessWidget {
                     : Icons.pause_circle_outline,
                 label: (allWaiting?.call() ?? false) ? S.unhold.t : S.hold.t,
                 onTap: n > 0 ? onHold : null,
+              ),
+            if (onHandOff != null)
+              _ActionButton(
+                key: const Key('pick-drop'),
+                icon: (allHandedOff?.call() ?? false)
+                    ? Icons.undo
+                    : Icons.person_remove_outlined,
+                label: (allHandedOff?.call() ?? false)
+                    ? S.undoDrop.t
+                    : S.dropped.t,
+                onTap: n > 0 ? onHandOff : null,
               ),
             _ActionButton(
               key: const Key('pick-clear'),

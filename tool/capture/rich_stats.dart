@@ -17,6 +17,8 @@ class RichStatsReader extends SyncCatalogueReader {
     required DateTime from,
     required DateTime to,
     StatsBucket bucket = StatsBucket.week,
+    int? clientId,
+    int? workId,
   }) async {
     final (facts, intervals) = _made(now);
     Stats run(DateTime a, DateTime b) => computeStats(
