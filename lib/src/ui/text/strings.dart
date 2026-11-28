@@ -390,6 +390,7 @@ enum S {
   episode('Episode', '話数', '화수', 'Épisode', '集数'),
   roles('Roles', '担当', '담당', 'Rôles', '负责'),
   stagesN('{n} stages', '工程 {n}', '공정 {n}개', '{n} étapes', '{n} 个工序'),
+  stage('Stage', '工程', '공정', 'Étape', '工序'),
   firstCut('First cut', '最初の cut', '첫 컷', 'Premier cut', '首个 cut'),
   lastCut('Last cut', '最後の cut', '끝 컷', 'Dernier cut', '末尾 cut'),
   addRange('Add range', '範囲で追加', '범위로 추가', 'Ajouter la plage', '按范围添加'),

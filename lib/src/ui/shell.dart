@@ -19,6 +19,7 @@ import '../services/undo_history.dart';
 import '../services/work_timer.dart';
 import 'add_cuts.dart';
 import 'bundle_editor.dart';
+import 'catalogue_browser.dart';
 import 'client_chip.dart';
 import 'delete_confirm.dart';
 import 'document_menu.dart';
@@ -386,10 +387,16 @@ class _AppShellState extends State<AppShell> {
               setState(() => _timerTask = id);
             },
       onPickCut: timer == null ? null : () => _pickTimerCut(target?.$1),
-      onPickWork: target == null ? null : () => _pickTimerWork(target.$2),
+      onPickWork: target == null
+          ? null
+          : () => _browseForTimer(browsePathTo(target.$2, BrowseLevel.work)),
       onPickEpisode: target == null
           ? null
-          : () => _pickTimerEpisode(target.$2.workId, target.$2.episodeId),
+          : () =>
+                _browseForTimer(browsePathTo(target.$2, BrowseLevel.episode)),
+      onPickStage: target == null
+          ? null
+          : () => _pickTimerStage(target.$1, target.$2),
       onStatus: !writable || id == null
           ? null
           : (st) => _write((store) => store.setStatus(id, st)),
@@ -420,108 +427,81 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// The time bar's cut: the others of its episode, in cut order, the
-  /// current one in the middle; with none on the bar yet, every cut with
-  /// work left.
+  /// The time bar's cut: the others of its unit (same work, episode,
+  /// part and stage), in cut order, the current one in the middle; with
+  /// none on the bar yet, the catalogue to walk down.
   Future<void> _pickTimerCut(TaskRow? now) async {
     final reader = widget.reader;
     if (reader == null) return;
-    // The one cut order (names that are not numbers as they were added,
-    // a cut's stages side by side).
+    if (now == null) return _browseForTimer(null);
     final rows = sortedByCutNumber(
       [
-        if (now != null) ...[
-          now,
-          ...await reader.tasksBeside(now.id),
-        ] else
-          for (final g in _groups)
-            for (final t in g.tasks)
-              if (t.status.needsWork) t,
-      ]..sort((a, b) {
-        final k = (a.cutId ?? 0).compareTo(b.cutId ?? 0);
-        return k != 0 ? k : a.stageName.compareTo(b.stageName);
-      }),
+        now,
+        for (final t in await reader.tasksBeside(now.id))
+          if (t.groupKey == now.groupKey) t,
+      ]..sort((a, b) => (a.cutId ?? 0).compareTo(b.cutId ?? 0)),
       taskLabel,
       widget.store?.settings.cutStyle,
     );
     if (!mounted) return;
     // A shared group is one cut here too: its first task, its numbers.
     final units = cutUnits(rows);
-    final current = now == null
-        ? null
-        : units.firstWhere((u) => u.any((t) => t.id == now.id)).first.id;
+    final current = units.firstWhere((u) => u.any((t) => t.id == now.id));
     final picked = await showCenteredPicker<int>(
       context: context,
       title: S.cutName.t,
-      current: current,
+      current: current.first.id,
       searchable: units.length > 12,
       search: (q) async => [
         for (final u in units)
-          if (u.first case final t when q.isEmpty || unitText(u).contains(q))
-            (
-              value: t.id,
-              title: unitText(u),
-              note: [
-                stageText(t.stageName),
-                if (t.partLabel case final p?) S.partTitle.f({'p': p}),
-              ].join(' · '),
-            ),
+          if (q.isEmpty || unitText(u).contains(q))
+            (value: u.first.id, title: unitText(u), note: null),
       ],
     );
     if (picked != null) _pickForTimer(picked.value);
   }
 
-  /// Another title: then its episode, then that episode's first cut.
-  Future<void> _pickTimerWork(PartGroup now) async {
-    final works = <int, String>{for (final g in _groups) g.workId: g.workTitle};
-    final keys = works.keys.toList()
-      ..sort(
-        (a, b) =>
-            naturalSortKey(works[a]!).compareTo(naturalSortKey(works[b]!)),
-      );
-    final picked = await showCenteredPicker<int>(
-      context: context,
-      title: S.title.t,
-      current: now.workId,
-      searchable: keys.length > 12,
-      search: (q) async => [
-        for (final k in keys)
-          if (q.isEmpty || works[k]!.contains(q))
-            (value: k, title: works[k]!, note: null),
-      ],
+  /// The catalogue as a page to walk down (from [start], or the top) to a
+  /// cut for the time bar.
+  Future<void> _browseForTimer(BrowsePath? start) async {
+    final pick = await browseCatalogue(
+      context,
+      groups: _groups,
+      clientOf: _clientOf,
+      start: start,
+      cutStyle: widget.store?.settings.cutStyle,
     );
-    if (picked == null || !mounted) return;
-    await _pickTimerEpisode(picked.value, null);
+    final cut = pick?.cut;
+    if (cut != null) _pickForTimer(cut.first.id);
   }
 
-  /// An episode of [workId]; the bar moves to its first cut.
-  Future<void> _pickTimerEpisode(int workId, int? current) async {
-    final eps = <int, String>{
-      for (final g in _groups)
-        if (g.workId == workId) g.episodeId: g.episodeNumber,
-    };
-    final keys = eps.keys.toList()
-      ..sort(
-        (a, b) => naturalSortKey(eps[a]!).compareTo(naturalSortKey(eps[b]!)),
-      );
-    final picked = keys.length == 1 && current == null
-        ? (value: keys.single, title: '', note: null)
-        : await showCenteredPicker<int>(
-            context: context,
-            title: S.episode.t,
-            current: current,
-            searchable: keys.length > 12,
-            search: (q) async => [
-              for (final k in keys)
-                if (q.isEmpty || eps[k]!.contains(q))
-                  (value: k, title: eps[k]!, note: null),
-            ],
-          );
-    if (picked == null || picked.value == current) return;
-    final first = _groups
-        .where((g) => g.episodeId == picked.value)
-        .expand((g) => g.tasks)
-        .firstOrNull;
+  /// Another stage of the same cuts (the same part of the same episode):
+  /// the bar moves to the same cut there, else that unit's first.
+  Future<void> _pickTimerStage(TaskRow now, PartGroup g) async {
+    final stages = [
+      for (final o in _groups)
+        if (o.workId == g.workId &&
+            o.episodeId == g.episodeId &&
+            o.kind == g.kind &&
+            o.partId == g.partId &&
+            o.storyboardLabel == g.storyboardLabel)
+          o,
+    ]..sort((a, b) => a.stagePosition.compareTo(b.stagePosition));
+    if (stages.length < 2) return;
+    final picked = await showCenteredPicker<String>(
+      context: context,
+      title: S.stage.t,
+      current: g.key,
+      searchable: false,
+      search: (q) async => [
+        for (final o in stages)
+          (value: o.key, title: stageText(o.stageName), note: null),
+      ],
+    );
+    if (picked == null || picked.value == g.key) return;
+    final to = stages.firstWhere((o) => o.key == picked.value);
+    final same = to.tasks.where((t) => t.cutId == now.cutId).firstOrNull;
+    final first = same ?? to.tasks.firstOrNull;
     if (first != null) _pickForTimer(first.id);
   }
 
