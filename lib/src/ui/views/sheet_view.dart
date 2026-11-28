@@ -31,7 +31,6 @@ class SheetView extends StatefulWidget {
     this.onReorder,
     this.onTaskTap,
     this.onDue,
-    this.onTaskDue,
     this.onHold,
     this.revisionsOf,
     this.onEditRevision,
@@ -39,7 +38,6 @@ class SheetView extends StatefulWidget {
 
   /// Sets a unit's deadline / one cut's own deadline.
   final void Function(PartGroup group, DateTime due)? onDue;
-  final void Function(TaskRow task, DateTime due)? onTaskDue;
 
   /// Puts a whole unit on hold, or takes it off.
   final void Function(PartGroup group)? onHold;
@@ -205,7 +203,7 @@ class _SheetViewState extends State<SheetView> {
                         onDue: widget.onDue == null
                             ? null
                             : (d) => widget.onDue!(p, d),
-                        onTaskDue: widget.onTaskDue,
+                        onTaskLongPress: sel?.toggleTask,
                         onHold: widget.onHold == null
                             ? null
                             : () => widget.onHold!(p),

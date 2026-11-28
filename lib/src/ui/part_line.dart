@@ -262,7 +262,7 @@ class PartDetails extends StatelessWidget {
     this.usual,
     this.isPicked,
     this.onDue,
-    this.onTaskDue,
+    this.onTaskLongPress,
     this.onHold,
     this.loadRevisions,
     this.onEditRevision,
@@ -301,8 +301,8 @@ class PartDetails extends StatelessWidget {
   /// Sets the unit's deadline (tap on the 마감 fact).
   final ValueChanged<DateTime>? onDue;
 
-  /// Sets one cut's own deadline (long press on its chip).
-  final void Function(TaskRow task, DateTime due)? onTaskDue;
+  /// Long press on a cut: picks it for the bar's actions.
+  final ValueChanged<TaskRow>? onTaskLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -441,13 +441,9 @@ class PartDetails extends StatelessWidget {
                                     (t.waiting && t.status.isOpen),
                                 task: t,
                                 onTap: onTask == null ? null : () => onTask!(t),
-                                onLongPress: onTaskDue == null
+                                onLongPress: onTaskLongPress == null
                                     ? null
-                                    : () => DueButton(
-                                        due: t.dueAt,
-                                        onPicked: (d) => onTaskDue!(t, d),
-                                        child: const SizedBox(),
-                                      ).pick(context),
+                                    : () => onTaskLongPress!(t),
                                 picked:
                                     t.id == highlighted ||
                                     (isPicked?.call(t) ?? false),
@@ -481,7 +477,7 @@ class _CutChip extends StatelessWidget {
   final bool picked;
   final VoidCallback? onTap;
 
-  /// Long press: the cut's own deadline.
+  /// Long press: picks the cut.
   final VoidCallback? onLongPress;
 
   /// On hold or pulled: drawn faint.

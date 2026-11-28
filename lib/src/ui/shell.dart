@@ -314,10 +314,6 @@ class _AppShellState extends State<AppShell> {
     }
   });
 
-  /// One cut's own deadline, as a new round of it.
-  void _setTaskDue(TaskRow t, DateTime due) =>
-      _write((store) => store.extendDue(DueTarget.task(t.id), due));
-
   /// The rounds of a unit's deadline (one target: a part or storyboard).
   Future<List<DueRevision>> _revisions(PartGroup g) async {
     final reader = widget.reader;
@@ -418,7 +414,6 @@ class _AppShellState extends State<AppShell> {
         toolbar: toolbar,
         onReorder: writable ? _reorder : null,
         onDue: writable ? _setDue : null,
-        onTaskDue: writable ? _setTaskDue : null,
         onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
         revisionsOf: widget.reader == null ? null : _revisions,
         onEditRevision: writable ? _editRevision : null,
