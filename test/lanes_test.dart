@@ -80,7 +80,8 @@ void main() {
     expect(cal.layout.overflow, hasLength(1));
     expect(cal.unplaced, isEmpty);
 
-    // On the work basis, B's own plan moves it out of the crowd.
+    // On the work basis, B's own plan takes it out of the crowd — but a
+    // bar never changes lane by itself: only 「자동 정렬」 re-lays it.
     store.setPartPlan(
       b,
       lo,
@@ -88,7 +89,9 @@ void main() {
       end: DateTime(2026, 12, 2),
     );
     cal = store.calendarLayout();
-    expect(cal.layout.overflow, isEmpty);
+    expect(cal.layout.overflow, hasLength(1));
+    store.clearLanePins();
+    expect(store.calendarLayout().layout.overflow, isEmpty);
     // A unit with no deadline cannot be placed.
     final p = store.addPart(ep, 'D');
     store
@@ -152,14 +155,15 @@ void main() {
       expect(l.laneOf, {'late': 0, 'early': 0});
     });
 
-    test('clashing pins and pins past the lane count overflow', () {
+    test('clashing pins stay and are marked; pins past the count overflow', () {
       final l = layoutLanes(
-        [s('a', 1, 5), s('b', 3, 4), s('c', 1, 1)],
+        [s('a', 1, 5), s('b', 3, 4), s('c', 1, 1), s('d', 9, 9)],
         2,
-        pinned: {'a': 0, 'b': 0, 'c': 7},
+        pinned: {'a': 0, 'b': 0, 'c': 7, 'd': 0},
       );
-      expect(l.laneOf['a'], 0);
-      expect(l.overflow, {'b', 'c'});
+      expect((l.laneOf['a'], l.laneOf['b'], l.laneOf['d']), (0, 0, 0));
+      expect(l.overlapping, {'a', 'b'});
+      expect(l.overflow, {'c'});
     });
 
     test('the store saves pins by group key and can clear them', () {
@@ -186,11 +190,60 @@ void main() {
       store
         ..pinLane(keys[0], 1)
         ..pinLane(keys[1], 1);
-      expect(store.calendarLayout().layout.overflow, hasLength(1));
+      final both = store.calendarLayout().layout;
+      expect(both.overflow, isEmpty);
+      expect(both.overlapping, keys.toSet());
       store.clearLanePins();
       lanes = store.calendarLayout().layout.laneOf;
       expect(lanes.values.toSet(), {0, 1});
     });
+  });
+
+  test('changing dates keeps every bar in its lane; new bars find room', () {
+    final db = openAppDatabase(':memory:');
+    addTearDown(db.close);
+    final store = CatalogueStore(db, clock: () => DateTime(2026, 11, 27, 9));
+    final w = store.createWork('W');
+    final ep = store.addEpisode(w, '#1');
+    final lo = store.stages(w).firstWhere((s) => s.name == 'LO').id;
+    int part(String label, int start, int end) {
+      final p = store.addPart(ep, label);
+      store
+        ..addCut(ep, 'C$label', partId: p)
+        ..addTasksForPart(p, lo)
+        ..setPartSchedule(
+          p,
+          lo,
+          kickoffAt: DateTime(2026, 12, start),
+          dueAt: DateTime(2026, 12, end),
+        );
+      return p;
+    }
+
+    final a = part('A', 1, 5);
+    part('B', 3, 8);
+    Map<String?, int> lanes() {
+      final l = store.calendarLayout(basis: CalendarBasis.production).layout;
+      return {
+        for (final g in store.partGroups()) g.partLabel: l.laneOf[g.key]!,
+      };
+    }
+
+    expect(lanes(), {'A': 0, 'B': 1});
+    // A moves after B: fresh placement would swap them; it stays.
+    store.setPartSchedule(
+      a,
+      lo,
+      kickoffAt: DateTime(2026, 12, 6),
+      dueAt: DateTime(2026, 12, 7),
+    );
+    expect(lanes(), {'A': 0, 'B': 1});
+    // A new bar takes the first lane with room (A left 12/1–2 free).
+    part('C', 1, 2);
+    expect(lanes()['C'], 0);
+    // 「자동 정렬」 lays everything out afresh.
+    store.clearLanePins();
+    expect(lanes(), {'C': 0, 'B': 0, 'A': 1});
   });
 
   test('lines: add, rename, remove; pins follow the removal', () {
