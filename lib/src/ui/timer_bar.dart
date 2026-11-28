@@ -159,6 +159,8 @@ class _TimerBarState extends State<TimerBar> {
     final t = widget.task;
     final g = widget.group;
     final run = widget.running;
+    // A phone: the stage goes, the clock and the finish button shrink.
+    final narrow = MediaQuery.sizeOf(context).width < 500;
     final worked = t == null
         ? Duration.zero
         : (widget.worked?.call() ?? Duration.zero);
@@ -211,13 +213,14 @@ class _TimerBarState extends State<TimerBar> {
                             style: TextStyle(color: c.muted, fontSize: 12),
                           ),
                         ),
-                        Flexible(
-                          flex: 2,
-                          child: FitText(
-                            stageText(g.stageName),
-                            style: TextStyle(color: c.faint, fontSize: 12),
+                        if (!narrow)
+                          Flexible(
+                            flex: 2,
+                            child: FitText(
+                              stageText(g.stageName),
+                              style: TextStyle(color: c.faint, fontSize: 12),
+                            ),
                           ),
-                        ),
                       ],
                     ],
                   ),
@@ -226,7 +229,7 @@ class _TimerBarState extends State<TimerBar> {
                   _clock(worked),
                   key: const Key('timer-clock'),
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: narrow ? 16 : 20,
                     fontWeight: FontWeight.w700,
                     color: run ? scheme.onSurface : c.muted,
                     fontFeatures: const [FontFeature.tabularFigures()],
@@ -269,11 +272,13 @@ class _TimerBarState extends State<TimerBar> {
                                 : Icons.check_circle_outline,
                             size: 18,
                           ),
-                          label: Text(
-                            next == TaskStatus.submitted || next == null
-                                ? S.stSubmitted.t
-                                : S.stDone.t,
-                          ),
+                          label: narrow
+                              ? const SizedBox.shrink()
+                              : Text(
+                                  next == TaskStatus.submitted || next == null
+                                      ? S.stSubmitted.t
+                                      : S.stDone.t,
+                                ),
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 10),
