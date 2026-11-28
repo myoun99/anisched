@@ -13,6 +13,7 @@ import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
 import '../count_stepper.dart';
 import '../date_span.dart';
+import '../sliding_row.dart';
 import '../fold.dart';
 import '../format.dart';
 import '../instant.dart';
@@ -554,29 +555,23 @@ class _RegisterViewState extends State<RegisterView> {
         Text(S.roles.t, style: TextStyle(fontSize: 12, color: c.muted)),
         // One row the finger slides along: a role is a shortcut, most
         // people use one or two.
-        SingleChildScrollView(
+        SlidingRow(
           key: const Key('roles-row'),
-          scrollDirection: Axis.horizontal,
-          // Room for the scrollbar under the chips.
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            spacing: 6,
-            children: [
-              for (final role in widget.roles)
-                ToolbarButton(
-                  key: Key('role-${role.name}'),
-                  label: role.name,
-                  selected:
-                      _stages.length == role.stages.length &&
-                      role.stages.every(_stages.contains),
-                  onTap: () => setState(
-                    () => _stages
-                      ..clear()
-                      ..addAll(role.stages),
-                  ),
+          children: [
+            for (final role in widget.roles)
+              ToolbarButton(
+                key: Key('role-${role.name}'),
+                label: role.name,
+                selected:
+                    _stages.length == role.stages.length &&
+                    role.stages.every(_stages.contains),
+                onTap: () => setState(
+                  () => _stages
+                    ..clear()
+                    ..addAll(role.stages),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
         // Folded, only the checked stages show.
         ValueListenableBuilder<bool>(

@@ -99,6 +99,15 @@ void main() {
       ),
       findsOneWidget,
     );
+    // No scrollbar under it, though the app's lists show theirs.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('roles-row')),
+        matching: find.byWidgetPredicate((w) => w is RawScrollbar),
+      ),
+      findsNothing,
+    );
+    expect(find.byWidgetPredicate((w) => w is RawScrollbar), findsWidgets);
   });
 
   testWidgets('pick a work, make an episode, edit the grid, register', (
