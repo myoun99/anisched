@@ -14,8 +14,9 @@ typedef ClientRow = ({int id, String name, int? closingDay, int? color});
 
 /// Something on the calendar that is not work (유저 2026-11-28 — 아후레코,
 /// a meeting): a day, an optional time of day in minutes, a title and a
-/// note. [episodeId] ties it to an episode's timeline rows; null is an
-/// event of its own (whether those stay is still the user's call).
+/// note. [episodeId] ties it to an episode's timeline rows; null is a
+/// global event. A global event with [rest] is a day off (유저
+/// 2026-11-28) — the pace skips it like a rest weekday.
 typedef EventRow = ({
   int id,
   int? episodeId,
@@ -23,6 +24,7 @@ typedef EventRow = ({
   int? timeMinutes,
   String title,
   String? note,
+  bool rest,
 });
 
 typedef CutRow = ({

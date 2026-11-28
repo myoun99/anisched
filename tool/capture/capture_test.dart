@@ -429,10 +429,10 @@ void main() {
           if (base.startsWith('r9')) prepareClients(store);
           if (base.startsWith('r10')) {
             // A day off of the user's own next week; Japan's holidays.
-            store.addDaysOff(
+            store.addRestDays(
               DateTime(2026, 12, 1),
               end: DateTime(2026, 12, 2),
-              note: '여행',
+              title: '여행',
             );
           }
           if (base == 'dropped') {

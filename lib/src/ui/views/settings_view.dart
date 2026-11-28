@@ -106,7 +106,7 @@ class _SettingsViewState extends State<SettingsView> {
       title: S.daysOff.t,
     );
     if (r == null || !mounted) return;
-    _set((s) => s.addDaysOff(r.start, end: r.end));
+    _set((s) => s.addRestDays(r.start, end: r.end));
   }
 
   @override
@@ -116,7 +116,7 @@ class _SettingsViewState extends State<SettingsView> {
     final rest = s?.restWeekdays ?? {DateTime.saturday, DateTime.sunday};
     final dayStart = s?.dayStartMinutes ?? 0;
     final rounding = s?.secondsRounding ?? SecondsRounding.nearest;
-    final off = widget.store?.daysOff() ?? const [];
+    final off = widget.store?.restDays() ?? const [];
     final weekdays = weekdayNames();
     final display = _Group(
       icon: Icons.palette_outlined,
@@ -249,15 +249,13 @@ class _SettingsViewState extends State<SettingsView> {
           _Line(
             children: [
               Text(
-                o.range.start == o.range.end
-                    ? formatDate(o.range.start)
-                    : '${formatDate(o.range.start)} – ${formatDate(o.range.end)}',
+                formatDate(o.date),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              if (o.note != null)
+              if (o.title.isNotEmpty)
                 Expanded(
                   child: Text(
-                    o.note!,
+                    o.title,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.muted),
                   ),
@@ -267,7 +265,7 @@ class _SettingsViewState extends State<SettingsView> {
               _IconAction(
                 icon: Icons.delete_outline,
                 tooltip: S.remove.t,
-                onTap: () => _set((st) => st.removeDaysOff(o.id)),
+                onTap: () => _set((st) => st.deleteEvent(o.id)),
               ),
             ],
           ),

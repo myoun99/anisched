@@ -1066,12 +1066,13 @@ LIMIT ?;''',
     int? timeMinutes,
     required String title,
     String? note,
+    bool rest = false,
   }) {
-    _checkTime(timeMinutes);
+    _checkEvent(timeMinutes, episodeId, rest);
     db.execute(
-      'INSERT INTO events (episode_id, day, time_min, title, note) '
-      'VALUES (?, ?, ?, ?, ?);',
-      [episodeId, _day(date), timeMinutes, title, note],
+      'INSERT INTO events (episode_id, day, time_min, title, note, rest) '
+      'VALUES (?, ?, ?, ?, ?, ?);',
+      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0],
     );
     return db.lastInsertRowId;
   }
@@ -1084,12 +1085,13 @@ LIMIT ?;''',
     int? timeMinutes,
     required String title,
     String? note,
+    bool rest = false,
   }) {
-    _checkTime(timeMinutes);
+    _checkEvent(timeMinutes, episodeId, rest);
     db.execute(
       'UPDATE events SET episode_id = ?, day = ?, time_min = ?, title = ?, '
-      'note = ? WHERE id = ?;',
-      [episodeId, _day(date), timeMinutes, title, note, id],
+      'note = ?, rest = ? WHERE id = ?;',
+      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0, id],
     );
   }
 
@@ -1107,7 +1109,7 @@ LIMIT ?;''',
     final out = <int?, List<EventRow>>{};
     for (final r in db.select(
       '''
-SELECT ev.id, ev.episode_id, ev.day, ev.time_min, ev.title, ev.note
+SELECT ev.id, ev.episode_id, ev.day, ev.time_min, ev.title, ev.note, ev.rest
 FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
 LEFT JOIN works w ON w.id = e.work_id
 WHERE ev.day >= ? AND ev.day < ?
@@ -1125,6 +1127,7 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
         timeMinutes: r['time_min'] as int?,
         title: r['title'] as String,
         note: r['note'] as String?,
+        rest: r['rest'] == 1,
       ));
     }
     return out;
@@ -1136,9 +1139,12 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
     return '${l.year.toString().padLeft(4, '0')}-${two(l.month)}-${two(l.day)}';
   }
 
-  static void _checkTime(int? minutes) {
+  static void _checkEvent(int? minutes, int? episodeId, bool rest) {
     if (minutes != null) {
       RangeError.checkValueInInterval(minutes, 0, 24 * 60 - 1, 'timeMinutes');
+    }
+    if (rest && episodeId != null) {
+      throw ArgumentError('A day off is an event of no episode.');
     }
   }
 
@@ -2210,7 +2216,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     clock(),
     dayStartMinutes: settings.dayStartMinutes,
     restWeekdays: settings.restWeekdays,
-    daysOff: daysOff().map((d) => d.range),
+    daysOff: _daysOff(),
     isHoliday: restHoliday(),
     endAt: settings.paceEnd,
   );
@@ -2249,7 +2255,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       from,
       today.start,
       restWeekdays: settings.restWeekdays,
-      daysOff: daysOff(from: from).map((d) => d.range),
+      daysOff: _daysOff(from: from),
       isHoliday: restHoliday(),
     );
     return [
@@ -2279,7 +2285,7 @@ GROUP BY s.name ORDER BY s.name;''',
     final now = clock();
     final today = dayRange(now, settings.dayStartMinutes);
     final rest = settings.restWeekdays;
-    final off = [for (final d in daysOff()) d.range];
+    final off = _daysOff();
     final holiday = restHoliday();
     final overall = <String, UsualPace>{};
     for (final r in db.select(
@@ -2339,7 +2345,7 @@ GROUP BY s.name;''',
     final now = clock();
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
-    final off = [for (final d in daysOff(from: now)) d.range];
+    final off = _daysOff(from: now);
     final holiday = restHoliday();
     final paceEnd = settings.paceEnd;
     final recent = recentPerDay();
@@ -2381,25 +2387,29 @@ GROUP BY s.name;''',
     );
   }
 
-  /// Adds days off from [start] to [end] (one day when null), by their
-  /// local calendar dates, and returns the id.
-  int addDaysOff(DateTime start, {DateTime? end, String? note}) {
+  /// Days off from [start] to [end] (one day when null): one rest event
+  /// per local day, all named [title] (empty: the view's own word).
+  /// Answers their ids.
+  List<int> addRestDays(DateTime start, {DateTime? end, String title = ''}) {
     final r = DaysOff(start, end);
-    db.execute(
-      'INSERT INTO days_off (start_date, end_date, note) VALUES (?, ?, ?);',
-      [_isoDate(r.start), _isoDate(r.end), note],
+    return _transaction(
+      () => [
+        for (
+          var d = r.start;
+          !d.isAfter(r.end);
+          d = d.add(const Duration(days: 1))
+        )
+          addEvent(date: d, title: title, rest: true),
+      ],
     );
-    return db.lastInsertRowId;
   }
 
-  void removeDaysOff(int id) =>
-      db.execute('DELETE FROM days_off WHERE id = ?;', [id]);
-
-  /// Days off ending on or after [from] (all when null), earliest first.
-  List<({int id, DaysOff range, String? note})> daysOff({DateTime? from}) => [
+  /// The days off (rest events, earliest first), from [from] on when given.
+  List<EventRow> restDays({DateTime? from}) => [
     for (final r in db.select(
-      'SELECT id, start_date, end_date, note FROM days_off '
-      'WHERE ? IS NULL OR end_date >= ? ORDER BY start_date, id;',
+      'SELECT id, day, title, note FROM events '
+      'WHERE rest = 1 AND episode_id IS NULL AND (? IS NULL OR day >= ?) '
+      'ORDER BY day, id;',
       [
         if (from == null) null else _isoDate(from),
         if (from == null) null else _isoDate(from),
@@ -2407,12 +2417,18 @@ GROUP BY s.name;''',
     ))
       (
         id: r['id'] as int,
-        range: DaysOff(
-          DateTime.parse(r['start_date'] as String),
-          DateTime.parse(r['end_date'] as String),
-        ),
+        episodeId: null,
+        date: DateTime.parse(r['day'] as String),
+        timeMinutes: null,
+        title: r['title'] as String,
         note: r['note'] as String?,
+        rest: true,
       ),
+  ];
+
+  /// [restDays] as the day-off ranges the pace counts with.
+  List<DaysOff> _daysOff({DateTime? from}) => [
+    for (final e in restDays(from: from)) DaysOff(e.date),
   ];
 
   static String _isoDate(DateTime d) =>
@@ -2434,7 +2450,7 @@ GROUP BY s.name;''',
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
     final paceEnd = settings.paceEnd;
-    final off = [for (final d in daysOff(from: now)) d.range];
+    final off = _daysOff(from: now);
     final holiday = restHoliday();
     final recent = recentPerDay();
     int? left(DateTime? due) =>
