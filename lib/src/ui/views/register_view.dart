@@ -12,6 +12,7 @@ import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
 import '../count_stepper.dart';
+import '../date_span.dart';
 import '../fold.dart';
 import '../format.dart';
 import '../instant.dart';
@@ -87,12 +88,16 @@ class _RegisterViewState extends State<RegisterView> {
   List<CutRow> _saved = const [];
   final _pickedSaved = <int>{};
   final _picked = <String>{};
-  late DateTime _kickoff = DateTime(
+  /// The first stage's start until set: the day of registering.
+  late final DateTime _kickoff = DateTime(
     widget.now.year,
     widget.now.month,
     widget.now.day,
   );
-  DateTime? _due;
+
+  /// Dates set on one stage's row, by stage name; a stage without its own
+  /// takes the stage above's (the first: [_kickoff], no deadline).
+  final _ownDates = <String, ({DateTime? kickoff, DateTime? due})>{};
   String? _done;
 
   /// While dragging across the grid: true picks, false drops.
@@ -265,9 +270,10 @@ class _RegisterViewState extends State<RegisterView> {
         ],
         cuts: _cuts,
         kickoffAt: _kickoff,
-        dueAt: _due == null
-            ? null
-            : DateTime(_due!.year, _due!.month, _due!.day, 23, 59),
+        schedules: {
+          for (final s in _checked)
+            s: (kickoffAt: _datesOf(s).kickoff, dueAt: _endOf(_datesOf(s).due)),
+        },
       ),
     );
     setState(() {
@@ -284,16 +290,55 @@ class _RegisterViewState extends State<RegisterView> {
     unawaited(_loadTaken());
   }
 
-  Future<void> _pickDate(bool due) async {
+  /// The checked stages, in order.
+  List<String> get _checked => [
+    for (final s in _allStages)
+      if (_stages.contains(s)) s,
+  ];
+
+  /// A deadline day's end.
+  static DateTime? _endOf(DateTime? d) =>
+      d == null ? null : DateTime(d.year, d.month, d.day, 23, 59);
+
+  /// [stage]'s dates: its own, else the stage above's — copied down, so
+  /// LO's dates start 原画's until 原画 gets its own.
+  ({DateTime kickoff, DateTime? due, bool ownKickoff, bool ownDue}) _datesOf(
+    String stage,
+  ) {
+    var kickoff = _kickoff;
+    DateTime? due;
+    for (final s in _checked) {
+      final own = _ownDates[s];
+      kickoff = own?.kickoff ?? kickoff;
+      due = own?.due ?? due;
+      if (s == stage) {
+        return (
+          kickoff: kickoff,
+          due: due,
+          ownKickoff: own?.kickoff != null,
+          ownDue: own?.due != null,
+        );
+      }
+    }
+    return (kickoff: kickoff, due: due, ownKickoff: false, ownDue: false);
+  }
+
+  Future<void> _pickDate(String stage, {required bool due}) async {
+    final now = _datesOf(stage);
     final d = await showInstantDatePicker(
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
-      initialDate: due ? (_due ?? _kickoff) : _kickoff,
+      initialDate: due ? (now.due ?? now.kickoff) : now.kickoff,
       title: due ? S.pickDue.t : S.pickKickoff.t,
     );
     if (d == null || !mounted) return;
-    setState(() => due ? _due = d : _kickoff = d);
+    setState(() {
+      final own = _ownDates[stage];
+      _ownDates[stage] = due
+          ? (kickoff: own?.kickoff, due: d)
+          : (kickoff: d, due: own?.due);
+    });
   }
 
   // ---- build ----
@@ -569,10 +614,11 @@ class _RegisterViewState extends State<RegisterView> {
               fieldKey: const Key('reg-count'),
               onChanged: () => setState(_rebuildCuts),
             ),
-            _dateButton(S.kickoff.t, _kickoff, () => _pickDate(false)),
-            _dateButton(S.due.t, _due, () => _pickDate(true)),
           ],
         ),
+        // Each card the register makes (one per stage) with its own
+        // production dates, the stage above's until set.
+        for (final s in _checked) _stageDates(s),
       ],
     );
   }
@@ -916,18 +962,47 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _dateButton(String label, DateTime? d, VoidCallback onTap) {
+  /// One stage's row: its name, then 「제작」 [start → deadline]; a date
+  /// copied from the stage above shows faint until set here.
+  Widget _stageDates(String stage) {
     final c = AppColors.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: 4,
+    final d = _datesOf(stage);
+    final can = widget.onRegister != null;
+    Widget date(String key, DateTime? day, bool own, bool due) => InkWell(
+      key: Key('$key-$stage'),
+      onTap: can ? () => _pickDate(stage, due: due) : null,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Text(
+          day == null ? '—' : formatDate(day),
+          style: TextStyle(
+            color: own ? null : c.muted,
+            decoration: can ? TextDecoration.underline : null,
+            decorationColor: c.faint,
+          ),
+        ),
+      ),
+    );
+    return Row(
+      key: Key('reg-stage-dates-$stage'),
+      spacing: 10,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: c.muted)),
-        ToolbarButton(
-          key: Key('reg-date-$label'),
-          label: d == null ? '—' : formatDate(d),
-          selected: false,
-          onTap: widget.onRegister == null ? null : onTap,
+        SizedBox(
+          width: 56,
+          child: Text(
+            stageText(stage),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Flexible(
+          child: DateSpanPill(
+            label: S.production.t,
+            start: date('reg-kickoff', d.kickoff, d.ownKickoff, false),
+            end: date('reg-due', d.due, d.ownDue, true),
+          ),
         ),
       ],
     );
