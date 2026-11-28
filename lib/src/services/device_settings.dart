@@ -86,7 +86,10 @@ class DeviceSettings {
         if (m['shortcuts'] case final Map<Object?, Object?> keys)
           for (final MapEntry(:key, :value) in keys.entries)
             if (key is String && value is List)
-              key: [for (final v in value) if (v is String) v],
+              key: [
+                for (final v in value)
+                  if (v is String) v,
+              ],
       },
     );
   }
