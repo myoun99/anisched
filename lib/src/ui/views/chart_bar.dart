@@ -4,8 +4,9 @@ part of 'chart.dart';
 /// Which end of a bar a drag moves.
 enum BarEdge { start, end }
 
-/// A bar's end grip: a small button of another colour with 〈 or 〉, the
-/// whole of it the place to drag. Only bars whose dates can be dragged
+/// A bar's end grip: a small square of another colour with 〈 or 〉 in a
+/// corner of the bar (the start's lower left, the end's upper right),
+/// rounded on that corner only; the whole of it the place to drag. Only bars whose dates can be dragged
 /// have them ([ChartBar.onDates]).
 class BarGrip extends StatelessWidget {
   const BarGrip({
@@ -23,32 +24,32 @@ class BarGrip extends StatelessWidget {
   /// The grip's width, which is also its drag area.
   final double width;
 
-  /// A grip's width, whatever the zoom: on a bar too short for two, they
-  /// sit outside its ends, so a grip is always there to drag.
+  /// A grip's width, whatever the zoom (a bar narrower than this gives
+  /// it all its width): its height is half the bar's.
   static const maxWidth = 16.0;
 
-  /// The least room a label needs between two grips; less hides it.
+  /// The least width a bar needs to show its label.
   static const minLabel = 8.0;
 
   @override
   Widget build(BuildContext context) {
+    const r = Radius.circular(4);
     return SizedBox(
       width: width,
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: DecoratedBox(
-          // Bars are light in both themes: a near-white face reads on them.
-          decoration: BoxDecoration(
-            color: const Color(0xF2FFFFFF),
-            border: Border.all(color: ink.withValues(alpha: 0.55)),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Center(
-            child: Icon(
-              edge == BarEdge.start ? Icons.chevron_left : Icons.chevron_right,
-              size: 12,
-              color: ink,
-            ),
+      child: DecoratedBox(
+        // Bars are light in both themes: a near-white face reads on them.
+        decoration: BoxDecoration(
+          color: const Color(0xF2FFFFFF),
+          border: Border.all(color: ink.withValues(alpha: 0.55)),
+          borderRadius: edge == BarEdge.start
+              ? const BorderRadius.only(bottomLeft: r)
+              : const BorderRadius.only(topRight: r),
+        ),
+        child: Center(
+          child: Icon(
+            edge == BarEdge.start ? Icons.chevron_left : Icons.chevron_right,
+            size: 12,
+            color: ink,
           ),
         ),
       ),
@@ -227,30 +228,24 @@ class _ChartBarState extends State<ChartBar> {
           final cutStart = left < lo - 0.5;
           final cutEnd = left + width > hi + 0.5;
           final grips = widget.onDates != null;
-          const grip = BarGrip.maxWidth;
-          // Too short for two grips inside: they sit outside its ends,
-          // the label hides, and a cut end shows no mark (no room).
-          final inside = to - from >= 2 * grip;
+          final span = to - from;
+          // A grip is a corner of the bar, inside it whatever its length
+          // (Anicel's run edges): the start the lower half of the left
+          // end, the end the upper half of the right end. The label runs
+          // through the middle, end to end; a short bar puts the two
+          // corners side by side, diagonally.
+          final grip = span < BarGrip.maxWidth ? span : BarGrip.maxWidth;
           Widget? endOf(BarEdge edge, bool cut) => cut
-              ? (inside
-                    ? CutMark(edge: edge, width: grip, ink: _ink(context))
-                    : null)
+              ? CutMark(edge: edge, width: grip, ink: _ink(context))
               : grips
               ? _handle(edge, grip)
               : null;
           final startEnd = endOf(BarEdge.start, cutStart);
           final endEnd = endOf(BarEdge.end, cutEnd);
-          final before = !inside && startEnd != null ? grip : 0.0;
-          final after = !inside && endEnd != null ? grip : 0.0;
-          // The label takes every pixel between the ends, or hides.
-          final room =
-              to -
-              from -
-              (startEnd == null ? 0 : grip) -
-              (endEnd == null ? 0 : grip);
-          final showLabel = inside && room >= BarGrip.minLabel;
+          const half = ChartBoard.barHeight / 2;
           const r = Radius.circular(4);
           final coloured = DecoratedBox(
+            key: const Key('bar-face'),
             decoration: BoxDecoration(
               color: widget.color,
               // A cut end is square: the bar goes on past it.
@@ -263,38 +258,41 @@ class _ChartBarState extends State<ChartBar> {
                   ? Border.all(color: barInk.withValues(alpha: 0.18))
                   : Border.all(color: widget.outline!, width: 1.5),
             ),
-            child: inside
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ?startEnd,
-                      Expanded(child: _face(label: showLabel)),
-                      ?endEnd,
-                    ],
-                  )
-                : _face(label: false),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _face(label: span >= BarGrip.minLabel),
+                if (startEnd != null)
+                  Positioned(
+                    left: 0,
+                    bottom: 0,
+                    width: grip,
+                    height: half,
+                    child: startEnd,
+                  ),
+                if (endEnd != null)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    width: grip,
+                    height: half,
+                    child: endEnd,
+                  ),
+              ],
+            ),
           );
           final bar = Opacity(
             opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
-            child: inside
-                ? coloured
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ?startEnd,
-                      Expanded(child: coloured),
-                      ?endEnd,
-                    ],
-                  ),
+            child: coloured,
           );
-          final x0 = from - before;
+          final x0 = from;
           final press = widget.onLongPressDay;
           return Stack(
             clipBehavior: Clip.hardEdge,
             children: [
               Positioned(
                 left: x0,
-                width: to - from + before + after,
+                width: span,
                 top: ChartBoard.barTop,
                 height: ChartBoard.barHeight,
                 child: widget.onTap == null && press == null
