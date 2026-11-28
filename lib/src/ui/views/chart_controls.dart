@@ -154,6 +154,7 @@ class _ChartViewportState extends State<ChartViewport>
           },
           child: quickHorizontalDrag(
             behavior: HitTestBehavior.translucent,
+            calmBefore: widget.labelWidth,
             onUpdate: (d) {
               if (_pointers.length < 2 && !_space) _pan(d.delta.dx);
             },
