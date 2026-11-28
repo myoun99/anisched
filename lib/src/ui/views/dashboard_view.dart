@@ -494,7 +494,7 @@ class _DashboardViewState extends State<DashboardView> {
                 ? Icons.arrow_upward
                 : (diff < 0 ? Icons.arrow_downward : Icons.remove),
             size: 14,
-            color: diff > 0 ? c.done : (diff < 0 ? c.retake : c.faint),
+            color: diff > 0 ? c.good : (diff < 0 ? c.retake : c.faint),
           ),
           SizedBox(
             width: 64,

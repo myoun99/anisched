@@ -267,19 +267,10 @@ class _TimerBarState extends State<TimerBar> {
                           onPressed: next == null
                               ? null
                               : () => widget.onStatus!(next),
-                          icon: Icon(
-                            next == TaskStatus.submitted
-                                ? Icons.send_outlined
-                                : Icons.check_circle_outline,
-                            size: 18,
-                          ),
+                          icon: const Icon(Icons.send_outlined, size: 18),
                           label: narrow
                               ? const SizedBox.shrink()
-                              : Text(
-                                  next == TaskStatus.submitted || next == null
-                                      ? S.stSubmitted.t
-                                      : S.stDone.t,
-                                ),
+                              : Text(S.stSubmitted.t),
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 10),

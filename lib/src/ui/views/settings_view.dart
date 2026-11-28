@@ -333,7 +333,7 @@ class _SettingsViewState extends State<SettingsView> {
         ),
         _Field(
           icon: Icons.task_alt,
-          label: S.monthDone.t,
+          label: S.monthHanded.t,
           child: Column(
             spacing: 6,
             children: [
