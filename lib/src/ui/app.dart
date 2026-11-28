@@ -98,6 +98,8 @@ class _AnischedAppState extends State<AnischedApp> with WidgetsBindingObserver {
         darkTheme: AppTheme.dark(appLang.value),
         scrollBehavior: const AlwaysScrollbarBehavior(),
         home: AppShell(
+          // The app opens on the dashboard (유저 2026-11-28).
+          initialView: AppView.dashboard,
           reader: widget.reader,
           store: widget.store,
           timer: widget.timer,

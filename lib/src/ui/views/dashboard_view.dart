@@ -246,64 +246,87 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   Widget _dueSoon(BuildContext context, Dashboard d) {
-    final c = AppColors.of(context);
     final red = Theme.of(context).colorScheme.error;
     return _card(
       context,
       key: 'dash-due',
       icon: Icons.schedule,
       title: S.dashDue.t,
+      children: [for (final due in d.dueSoon) _dueLine(context, due, red)],
+    );
+  }
+
+  /// One card due soon: its name, then cuts left, per day and D-n — on
+  /// one line, or two on an upright phone (the name above, 유저
+  /// 2026-11-28). A tap opens the card on the list.
+  Widget _dueLine(BuildContext context, DashboardDue due, Color red) {
+    final c = AppColors.of(context);
+    final g = due.group;
+    final k = g.key;
+    final name = Row(
+      key: Key('dash-due-name-$k'),
+      spacing: 8,
       children: [
-        for (final due in d.dueSoon)
-          InkWell(
-            key: Key('dash-due-${due.group.key}'),
-            onTap: widget.onOpen == null
-                ? null
-                : () => widget.onOpen!(due.group),
-            child: SizedBox(
-              height: 40,
-              child: Row(
-                spacing: 8,
+        if (widget.clientOf?.call(g) case final tag?)
+          ClientChip(tag, compact: true),
+        Dot(stageColor(g.stageName)),
+        Expanded(
+          child: FitText('${g.workTitle} ${g.episodeNumber} · ${unitTitle(g)}'),
+        ),
+      ],
+    );
+    final figures = [
+      Text('${due.remaining} cut', style: TextStyle(color: c.muted)),
+      SizedBox(
+        width: 64,
+        child: FitText(
+          perDayText(due.pace),
+          textAlign: TextAlign.right,
+          style: TextStyle(color: c.muted),
+        ),
+      ),
+      SizedBox(
+        key: Key('dash-due-days-$k'),
+        width: 64,
+        child: FitText(
+          due.daysLeft < 0
+              ? S.daysLate.f({'n': -due.daysLeft})
+              : (due.daysLeft == 0 ? 'D-day' : 'D-${due.daysLeft}'),
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: due.late ? red : null,
+          ),
+        ),
+      ),
+    ];
+    final two = widget.layout.size == SizeClass.narrow;
+    return InkWell(
+      key: Key('dash-due-$k'),
+      onTap: widget.onOpen == null ? null : () => widget.onOpen!(g),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: two
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 2,
                 children: [
-                  if (widget.clientOf?.call(due.group) case final tag?)
-                    ClientChip(tag, compact: true),
-                  Dot(stageColor(due.group.stageName)),
-                  Expanded(
-                    child: FitText(
-                      '${due.group.workTitle} ${due.group.episodeNumber} · '
-                      '${unitTitle(due.group)}',
-                    ),
-                  ),
-                  Text(
-                    '${due.remaining} cut',
-                    style: TextStyle(color: c.muted),
-                  ),
-                  SizedBox(
-                    width: 64,
-                    child: FitText(
-                      perDayText(due.pace),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(color: c.muted),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 64,
-                    child: FitText(
-                      due.daysLeft < 0
-                          ? S.daysLate.f({'n': -due.daysLeft})
-                          : (due.daysLeft == 0 ? 'D-day' : 'D-${due.daysLeft}'),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: due.late ? red : null,
-                      ),
-                    ),
+                  name,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    spacing: 8,
+                    children: figures,
                   ),
                 ],
+              )
+            : Row(
+                spacing: 8,
+                children: [
+                  Expanded(child: name),
+                  ...figures,
+                ],
               ),
-            ),
-          ),
-      ],
+      ),
     );
   }
 
