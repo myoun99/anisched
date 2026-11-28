@@ -127,3 +127,28 @@ void applyBundleEdit(CatalogueStore store, TaskRow t, BundleEdit e) {
     store.renamePart(part, e.partLabel!);
   }
 }
+
+/// Adds the cuts [names] to unit [g]'s episode — in its part, if any —
+/// each with a task for [g]'s stage under [g]'s deadline and production
+/// start: a part's new tasks follow the part's own; loose cuts get them
+/// on each task. Returns the numbers skipped as already there.
+List<String> addCutsToUnit(
+  CatalogueStore store,
+  PartGroup g,
+  List<String> names,
+) {
+  final (:added, :skipped) = store.addCuts(
+    g.episodeId,
+    names,
+    partId: g.partId,
+  );
+  if (g.kind == GroupKind.part) {
+    store.addTasksForStages([g.stageId], partId: g.partId);
+  } else {
+    for (final cut in added) {
+      final id = store.addTask(g.stageId, cutId: cut, dueAt: g.dueAt);
+      if (g.kickoffAt case final k?) store.setTaskKickoff(id, k);
+    }
+  }
+  return skipped;
+}

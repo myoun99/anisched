@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
@@ -12,6 +11,7 @@ import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
+import '../count_stepper.dart';
 import '../fold.dart';
 import '../format.dart';
 import '../instant.dart';
@@ -184,12 +184,6 @@ class _RegisterViewState extends State<RegisterView> {
           ..shared.addAll(old.shared);
     final cells = _cuts.cells.toSet();
     _picked.retainWhere(cells.contains);
-  }
-
-  void _step(TextEditingController c, int by) {
-    final v = (int.tryParse(c.text) ?? 0) + by;
-    c.text = '${v < 1 ? 1 : v}';
-    setState(_rebuildCuts);
   }
 
   // ---- grid picking ----
@@ -561,17 +555,19 @@ class _RegisterViewState extends State<RegisterView> {
           runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
-            _stepper(
-              S.firstCut.t,
-              _cuts.number(_cuts.start),
-              _start,
-              'reg-start',
+            CountStepper(
+              label: S.firstCut.t,
+              preview: _cuts.number(_cuts.start),
+              controller: _start,
+              fieldKey: const Key('reg-start'),
+              onChanged: () => setState(_rebuildCuts),
             ),
-            _stepper(
-              S.cutCount.t,
-              '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
-              _count,
-              'reg-count',
+            CountStepper(
+              label: S.cutCount.t,
+              preview: '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
+              controller: _count,
+              fieldKey: const Key('reg-count'),
+              onChanged: () => setState(_rebuildCuts),
             ),
             _dateButton(S.kickoff.t, _kickoff, () => _pickDate(false)),
             _dateButton(S.due.t, _due, () => _pickDate(true)),
@@ -917,69 +913,6 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         child: Icon(Icons.add, size: 16, color: c.muted),
       ),
-    );
-  }
-
-  Widget _stepper(
-    String label,
-    String preview,
-    TextEditingController ctl,
-    String key,
-  ) {
-    final c = AppColors.of(context);
-    Widget btn(IconData icon, int by) => InkWell(
-      onTap: () => _step(ctl, by),
-      child: SizedBox(width: 34, height: 36, child: Icon(icon, size: 18)),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: 4,
-      children: [
-        Text.rich(
-          TextSpan(
-            text: '$label ',
-            children: [
-              TextSpan(
-                text: preview,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          style: TextStyle(fontSize: 12, color: c.muted),
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: c.line),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              btn(Icons.remove, -1),
-              SizedBox(
-                width: 64,
-                child: TextField(
-                  onTapOutside: unfocusOutside,
-                  key: Key(key),
-                  controller: ctl,
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                  onChanged: (_) => setState(_rebuildCuts),
-                ),
-              ),
-              btn(Icons.add, 1),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

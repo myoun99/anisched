@@ -15,6 +15,7 @@ import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
+import 'add_cuts.dart';
 import 'bundle_editor.dart';
 import 'client_chip.dart';
 import 'delete_confirm.dart';
@@ -724,6 +725,20 @@ class _AppShellState extends State<AppShell> {
     _selection.clear();
   }
 
+  /// Adds cuts to unit [g] (its 「+」): numbers picked as on the register
+  /// screen, then cuts with [g]'s stage task under its deadline.
+  Future<void> _addCuts(PartGroup g) async {
+    final store = widget.store;
+    if (store == null) return;
+    final names = await askNewCuts(
+      context,
+      style: store.settings.cutStyle,
+      taken: {for (final c in store.cuts(g.episodeId)) c.number},
+    );
+    if (names == null || !mounted) return;
+    _write((store) => addCutsToUnit(store, g, names));
+  }
+
   /// Deletes the picked tasks for good, after a confirmation that says
   /// what goes with them (cuts, emptied episodes and titles, timer time).
   Future<void> _delete() async {
@@ -825,6 +840,7 @@ class _AppShellState extends State<AppShell> {
       onPlan: writable ? _plan : null,
       revisionsOf: widget.reader == null ? null : _revisions,
       onEditRevision: writable ? _editRevision : null,
+      onAddCuts: writable ? (g) => unawaited(_addCuts(g)) : null,
       onTaskTap: widget.timer == null
           ? null
           : (t) => _selection.isEmpty

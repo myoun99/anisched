@@ -344,7 +344,12 @@ class PartDetails extends StatelessWidget {
     this.loadRevisions,
     this.onEditRevision,
     this.client,
+    this.onAddCuts,
   });
+
+  /// Adds cuts to the unit (the 「+」 at the end of its cuts); null hides
+  /// it.
+  final VoidCallback? onAddCuts;
 
   /// Puts the whole unit on hold or takes it off; null hides the button.
   final VoidCallback? onHold;
@@ -578,11 +583,45 @@ class PartDetails extends StatelessWidget {
                                     t.id == highlighted ||
                                     (isPicked?.call(t) ?? false),
                               ),
+                            if (onAddCuts != null)
+                              _AddCutChip(
+                                key: Key('cut-add-${g.key}'),
+                                onTap: onAddCuts!,
+                              ),
                           ],
                         ),
                 ),
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The 「+」 after a unit's cuts: adds cuts to it.
+class _AddCutChip extends StatelessWidget {
+  const _AddCutChip({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Tooltip(
+      message: S.addCut.t,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: c.line),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Icon(Icons.add, size: 16, color: c.muted),
           ),
         ),
       ),
@@ -787,7 +826,11 @@ class UnitWiring {
     this.onHold,
     this.revisionsOf,
     this.onEditRevision,
+    this.onAddCuts,
   });
+
+  /// Adds cuts to a unit (not a storyboard).
+  final void Function(PartGroup group)? onAddCuts;
 
   /// Deadline and plan signals by group key (reader.signals).
   final Map<String, GroupSignals> signals;
@@ -844,6 +887,9 @@ class UnitWiring {
       onEditRevision: onEditRevision == null
           ? null
           : (n, d) => onEditRevision!(p, n, d),
+      onAddCuts: onAddCuts == null || p.kind == GroupKind.storyboard
+          ? null
+          : () => onAddCuts!(p),
     );
   }
 }
