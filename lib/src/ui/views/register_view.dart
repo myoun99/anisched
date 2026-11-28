@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
 import '../../services/catalogue_reader.dart';
+import '../../models/number_style.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
@@ -278,7 +279,9 @@ class _RegisterViewState extends State<RegisterView> {
 
   // ---- saving ----
 
-  Set<String> get _clashes => _cuts.clashes(_taken);
+  /// Clashes by value in the document's notation (C012, 12: one cut).
+  Set<String> get _clashes =>
+      _cuts.clashes(_taken, (n) => parseCutInput(n, _cuts.style));
 
   bool get _ready =>
       widget.onRegister != null &&

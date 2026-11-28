@@ -598,9 +598,24 @@ class _SettingsViewState extends State<SettingsView> {
       );
     }
 
+    // Numbers v20 could not make values of (two of one episode came to
+    // the same value): a small warning, its count in the tooltip — to
+    // tidy up later; no list here.
+    final clashes = st?.numberClashes.length ?? 0;
     return _Group(
       icon: Icons.tag,
       title: S.notation.t,
+      trailing: clashes == 0
+          ? null
+          : Tooltip(
+              key: const Key('number-clashes'),
+              message: S.numberClashes.f({'n': clashes}),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
       children: [
         row('cut', S.cutNotation.t, Icons.movie_outlined, cut, 'C', const [
           3,
@@ -639,8 +654,11 @@ class _Group extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.children,
+    this.trailing,
   });
 
+  /// After the title (a warning).
+  final Widget? trailing;
   final IconData icon;
   final String title;
   final List<Widget> children;
@@ -665,6 +683,7 @@ class _Group extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              ?trailing,
             ],
           ),
           ...children,
