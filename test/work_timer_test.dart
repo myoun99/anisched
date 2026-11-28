@@ -5,6 +5,7 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 void main() {
   final t0 = DateTime.utc(2026, 11, 27, 9);
@@ -221,6 +222,69 @@ void main() {
       expect(today.single.end.difference(today.single.start).inMinutes, 60);
       final wed = store.dayIntervals(day: DateTime(2026, 11, 25, 12));
       expect(wed.single.end.difference(wed.single.start).inMinutes, 60);
+    });
+  });
+
+  group('play/pause on tasks', () {
+    late Database db;
+    late CatalogueStore store;
+    late WorkTimerStore timer;
+    var now = DateTime(2026, 11, 2, 10);
+    setUp(() {
+      now = DateTime(2026, 11, 2, 10);
+      db = openAppDatabase(':memory:');
+      store = CatalogueStore(db, clock: () => now.toUtc());
+      timer = WorkTimerStore(db, clock: () => now.toUtc());
+    });
+    tearDown(() => db.close());
+    int stage(int w, String name) =>
+        store.stages(w).firstWhere((s) => s.name == name).id;
+    test('play/pause toggles; another task takes the timer over', () {
+      final w = store.createWork('W');
+      final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
+      final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
+      final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
+
+      expect(timer.toggle(taskId: a)!.taskId, a);
+      now = now.add(const Duration(minutes: 30));
+      expect(timer.toggle(taskId: a), isNull); // paused
+      now = now.add(const Duration(minutes: 10));
+      timer.toggle(taskId: a);
+      now = now.add(const Duration(minutes: 5));
+      expect(timer.toggle(taskId: b)!.taskId, b); // moved
+      now = now.add(const Duration(minutes: 20));
+
+      expect(store.workedOn([a, b]), {
+        a: const Duration(minutes: 35),
+        b: const Duration(minutes: 20), // running, counted to now
+      });
+      expect(store.runningTimer()!.taskId, b);
+    });
+
+    test('picking a cut: the setting alone decides', () {
+      final w = store.createWork('W');
+      final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
+      final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
+      final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
+      expect(store.settings.timerAutoStart, isFalse);
+
+      // Off (default): the picked cut comes up paused, running or not.
+      timer.start(taskId: a);
+      expect(timer.selectionChanged(b, autoStart: false), isNull);
+      expect(timer.running(), isNull);
+      expect(timer.selectionChanged(a, autoStart: false), isNull);
+      expect(timer.running(), isNull);
+
+      // On: the picked cut runs, from paused or from another cut.
+      store.settings.timerAutoStart = true;
+      final auto = store.settings.timerAutoStart;
+      expect(timer.selectionChanged(a, autoStart: auto)!.taskId, a);
+      expect(timer.selectionChanged(b, autoStart: auto)!.taskId, b);
+      final runningOnB = timer.running()!.id;
+      // Picking the running cut again keeps the same stretch.
+      expect(timer.selectionChanged(b, autoStart: auto)!.id, runningOnB);
+      expect(timer.selectionChanged(null, autoStart: auto), isNull);
+      expect(timer.running(), isNull);
     });
   });
 }

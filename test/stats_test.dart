@@ -1,6 +1,5 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/stats.dart';
-import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
@@ -23,56 +22,6 @@ void main() {
 
   int stage(int w, String name) =>
       store.stages(w).firstWhere((s) => s.name == name).id;
-
-  group('timer', () {
-    test('play/pause toggles; another task takes the timer over', () {
-      final w = store.createWork('W');
-      final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
-      final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
-      final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
-
-      expect(timer.toggle(taskId: a)!.taskId, a);
-      now = now.add(const Duration(minutes: 30));
-      expect(timer.toggle(taskId: a), isNull); // paused
-      now = now.add(const Duration(minutes: 10));
-      timer.toggle(taskId: a);
-      now = now.add(const Duration(minutes: 5));
-      expect(timer.toggle(taskId: b)!.taskId, b); // moved
-      now = now.add(const Duration(minutes: 20));
-
-      expect(store.workedOn([a, b]), {
-        a: const Duration(minutes: 35),
-        b: const Duration(minutes: 20), // running, counted to now
-      });
-      expect(store.runningTimer()!.taskId, b);
-    });
-
-    test('picking a cut: the setting alone decides', () {
-      final w = store.createWork('W');
-      final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
-      final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
-      final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
-      expect(store.settings.timerAutoStart, isFalse);
-
-      // Off (default): the picked cut comes up paused, running or not.
-      timer.start(taskId: a);
-      expect(timer.selectionChanged(b, autoStart: false), isNull);
-      expect(timer.running(), isNull);
-      expect(timer.selectionChanged(a, autoStart: false), isNull);
-      expect(timer.running(), isNull);
-
-      // On: the picked cut runs, from paused or from another cut.
-      store.settings.timerAutoStart = true;
-      final auto = store.settings.timerAutoStart;
-      expect(timer.selectionChanged(a, autoStart: auto)!.taskId, a);
-      expect(timer.selectionChanged(b, autoStart: auto)!.taskId, b);
-      final runningOnB = timer.running()!.id;
-      // Picking the running cut again keeps the same stretch.
-      expect(timer.selectionChanged(b, autoStart: auto)!.id, runningOnB);
-      expect(timer.selectionChanged(null, autoStart: auto), isNull);
-      expect(timer.running(), isNull);
-    });
-  });
 
   test('a retake hand-in keeps the first hand-in date', () {
     final w = store.createWork('W');
@@ -194,7 +143,7 @@ void main() {
     expect(s.stagePaces, isNotEmpty);
   });
 
-  test('weeks start on the week-start setting; the reader agrees', () async {
+  test('weeks start on the week-start setting', () {
     store.settings.weekStart = DateTime.sunday;
     final s = store.stats(
       from: DateTime(2026, 11, 2),
@@ -203,14 +152,32 @@ void main() {
     );
     expect(s.periods.first.start, DateTime(2026, 11, 1));
     expect(s.periods.first.start.weekday, DateTime.sunday);
-    final reader = SyncCatalogueReader(store);
-    final viaReader = await reader.stats(
+    final m = store.stats(
       from: DateTime(2026, 11, 2),
       to: DateTime(2026, 11, 30),
       bucket: StatsBucket.month,
     );
-    expect(viaReader.periods.single.start, DateTime(2026, 11));
-    expect(await reader.runningTimer(), isNull);
-    expect(await reader.workedOn(const []), isEmpty);
+    expect(m.periods.single.start, DateTime(2026, 11));
+  });
+
+  test('the hourly rate leaves out paid work with no time on it', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
+    final genga = stage(w, '원화');
+    store.setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 3000));
+    final timed = store.addTask(genga, cutId: r.cutIds[0]);
+    final untimed = store.addTask(genga, cutId: r.cutIds[1]);
+    timer.start(taskId: timed);
+    now = DateTime(2026, 11, 2, 11);
+    timer.stop();
+    store
+      ..setStatus(timed, TaskStatus.done)
+      ..setStatus(untimed, TaskStatus.done);
+    final s = store.stats(
+      from: DateTime(2026, 11, 2),
+      to: DateTime(2026, 11, 3),
+    );
+    expect(s.total.earned, {'JPY': 6000});
+    expect(s.hourly['JPY'], 3000);
   });
 }

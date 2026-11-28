@@ -1,5 +1,4 @@
 import 'package:anisched/src/models/catalogue.dart';
-import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
@@ -30,7 +29,13 @@ void main() {
       ..addTasksForPart(r.partId!, genga)
       ..addTasksForPart(r.partId!, lo)
       ..setPartDue(r.partId!, genga, DateTime(2026, 11, 13))
-      ..setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 1000));
+      ..setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 1000))
+      ..setPartPlan(
+        r.partId!,
+        genga,
+        start: DateTime(2026, 11, 2),
+        end: DateTime(2026, 11, 6),
+      );
     final gengaTasks = [
       for (final t in store.taskRows())
         if (t.stageId == genga) t.id,
@@ -67,12 +72,8 @@ void main() {
     expect(s.total.done, 0);
     expect(s.total.earned, isEmpty);
     expect(s.handedOff, 4);
+    expect(s.days.first.planned, 0); // its plan no longer occupies a lane
     expect(s.works.single.cuts, 4); // the LO tasks only
-
-    // The reader passes the filter through.
-    final reader = SyncCatalogueReader(store);
-    expect((await reader.partGroups()).length, 1);
-    expect((await reader.partGroups(includeHandedOff: true)).length, 2);
 
     store.undoHandOff(ids);
     expect(store.partGroups().length, 2);
@@ -111,8 +112,7 @@ void main() {
     expect(onlyA.total.handed, 1);
     expect(onlyA.total.worked, const Duration(hours: 1));
     expect(onlyA.works.single.label, 'WA');
-    final onlyB = await SyncCatalogueReader(store)
-        .stats(from: from, to: to, workId: wb);
+    final onlyB = store.stats(from: from, to: to, workId: wb);
     expect(onlyB.total.worked, const Duration(hours: 2));
     expect(onlyB.previous!.total.handed, 0);
     expect(
