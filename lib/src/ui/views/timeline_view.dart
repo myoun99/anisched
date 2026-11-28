@@ -241,9 +241,6 @@ class _TimelineViewState extends State<TimelineView> {
         !chartDay(d).isBefore(chartDay(start)) &&
         !chartDay(d).isAfter(chartDay(end));
     return [
-      // A long press on the row's days puts an event there.
-      if (onNew != null)
-        ChartDayPress(window: window, onLongPress: (d) => onNew(g, d)),
       if (dated)
         ChartBar(
           key: Key('tl-bar-${g.key}'),
@@ -258,6 +255,9 @@ class _TimelineViewState extends State<TimelineView> {
           onTap: widget.details == null
               ? null
               : () => setState(() => _open = g.key),
+          // A long press on the bar puts an event on that day, for this
+          // card; the row's days off the bar do nothing.
+          onLongPressDay: onNew == null ? null : (d) => onNew(g, d),
         ),
       for (final e in widget.events[g.episodeId] ?? const <EventRow>[])
         ChartDayBox(
@@ -265,6 +265,12 @@ class _TimelineViewState extends State<TimelineView> {
           window: window,
           day: e.date,
           minWidth: 72,
+          // Over the bar, the bar's long press (an event) goes on.
+          onLongPressDay: onNew == null
+              ? null
+              : (d) {
+                  if (onBar(d)) onNew(g, d);
+                },
           child: EventMark(
             event: e,
             onBar: onBar(e.date),
@@ -295,6 +301,8 @@ class EventMark extends StatelessWidget {
     final ink = onBar ? barInk : Theme.of(context).colorScheme.onSurface;
     final time = event.timeMinutes;
     return Tooltip(
+      // Hover only: a long press belongs to the bar under it (an event).
+      triggerMode: TooltipTriggerMode.manual,
       message: [
         if (time != null) eventTimeLabel(time),
         event.title,
