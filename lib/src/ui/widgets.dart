@@ -395,3 +395,25 @@ class _OwnScrollState extends State<OwnScroll> {
   @override
   Widget build(BuildContext context) => widget.builder(_controller);
 }
+
+/// A card on the page: the second panel tone, a hairline and round
+/// corners — the settings groups and the statistics tiles and charts.
+class Panel extends StatelessWidget {
+  const Panel({super.key, required this.padding, required this.child});
+
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.panelAlt,
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
+}

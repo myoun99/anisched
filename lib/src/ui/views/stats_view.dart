@@ -631,44 +631,37 @@ class _Kpi extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.panelAlt,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 2,
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: c.muted),
-            ),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
+    return Panel(
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 2,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: c.muted),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
-            DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 11),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              child: SizedBox(width: double.infinity, child: note),
-            ),
-          ],
-        ),
+          ),
+          DefaultTextStyle.merge(
+            style: const TextStyle(fontSize: 11),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            child: SizedBox(width: double.infinity, child: note),
+          ),
+        ],
       ),
     );
   }
@@ -685,41 +678,31 @@ class _Card extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.panelAlt,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 8,
-          children: [
-            Text.rich(
-              TextSpan(
-                text: title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-                children: [
-                  if (note != null)
-                    TextSpan(
-                      text: '  $note',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w400,
-                        color: c.muted,
-                      ),
+    return Panel(
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 8,
+        children: [
+          Text.rich(
+            TextSpan(
+              text: title,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              children: [
+                if (note != null)
+                  TextSpan(
+                    text: '  $note',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                      color: c.muted,
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-            child,
-          ],
-        ),
+          ),
+          child,
+        ],
       ),
     );
   }
