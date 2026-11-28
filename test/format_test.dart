@@ -1,5 +1,6 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
+import 'package:anisched/src/models/number_style.dart';
 import 'package:anisched/src/ui/format.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -86,13 +87,16 @@ void main() {
     expect(groupTitle(loose), 'C001~C003, C007, C008');
   });
 
-  test('an episode number reads with #; a name stays; # is not stored', () {
-    expect(episodeLabel('07'), '#07');
+  test('a bare episode number reads in the document style; names stay', () {
+    addTearDown(() => episodeStyle.value = defaultEpisodeStyle);
+    expect(episodeLabel('7'), '#07');
     expect(episodeLabel('#07'), '#07');
     expect(episodeLabel('극장판'), '극장판');
-    expect(episodeNumberOf('#07'), '07');
-    expect(episodeNumberOf(' 12 '), '12');
-    expect(episodeNumberOf('#SP'), '#SP');
+    episodeStyle.value = (prefix: '', digits: 3);
+    expect(episodeLabel('7'), '007');
+    expect(typedEpisodeNumber('#7'), 7);
+    expect(typedEpisodeNumber(' 12 '), 12);
+    expect(typedEpisodeNumber('SP'), isNull);
   });
 
   test('stages read in the user language; typed names stay', () {

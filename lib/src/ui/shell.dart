@@ -142,6 +142,9 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _timerTask = widget.timer?.running()?.taskId;
+    if (widget.store case final s?) {
+      episodeStyle.value = s.settings.episodeStyle;
+    }
     _doc = widget.session?.changes.listen(_onDocument);
     unawaited(_loadGroups());
   }
@@ -355,6 +358,7 @@ class _AppShellState extends State<AppShell> {
     final store = widget.store;
     if (store == null) return;
     body(store);
+    episodeStyle.value = store.settings.episodeStyle;
     setState(() => _refresh++);
     unawaited(_loadGroups());
   }
@@ -626,9 +630,16 @@ class _AppShellState extends State<AppShell> {
               }
             : null,
         onCreateEpisode: writable
-            ? (work, number) {
+            ? (work, typed) {
                 var id = 0;
-                _write((s) => id = s.addEpisode(work, number));
+                // A typed number is stored in the document's style (#07).
+                final n = typedEpisodeNumber(typed);
+                _write(
+                  (s) => id = s.addEpisode(
+                    work,
+                    n == null ? typed.trim() : s.episodeNumberFor(n),
+                  ),
+                );
                 return id;
               }
             : null,

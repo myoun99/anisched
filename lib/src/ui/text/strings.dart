@@ -411,6 +411,19 @@ enum S {
 
   charDesign('Char. design', 'キャラデザ', '캐릭터디자인', 'Chara design', '角色设计'),
 
+  notation('Notation', '表記', '표기', 'Notation', '标记'),
+  cutNotation('Cut numbers', 'カット番号', '컷 표기', 'Numéros de cut', 'cut 编号'),
+  episodeNotation(
+    'Episode numbers',
+    '話数',
+    '화수 표기',
+    "Numéros d'épisode",
+    '集数编号',
+  ),
+  prefixNone('None', 'なし', '없음', 'Aucun', '无'),
+  prefixCustom('Your own', '自由入力', '직접 입력', 'Personnalisé', '自定义'),
+  digitsN('{n} digits', '{n}桁', '{n}자리', '{n} chiffres', '{n}位'),
+
   // Date picker headings: what is being picked.
   pickDue('Deadline', '締切日', '마감 날짜', 'Échéance', '截止日期'),
   pickKickoff('Start date', '着手日', '착수일', 'Date de début', '开工日期'),

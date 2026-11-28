@@ -483,14 +483,16 @@ class _RegisterViewState extends State<RegisterView> {
               onPicked: _pickEpisode,
               onCreate: widget.onCreateEpisode == null
                   ? null
-                  : (name) async => (
-                      value: widget.onCreateEpisode!(
-                        _work!.value,
-                        episodeNumberOf(name),
-                      ),
-                      title: episodeLabel(episodeNumberOf(name)),
-                      note: null,
-                    ),
+                  : (name) async {
+                      final id = widget.onCreateEpisode!(_work!.value, name);
+                      return (
+                        value: id,
+                        title: typedEpisodeNumber(name) == null
+                            ? name.trim()
+                            : episodeLabel('${typedEpisodeNumber(name)}'),
+                        note: null,
+                      );
+                    },
             ),
             PickField<String>(
               key: const Key('pick-part'),

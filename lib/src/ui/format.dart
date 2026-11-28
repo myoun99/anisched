@@ -2,8 +2,11 @@
 /// models stay free of display strings.
 library;
 
+import 'package:flutter/foundation.dart';
+
 import '../models/catalogue.dart';
 import '../models/progress.dart';
+import '../models/number_style.dart';
 import '../models/stage_names.dart';
 import 'text/strings.dart';
 
@@ -111,18 +114,25 @@ String groupTitle(PartGroup g) => switch (g.kind) {
 String groupCount(PartGroup g) =>
     g.kind == GroupKind.storyboard ? S.items.f({'n': 1}) : '${g.total} cut';
 
-/// An episode as the screens show it: a number gets a 「#」 (#07), the way
-/// a cut gets its C; a name (극장판, MV) stays as it is. Display only — the
-/// stored number has no 「#」.
+/// The document's episode style (#·2 by default), kept current by the
+/// shell; [episodeLabel] reads it.
+final episodeStyle = ValueNotifier<NumberStyle>(defaultEpisodeStyle);
+
+/// An episode as the screens show it. New episodes are stored in the
+/// document's style already (#07); an older bare number (07) is shown in
+/// it too. A name (극장판, MV) stays as it is.
 String episodeLabel(String number) {
   final n = number.trim();
-  return RegExp(r'^\d+$').hasMatch(n) ? '#$n' : n;
+  return RegExp(r'^\d+$').hasMatch(n)
+      ? formatEpisodeNumber(int.parse(n), episodeStyle.value)
+      : n;
 }
 
-/// What to store for an episode the user typed: 「#07」 is 07.
-String episodeNumberOf(String typed) {
-  final n = typed.trim();
-  return RegExp(r'^#\d+$').hasMatch(n) ? n.substring(1) : n;
+/// The number the user typed for a new episode, if they typed one
+/// (「7」, 「#7」): the store writes it in the document's style.
+int? typedEpisodeNumber(String typed) {
+  final m = RegExp(r'^#?(\d+)$').firstMatch(typed.trim());
+  return m == null ? null : int.parse(m[1]!);
 }
 
 /// A task's own name: its cut number or storyboard label.
