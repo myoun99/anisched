@@ -143,6 +143,43 @@ INSERT INTO tasks (stage_id, cut_id, status, submitted_at, done_at)
     ]);
   });
 
+  test('v15: the format works use most becomes the document cut style', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 14).toList());
+    db.execute(
+      'INSERT INTO works (title, currency, created_at, cut_prefix, cut_digits) '
+      "VALUES ('A', 'JPY', 0, '', 4), ('B', 'JPY', 0, '', 4), "
+      "('C', 'JPY', 0, 'C', 3)",
+    );
+    migrate(db);
+    expect(
+      db
+          .select("SELECT value FROM settings WHERE key = 'cut_style'")
+          .single['value'],
+      '{"prefix":"","digits":4}',
+    );
+    expect(
+      db.select('PRAGMA table_info(works)').map((r) => r['name']),
+      isNot(contains('cut_prefix')),
+    );
+  });
+
+  test('v15: works on the default format write no setting', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 14).toList());
+    db.execute(
+      'INSERT INTO works (title, currency, created_at, cut_prefix, cut_digits) '
+      "VALUES ('A', 'JPY', 0, '', 4), ('B', 'JPY', 0, 'C', 3)", // tie: newest
+    );
+    migrate(db);
+    expect(
+      db.select("SELECT * FROM settings WHERE key = 'cut_style'"),
+      isEmpty,
+    );
+  });
+
   test('v14: old 「… 수정」 stage names become work/checker everywhere', () {
     final db = sqlite3.openInMemory();
     addTearDown(db.close);
