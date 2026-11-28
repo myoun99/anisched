@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
+import 'package:anisched/src/models/stats.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
@@ -16,6 +17,7 @@ void main() {
   late CatalogueStore store;
   late int lo;
   late int ep;
+  late int part;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('anisched-reader');
@@ -26,7 +28,7 @@ void main() {
     ep = store.addEpisode(w, '#07');
     lo = store.stages(w).firstWhere((s) => s.name == 'LO').id;
     store.setEpisodeRate(ep, lo, const Rate(RateUnit.fixed, 3000));
-    final part = store.addPart(ep, 'B');
+    part = store.addPart(ep, 'B');
     for (final c in ['C1', 'C2', 'C3']) {
       store.addCut(ep, c, partId: part);
     }
@@ -85,12 +87,40 @@ void main() {
     expect((await reader.runningTimer())?.id, store.runningTimer()?.id);
     final from = DateTime(2026, 10, 1);
     final to = DateTime(2026, 12, 1);
-    final viaReader = await reader.stats(from: from, to: to);
-    final direct = store.stats(from: from, to: to);
-    expect(viaReader.total.handed, direct.total.handed);
-    expect(viaReader.total.worked, direct.total.worked);
+    // Arguments reach the store: a filter that matches nothing, a bucket.
+    final viaReader = await reader.stats(
+      from: from,
+      to: to,
+      bucket: StatsBucket.month,
+      workId: 999,
+    );
+    final direct = store.stats(
+      from: from,
+      to: to,
+      bucket: StatsBucket.month,
+      workId: 999,
+    );
     expect(viaReader.periods.length, direct.periods.length);
-    expect(viaReader.lateness, direct.lateness);
+    expect(viaReader.total.cuts, direct.total.cuts);
+    expect(
+      (await reader.stats(from: from, to: to)).total.cuts,
+      store.stats(from: from, to: to).total.cuts,
+    );
+    expect(await reader.holding(), store.holding());
+    final due = DueTarget.part(part, lo);
+    expect(
+      (await reader.dueRevisions(due)).map((r) => r.dueAt),
+      store.dueRevisions(due).map((r) => r.dueAt),
+    );
+    store.handOff([taskIds.first]);
+    expect(
+      (await reader.partGroups(includeHandedOff: true)).single.total,
+      store.partGroups(includeHandedOff: true).single.total,
+    );
+    expect(
+      (await reader.partGroups()).single.total,
+      store.partGroups().single.total,
+    );
     expect(await reader.archived(), store.archived());
     expect(await reader.hasGroupOrder(), store.hasGroupOrder);
     expect(await reader.workCutFormat(1), store.workCutFormat(1));

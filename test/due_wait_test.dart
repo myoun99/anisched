@@ -1,6 +1,5 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
-import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/schema.dart';
@@ -174,18 +173,6 @@ void main() {
       store.setPartWaiting(p.part, p.stage, waiting: true);
       store.setStatus(p.tasks[0], TaskStatus.submitted);
       expect(store.holding(), (inHand: 0, waiting: 3));
-    });
-
-    test('the reader agrees', () async {
-      final p = part4();
-      store.setPartWaiting(p.part, p.stage, waiting: true);
-      store.extendDue(DueTarget.part(p.part, p.stage), DateTime(2026, 11, 9));
-      final reader = SyncCatalogueReader(store);
-      expect(await reader.holding(), store.holding());
-      expect(
-        (await reader.dueRevisions(DueTarget.part(p.part, p.stage))).length,
-        1,
-      );
     });
   });
 

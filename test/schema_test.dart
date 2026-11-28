@@ -91,4 +91,10 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('the app database opens with foreign keys on', () {
+    final db = openAppDatabase(':memory:');
+    addTearDown(db.close);
+    expect(db.select('PRAGMA foreign_keys;').first.values.first, 1);
+  });
 }

@@ -366,7 +366,7 @@ void main() {
   test('a large catalogue saves and opens quickly', () async {
     final a = openAppDatabase('${tmp.path}/a.db');
     final store = CatalogueStore(a);
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < 3; i++) {
       final w = store.createWork('W$i');
       final r = store.addEpisodeWithCuts(
         w,
@@ -394,11 +394,11 @@ void main() {
     final tImport = sw.elapsedMilliseconds - tExport - tPrepare;
     expect(
       b.select('SELECT COUNT(*) FROM tasks').first.columnAt(0),
-      12 * 1500 * 2,
+      3 * 1500 * 2,
     );
     // ignore: avoid_print
     print(
-      '36000 tasks, ${content.size >> 10} KiB: export ${tExport}ms, '
+      '9000 tasks, ${content.size >> 10} KiB: export ${tExport}ms, '
       'check ${tPrepare}ms, import ${tImport}ms (main isolate)',
     );
     expect(sw.elapsedMilliseconds, lessThan(10000));

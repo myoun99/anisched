@@ -1,5 +1,4 @@
 import 'package:anisched/src/models/catalogue.dart';
-import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
@@ -69,11 +68,6 @@ void main() {
     expect(s.handedOff, 4);
     expect(s.works.single.cuts, 4); // the LO tasks only
 
-    // The reader passes the filter through.
-    final reader = SyncCatalogueReader(store);
-    expect((await reader.partGroups()).length, 1);
-    expect((await reader.partGroups(includeHandedOff: true)).length, 2);
-
     store.undoHandOff(ids);
     expect(store.partGroups().length, 2);
   });
@@ -111,8 +105,7 @@ void main() {
     expect(onlyA.total.handed, 1);
     expect(onlyA.total.worked, const Duration(hours: 1));
     expect(onlyA.works.single.label, 'WA');
-    final onlyB = await SyncCatalogueReader(store)
-        .stats(from: from, to: to, workId: wb);
+    final onlyB = store.stats(from: from, to: to, workId: wb);
     expect(onlyB.total.worked, const Duration(hours: 2));
     expect(onlyB.previous!.total.handed, 0);
     expect(
