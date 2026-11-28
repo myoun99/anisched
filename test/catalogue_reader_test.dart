@@ -85,6 +85,14 @@ void main() {
     final taskIds = [for (final t in store.taskRows(includeDone: true)) t.id];
     expect(await reader.workedOn(taskIds), store.workedOn(taskIds));
     expect((await reader.runningTimer())?.id, store.runningTimer()?.id);
+    expect(
+      (await reader.intervalsOf(taskIds.first)).map((i) => i.id),
+      store.intervalsOf(taskIds.first).map((i) => i.id),
+    );
+    expect(
+      (await reader.tasksBeside(taskIds.first)).map((t) => t.id),
+      store.tasksBeside(taskIds.first).map((t) => t.id),
+    );
     final from = DateTime(2026, 10, 1);
     final to = DateTime(2026, 12, 1);
     // Arguments reach the store: a filter that matches nothing, a bucket.

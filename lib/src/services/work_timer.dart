@@ -3,6 +3,18 @@ import 'package:sqlite3/sqlite3.dart';
 import '../core/clock.dart';
 import '../models/work_interval.dart';
 
+/// Thrown when an edited or added stretch would overlap another — time is
+/// recorded one stretch at a time.
+class IntervalOverlapException implements Exception {
+  IntervalOverlapException(this.otherId);
+
+  /// The stretch it would overlap.
+  final int otherId;
+
+  @override
+  String toString() => 'The stretch overlaps stretch $otherId.';
+}
+
 /// Thrown when starting a timer while another is already running.
 class TimerAlreadyRunningException implements Exception {
   @override
@@ -87,6 +99,74 @@ class WorkTimerStore {
     if (open != null && open.taskId == taskId && taskId != null) return open;
     if (open != null) stop();
     return autoStart && taskId != null ? start(taskId: taskId) : null;
+  }
+
+  // ---- editing the record by hand (「켜 두고 자 버렸다」) ----
+
+  /// Moves a stretch's start and/or stop. A running stretch keeps running
+  /// unless [stop] is given. Throws [ArgumentError] for a stop before the
+  /// start or in the future, [IntervalOverlapException] when it would
+  /// overlap another stretch.
+  void editInterval(int id, {DateTime? start, DateTime? stop}) {
+    final rows = _db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE id = ?;',
+      [id],
+    );
+    if (rows.isEmpty) throw StateError('No stretch $id.');
+    final old = _fromRow(rows.first);
+    final a = (start ?? old.start).toUtc();
+    final b = (stop ?? old.stop)?.toUtc();
+    _check(a, b, except: id);
+    _db.execute(
+      'UPDATE work_intervals SET started_at = ?, stopped_at = ? WHERE id = ?;',
+      [a.millisecondsSinceEpoch, b?.millisecondsSinceEpoch, id],
+    );
+  }
+
+  /// Adds a finished stretch on [taskId] by hand.
+  WorkInterval addInterval({
+    int? taskId,
+    required DateTime start,
+    required DateTime stop,
+  }) {
+    final a = start.toUtc();
+    final b = stop.toUtc();
+    _check(a, b);
+    _db.execute(
+      'INSERT INTO work_intervals (started_at, stopped_at, task_id) '
+      'VALUES (?, ?, ?);',
+      [a.millisecondsSinceEpoch, b.millisecondsSinceEpoch, taskId],
+    );
+    return WorkInterval(
+      id: _db.lastInsertRowId,
+      start: a,
+      stop: b,
+      taskId: taskId,
+    );
+  }
+
+  /// Removes a stretch (a running one too).
+  void deleteInterval(int id) =>
+      _db.execute('DELETE FROM work_intervals WHERE id = ?;', [id]);
+
+  void _check(DateTime start, DateTime? stop, {int? except}) {
+    final now = clock().toUtc();
+    if (stop != null && stop.isBefore(start)) {
+      throw ArgumentError('A stretch cannot stop before it starts.');
+    }
+    if ((stop ?? start).isAfter(now)) {
+      throw ArgumentError('A stretch cannot reach into the future.');
+    }
+    final end = (stop ?? now).millisecondsSinceEpoch;
+    final clash = _db.select(
+      'SELECT id FROM work_intervals WHERE id IS NOT ? '
+      'AND started_at < ? AND COALESCE(stopped_at, ?) > ? LIMIT 1;',
+      [except, end, now.millisecondsSinceEpoch, start.millisecondsSinceEpoch],
+    );
+    if (clash.isNotEmpty) {
+      throw IntervalOverlapException(clash.first['id'] as int);
+    }
   }
 
   /// Intervals that overlap `[from, to)`, oldest first, including a

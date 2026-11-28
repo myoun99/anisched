@@ -55,8 +55,12 @@ CREATE TABLE work_intervals (
 /// hand. Under the old meaning both 'submitted' and 'done' (checked OK)
 /// had left the user's hands, so both become 'submitted'; the work was
 /// finished by the hand-in at the latest, so `done_at` becomes the first
-/// hand-in. Four stages join the default preset (named as Anicel's labels)
-/// and three single-stage roles.
+/// hand-in.
+///
+/// Stage names become 「work/checker」 (Anicel's colour-label axes, 「수정」
+/// dropped: 「LO 작감 수정」 → 「LO/작감」) in works, presets and roles; the
+/// default preset gains 동화 · 동화/동검 · 시아게 · 시아게/셀검 · 리테이크 ·
+/// 캐릭터디자인, and three single-stage roles join.
 void _v14DoneBeforeSubmitted(Database db) {
   db
     ..execute('''
@@ -67,27 +71,45 @@ WHERE status IN ('submitted', 'done');''')
     ..execute('''
 UPDATE tasks SET done_at = COALESCE(submitted_at, done_at)
 WHERE status = 'retake' AND submitted_at IS NOT NULL;''');
-  // A literal copy so this step never changes once shipped.
+  // Literal copies so this step never changes once shipped.
+  const renames = {
+    '콘티 체크': '콘티/감독',
+    'LO 연출 수정': 'LO/연출',
+    'LO 작감 수정': 'LO/작감',
+    'LO 총작감 수정': 'LO/총작감',
+    '원화 연출 수정': '원화/연출',
+    '원화 작감 수정': '원화/작감',
+    '원화 총작감 수정': '원화/총작감',
+  };
+  for (final MapEntry(key: old, value: now) in renames.entries) {
+    db
+      ..execute('UPDATE work_stages SET name = ? WHERE name = ?;', [now, old])
+      ..execute('UPDATE stage_preset_items SET name = ? WHERE name = ?;', [
+        now,
+        old,
+      ])
+      ..execute('UPDATE role_stages SET stage_name = ? WHERE stage_name = ?;', [
+        now,
+        old,
+      ]);
+  }
+  // Appended to the default preset where missing, so works already made
+  // keep their stage lists; the user reorders the preset as they like.
   final preset = db.select(
     "SELECT id FROM stage_presets WHERE name = '기본' ORDER BY id LIMIT 1;",
   );
   if (preset.isNotEmpty) {
     final id = preset.first['id'] as int;
-    // Appended, so the stages works already copied keep their places;
-    // the user reorders the preset as they like.
-    final last =
-        db.select(
-              'SELECT MAX(position) AS p FROM stage_preset_items '
-              'WHERE preset_id = ?;',
-              [id],
-            ).first['p']
-            as int;
-    const tail = ['동화', '시아게', '리테이크', '캐릭터디자인'];
-    for (var i = 0; i < tail.length; i++) {
+    const added = ['동화', '동화/동검', '시아게', '시아게/셀검', '리테이크', '캐릭터디자인'];
+    for (final name in added) {
       db.execute(
-        'INSERT INTO stage_preset_items (preset_id, name, position) '
-        'VALUES (?, ?, ?);',
-        [id, tail[i], last + 1 + i],
+        '''
+INSERT INTO stage_preset_items (preset_id, name, position)
+SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM stage_preset_items
+WHERE preset_id = ?1
+  AND NOT EXISTS (SELECT 1 FROM stage_preset_items
+                  WHERE preset_id = ?1 AND name = ?2);''',
+        [id, name],
       );
     }
   }
@@ -96,17 +118,24 @@ WHERE status = 'retake' AND submitted_at IS NOT NULL;''');
               .select('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roles;')
               .first['p']
           as int;
-  const roles = ['동화', '시아게', '캐릭터디자인'];
+  const roles = [
+    ('동화', ['동화']),
+    ('시아게', ['시아게']),
+    ('캐릭터디자인', ['캐릭터디자인']),
+  ];
   for (var i = 0; i < roles.length; i++) {
     db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [
-      roles[i],
+      roles[i].$1,
       start + i,
     ]);
-    db.execute(
-      'INSERT INTO role_stages (role_id, stage_name, position) '
-      'VALUES (?, ?, 0);',
-      [db.lastInsertRowId, roles[i]],
-    );
+    final role = db.lastInsertRowId;
+    for (var j = 0; j < roles[i].$2.length; j++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [role, roles[i].$2[j], j],
+      );
+    }
   }
 }
 

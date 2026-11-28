@@ -67,6 +67,12 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.lanes].
   Future<List<String?>> lanes();
 
+  /// See [CatalogueStore.intervalsOf].
+  Future<List<WorkInterval>> intervalsOf(int taskId);
+
+  /// See [CatalogueStore.tasksBeside].
+  Future<List<TaskRow>> tasksBeside(int taskId);
+
   /// See [CatalogueStore.stats].
   Future<Stats> stats({
     required DateTime from,
@@ -200,6 +206,14 @@ class SyncCatalogueReader implements CatalogueReader {
 
   @override
   Future<List<String?>> lanes() => _run(store.lanes);
+
+  @override
+  Future<List<WorkInterval>> intervalsOf(int taskId) =>
+      _run(() => store.intervalsOf(taskId));
+
+  @override
+  Future<List<TaskRow>> tasksBeside(int taskId) =>
+      _run(() => store.tasksBeside(taskId));
 
   @override
   Future<Stats> stats({
@@ -472,6 +486,14 @@ class BackgroundCatalogueReader implements CatalogueReader {
 
   @override
   Future<List<String?>> lanes() => _ask((s) => s.lanes());
+
+  @override
+  Future<List<WorkInterval>> intervalsOf(int taskId) =>
+      _ask((s) => s.intervalsOf(taskId));
+
+  @override
+  Future<List<TaskRow>> tasksBeside(int taskId) =>
+      _ask((s) => s.tasksBeside(taskId));
 
   @override
   Future<Stats> stats({

@@ -209,7 +209,7 @@ void main() {
       '시아게',
       '캐릭터디자인',
     ]);
-    expect(store.roles()[1].stages, ['LO 연출 수정', '원화 연출 수정']);
+    expect(store.roles()[1].stages, ['LO/연출', '원화/연출']);
     expect(store.roles().first.stages, ['LO', '원화']);
     final w = store.createWork('W');
     final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'B');
@@ -245,7 +245,7 @@ void main() {
     final ids = store.roleStageIds(sakkan, w);
     expect(
       ids.map((id) => store.stages(w).firstWhere((s) => s.id == id).name),
-      ['LO 작감 수정', '원화 작감 수정'],
+      ['LO/작감', '원화/작감'],
     );
     expect(
       store.addTasksForStages([lo, ...ids], partId: r.partId),

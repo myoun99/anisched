@@ -1099,6 +1099,33 @@ ORDER BY sort_key, id;''',
     };
   }
 
+  /// Every timer stretch on [taskId], oldest first (a running one last).
+  List<WorkInterval> intervalsOf(int taskId) => [
+    for (final r in db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE task_id = ? ORDER BY started_at, id;',
+      [taskId],
+    ))
+      WorkInterval(
+        id: r['id'] as int,
+        start: _utc(r['started_at'] as int),
+        stop: _utcOrNull(r['stopped_at']),
+        taskId: taskId,
+      ),
+  ];
+
+  /// The other tasks the timer can move to from [taskId]: the live tasks
+  /// of the same episode, in display order (each row carries its part).
+  List<TaskRow> tasksBeside(int taskId) {
+    final rows = taskRows(includeDone: true);
+    final me = rows.where((t) => t.id == taskId).firstOrNull;
+    if (me == null) return const [];
+    return [
+      for (final t in rows)
+        if (t.episodeId == me.episodeId && t.id != taskId) t,
+    ];
+  }
+
   /// The running timer, if any.
   WorkInterval? runningTimer() {
     final rows = db.select(
@@ -1576,6 +1603,12 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
     final done = submitted == 1 || status == TaskStatus.done ? 1 : 0;
     _transaction(() {
       if (submitted == 1) {
+        // Out of hand: a timer running on it pauses.
+        db.execute(
+          'UPDATE work_intervals SET stopped_at = MAX(?, started_at) '
+          'WHERE stopped_at IS NULL AND task_id = ?;',
+          [now, taskId],
+        );
         db.execute(
           '''
 UPDATE retakes SET submitted_at = ?
