@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../models/catalogue.dart';
+import '../models/number_style.dart';
 import '../models/progress.dart';
 
 /// User settings, one row per key in the `settings` table. Missing keys
@@ -21,6 +22,8 @@ class SettingsStore {
   static const _parallelLanes = 'parallel_lanes';
   static const _laneNames = 'lane_names';
   static const _timerAutoStart = 'timer_auto_start';
+  static const _cutStyle = 'cut_style';
+  static const _episodeStyle = 'episode_style';
 
   /// How per-second rates round a cut's length. Default: nearest second.
   SecondsRounding get secondsRounding {
@@ -117,6 +120,38 @@ class SettingsStore {
   bool get timerAutoStart => _get(_timerAutoStart) == '1';
 
   set timerAutoStart(bool follow) => _set(_timerAutoStart, follow ? '1' : '0');
+
+  /// How cut numbers are written, for the whole document. Default `C001`.
+  NumberStyle get cutStyle => _style(_cutStyle) ?? defaultCutStyle;
+
+  set cutStyle(NumberStyle s) => _setStyle(_cutStyle, s);
+
+  /// How episode numbers are written. Default `#01`.
+  NumberStyle get episodeStyle => _style(_episodeStyle) ?? defaultEpisodeStyle;
+
+  set episodeStyle(NumberStyle s) => _setStyle(_episodeStyle, s);
+
+  NumberStyle? _style(String key) {
+    final v = _get(key);
+    if (v == null) return null;
+    final m = jsonDecode(v);
+    if (m is! Map) return null;
+    final prefix = m['prefix'];
+    final digits = m['digits'];
+    if (prefix is! String || digits is! int) return null;
+    if (digits < minStyleDigits || digits > maxStyleDigits) return null;
+    return (prefix: prefix, digits: digits);
+  }
+
+  void _setStyle(String key, NumberStyle s) {
+    RangeError.checkValueInInterval(
+      s.digits,
+      minStyleDigits,
+      maxStyleDigits,
+      'digits',
+    );
+    _set(key, jsonEncode({'prefix': s.prefix, 'digits': s.digits}));
+  }
 
   String? _get(String key) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);

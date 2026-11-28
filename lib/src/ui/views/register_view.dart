@@ -130,7 +130,7 @@ class _RegisterViewState extends State<RegisterView> {
       _part = null;
       _taken = const {};
     });
-    final f = await widget.reader?.workCutFormat(w.value);
+    final f = (await widget.reader?.numberStyles())?.cut;
     if (!mounted || f == null) return;
     setState(() => _rebuildCuts(prefix: f.prefix, width: f.digits));
   }

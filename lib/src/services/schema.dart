@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 
 /// One forward-only schema step. [version] is the `user_version` the
@@ -48,6 +50,7 @@ CREATE TABLE work_intervals (
   const Migration(12, _v12DueRevisionsAndWaits),
   const Migration(13, _v13HandedOff),
   const Migration(14, _v14DoneBeforeSubmitted),
+  const Migration(15, _v15NumberStylesAndRanks),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -122,6 +125,62 @@ WHERE preset_id = ?1
     ('동화', ['동화']),
     ('시아게', ['시아게']),
     ('캐릭터디자인', ['캐릭터디자인']),
+  ];
+  for (var i = 0; i < roles.length; i++) {
+    db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [
+      roles[i].$1,
+      start + i,
+    ]);
+    final role = db.lastInsertRowId;
+    for (var j = 0; j < roles[i].$2.length; j++) {
+      db.execute(
+        'INSERT INTO role_stages (role_id, stage_name, position) '
+        'VALUES (?, ?, ?);',
+        [role, roles[i].$2[j], j],
+      );
+    }
+  }
+}
+
+/// 유저 2026-11-28: cut and episode numbers are written one way for the
+/// whole document (settings `cut_style` · `episode_style`), so the
+/// per-work cut format goes. The document keeps the format its works use
+/// most (ties: the newest work's); none of them, or the default, writes
+/// nothing. And more ranks from Anicel's checker axis.
+void _v15NumberStylesAndRanks(Database db) {
+  final used = db.select('''
+SELECT cut_prefix, cut_digits FROM works
+GROUP BY cut_prefix, cut_digits
+ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
+  if (used.isNotEmpty) {
+    final prefix = used.first['cut_prefix'] as String;
+    final digits = used.first['cut_digits'] as int;
+    if (prefix != 'C' || digits != 3) {
+      db.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('cut_style', ?);",
+        [
+          jsonEncode({'prefix': prefix, 'digits': digits}),
+        ],
+      );
+    }
+  }
+  db
+    ..execute('ALTER TABLE works DROP COLUMN cut_prefix;')
+    ..execute('ALTER TABLE works DROP COLUMN cut_digits;');
+
+  // Seeded with a literal copy so this step never changes once shipped.
+  final start =
+      db
+              .select('SELECT COALESCE(MAX(position) + 1, 0) AS p FROM roles;')
+              .first['p']
+          as int;
+  const roles = [
+    ('감독', ['콘티/감독']),
+    ('총감독', ['콘티/총감독']),
+    ('액션작감', ['LO/액션', '원화/액션']),
+    ('동화검사', ['동화/동검']),
+    ('셀검사', ['시아게/셀검']),
+    ('러프원', ['러프원']),
   ];
   for (var i = 0; i < roles.length; i++) {
     db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [

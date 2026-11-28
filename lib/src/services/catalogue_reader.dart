@@ -6,6 +6,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/lanes.dart';
+import '../models/number_style.dart';
 import '../models/progress.dart';
 import '../models/stats.dart';
 import '../models/work_interval.dart';
@@ -116,8 +117,8 @@ abstract interface class CatalogueReader {
     String query,
   );
 
-  /// See [CatalogueStore.workCutFormat].
-  Future<({String prefix, int digits})> workCutFormat(int workId);
+  /// See [CatalogueStore.numberStyles].
+  Future<({NumberStyle cut, NumberStyle episode})> numberStyles();
 
   /// See [CatalogueStore.archived].
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
@@ -280,8 +281,8 @@ class SyncCatalogueReader implements CatalogueReader {
   ) => _run(() => store.searchEpisodes(workId, query));
 
   @override
-  Future<({String prefix, int digits})> workCutFormat(int workId) =>
-      _run(() => store.workCutFormat(workId));
+  Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>
+      _run(store.numberStyles);
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({
@@ -560,8 +561,8 @@ class BackgroundCatalogueReader implements CatalogueReader {
   ) => _ask((s) => s.searchEpisodes(workId, query));
 
   @override
-  Future<({String prefix, int digits})> workCutFormat(int workId) =>
-      _ask((s) => s.workCutFormat(workId));
+  Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>
+      _ask((s) => s.numberStyles());
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({

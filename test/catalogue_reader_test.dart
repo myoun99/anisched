@@ -132,7 +132,7 @@ void main() {
     );
     expect(await reader.archived(), store.archived());
     expect(await reader.hasGroupOrder(), store.hasGroupOrder);
-    expect(await reader.workCutFormat(1), store.workCutFormat(1));
+    expect(await reader.numberStyles(), store.numberStyles());
     expect(await reader.searchWorks('별'), store.searchWorks('별'));
     expect(await reader.searchClients(''), store.searchClients(''));
     expect(await reader.searchEpisodes(1, '07'), store.searchEpisodes(1, '07'));
