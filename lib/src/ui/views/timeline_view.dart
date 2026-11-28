@@ -566,6 +566,7 @@ class _TimelineLabel extends StatelessWidget {
                     key: Key('tl-due-${g.key}'),
                     title: S.pickDue.t,
                     due: g.dueAt,
+                    near: g.kickoffAt,
                     onPicked: onDue == null ? null : (d) => onDue!(g, d),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

@@ -17,7 +17,7 @@ import '../date_span.dart';
 import '../sliding_row.dart';
 import '../fold.dart';
 import '../format.dart';
-import '../instant.dart';
+import '../due_button.dart';
 import '../pick_field.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -413,12 +413,12 @@ class _RegisterViewState extends State<RegisterView> {
 
   Future<void> _pickDate(String stage, {required bool due}) async {
     final now = _datesOf(stage);
-    final d = await showInstantDatePicker(
-      context: context,
-      firstDate: DateTime(widget.now.year - 1),
-      lastDate: DateTime(widget.now.year + 2),
-      initialDate: due ? (now.due ?? now.kickoff) : now.kickoff,
+    final d = await pickDay(
+      context,
       title: due ? S.pickDue.t : S.pickKickoff.t,
+      value: due ? now.due : now.kickoff,
+      near: due ? now.kickoff : now.due,
+      today: widget.now,
     );
     if (d == null || !mounted) return;
     setState(() {

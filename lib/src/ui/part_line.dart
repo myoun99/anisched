@@ -305,6 +305,7 @@ class PartLine extends StatelessWidget {
       key: Key('due-${g.key}'),
       title: S.pickDue.t,
       due: g.dueAt,
+      near: g.kickoffAt,
       onPicked: onDue,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -447,11 +448,13 @@ class PartDetails extends StatelessWidget {
       DateTime? d,
       ValueChanged<DateTime>? onPicked,
       String title, {
+      DateTime? near,
       String empty = '—',
     }) => DueButton(
       key: Key('$key-${g.key}'),
       title: title,
       due: d,
+      near: near,
       onPicked: onPicked,
       child: Text(
         d == null ? empty : formatDate(d),
@@ -473,8 +476,20 @@ class PartDetails extends StatelessWidget {
         key: Key('span-production-${g.key}'),
         label: heads[0],
         labelWidth: headWidth,
-        start: date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
-        end: date('details-due', g.dueAt, onDue, S.pickDue.t),
+        start: date(
+          'details-kickoff',
+          g.kickoffAt,
+          onKickoff,
+          S.pickKickoff.t,
+          near: g.dueAt,
+        ),
+        end: date(
+          'details-due',
+          g.dueAt,
+          onDue,
+          S.pickDue.t,
+          near: g.kickoffAt,
+        ),
         trailing: [RoundBadge(g.dueRevision)],
       ),
       DateSpanPill(
@@ -486,8 +501,15 @@ class PartDetails extends StatelessWidget {
           g.planStartAt,
           onPlanStart,
           S.pickPlanStart.t,
+          near: g.planEndAt,
         ),
-        end: date('details-plan-end', g.planEndAt, onPlanEnd, S.pickPlanEnd.t),
+        end: date(
+          'details-plan-end',
+          g.planEndAt,
+          onPlanEnd,
+          S.pickPlanEnd.t,
+          near: g.planStartAt,
+        ),
       ),
     ];
     final facts = <(String, String)>[

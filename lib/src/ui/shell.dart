@@ -28,7 +28,7 @@ import 'event_editor.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
-import 'instant.dart';
+import 'due_button.dart';
 import 'palette.dart';
 import 'part_line.dart';
 import 'pick_field.dart';
@@ -847,12 +847,11 @@ class _AppShellState extends State<AppShell> {
     final picked = _pickedTasks;
     if (picked.isEmpty) return;
     final now = widget.clock();
-    final d = await showInstantDatePicker(
-      context: context,
-      firstDate: DateTime(now.year - 2),
-      lastDate: DateTime(now.year + 3),
-      initialDate: (picked.first.dueAt ?? now).toLocal(),
+    final d = await pickDay(
+      context,
       title: S.pickDue.t,
+      value: picked.first.dueAt,
+      today: now,
     );
     if (d == null || !mounted) return;
     final due = DateTime(d.year, d.month, d.day, 23, 59);
