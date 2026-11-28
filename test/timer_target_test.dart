@@ -45,8 +45,19 @@ void main() {
     expect(cutOnBar(t), '—');
     await t.tap(find.byKey(const Key('timer-cut')));
     await t.pumpAndSettle();
-    await t.tap(find.byKey(const Key('pick-option-0')));
-    await t.pumpAndSettle();
+    // The catalogue, walked down by its first line at each level.
+    while (find.byKey(const Key('browser')).evaluate().isNotEmpty) {
+      await t.tap(
+        find
+            .byWidgetPredicate(
+              (w) =>
+                  w.key is ValueKey<String> &&
+                  (w.key! as ValueKey<String>).value.startsWith('browse-'),
+            )
+            .first,
+      );
+      await t.pumpAndSettle();
+    }
     final picked = cutOnBar(t);
     expect(picked, isNot('—'));
     final id = await SyncCatalogueReader(store).timerTarget();
