@@ -51,6 +51,7 @@ CREATE TABLE work_intervals (
   const Migration(13, _v13HandedOff),
   const Migration(14, _v14DoneBeforeSubmitted),
   const Migration(15, _v15NumberStylesAndRanks),
+  const Migration(16, _v16NumbersAsValues),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -194,6 +195,99 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
         'VALUES (?, ?, ?);',
         [role, roles[i].$2[j], j],
       );
+    }
+  }
+}
+
+/// 유저 2026-11-28: 「표기 = 표시만」. Cut and episode numbers are stored as
+/// values — `C012A` → `12A`, `#07` → `7` — and shown in the document's
+/// styles; names that are not numbers (`BANK1`, `SP`) stay as typed. The
+/// prefix read off is the style's (any case) or none. Where two live
+/// names become one value (`C1` and `C001` in one episode) both stay as
+/// typed. And 감독 · 총감독 also check LO and 원화 (Anicel's checkers per
+/// work allow it).
+void _v16NumbersAsValues(Database db) {
+  String prefixOf(String key, String fallback) {
+    final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);
+    if (rows.isEmpty) return fallback;
+    final m = jsonDecode(rows.first['value'] as String);
+    return m is Map && m['prefix'] is String ? m['prefix'] as String : fallback;
+  }
+
+  // A literal copy of the rule, so this step never changes once shipped.
+  final typedValue = RegExp(r'^0*(\d{1,9})([A-Za-z]*)$');
+  String? valueOf(String typed, String prefix) {
+    final t = typed.trim();
+    final body =
+        prefix.isNotEmpty &&
+            t.length > prefix.length &&
+            t.substring(0, prefix.length).toLowerCase() == prefix.toLowerCase()
+        ? t.substring(prefix.length)
+        : t;
+    final m = typedValue.firstMatch(body);
+    return m == null ? null : '${int.parse(m[1]!)}${m[2]!.toUpperCase()}';
+  }
+
+  String sortKey(String label) => label.trim().toLowerCase().replaceAllMapped(
+    RegExp(r'\d+'),
+    (m) => m[0]!.replaceFirst(RegExp('^0+(?=.)'), '').padLeft(10, '0'),
+  );
+
+  void convert(String table, String parent, String prefix) {
+    final rows = db.select(
+      'SELECT id, $parent AS p, number, archived_at IS NULL AS live '
+      'FROM $table;',
+    );
+    // Values two live rows of one parent would share stay as typed.
+    final liveCount = <(int, String), int>{};
+    final values = <int, String?>{};
+    for (final r in rows) {
+      final v = valueOf(r['number'] as String, prefix);
+      values[r['id'] as int] = v;
+      if (v != null && r['live'] == 1) {
+        final k = (r['p'] as int, v);
+        liveCount[k] = (liveCount[k] ?? 0) + 1;
+      }
+    }
+    for (final r in rows) {
+      final v = values[r['id'] as int];
+      if (v == null || v == r['number']) continue;
+      if ((liveCount[(r['p'] as int, v)] ?? 0) > 1) continue;
+      if (r['live'] != 1 && liveCount.containsKey((r['p'] as int, v))) {
+        continue; // an archived twin of a live value keeps its name
+      }
+      db.execute('UPDATE $table SET number = ?, sort_key = ? WHERE id = ?;', [
+        v,
+        sortKey(v),
+        r['id'],
+      ]);
+    }
+  }
+
+  convert('cuts', 'episode_id', prefixOf('cut_style', 'C'));
+  convert('episodes', 'work_id', prefixOf('episode_style', '#'));
+
+  for (final (role, stages) in const [
+    ('감독', ['LO/감독', '원화/감독']),
+    ('총감독', ['LO/총감독', '원화/총감독']),
+  ]) {
+    for (final r in db.select('SELECT id FROM roles WHERE name = ?;', [role])) {
+      final id = r['id'] as int;
+      var pos =
+          db.select(
+                'SELECT COALESCE(MAX(position) + 1, 0) AS p '
+                'FROM role_stages WHERE role_id = ?;',
+                [id],
+              ).first['p']
+              as int;
+      for (final s in stages) {
+        db.execute(
+          'INSERT INTO role_stages (role_id, stage_name, position) '
+          'SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM role_stages '
+          'WHERE role_id = ? AND stage_name = ?);',
+          [id, s, pos++, id, s],
+        );
+      }
     }
   }
 }

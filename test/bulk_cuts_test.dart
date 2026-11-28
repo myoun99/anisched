@@ -163,7 +163,7 @@ void main() {
       ..linkSharedCuts([r.cutIds[1], r.cutIds[2]]);
     final g = store.partGroups().single;
     expect(g.pay, 2000 + 3000 + 4000);
-    expect(g.tasks.map((t) => t.sharedLabel), [null, 'C2-3', 'C2-3']);
+    expect(g.tasks.map((t) => t.sharedLabel), [null, 'C002-003', 'C002-003']);
   });
 
   test('leaving a shared group; the group re-forms or dissolves', () {
@@ -176,13 +176,23 @@ void main() {
         t.unitLabel: t.sharedLabel,
     };
     store.linkSharedCuts([ids[0], ids[1], ids[2]]);
-    expect(labels()['C2'], 'C1-3');
+    expect(labels()['C002'], 'C001-003');
     // The first cut leaves: C2 leads C2–C3.
     store.unlinkSharedCut(ids[0]);
-    expect(labels(), {'C1': null, 'C2': 'C2-3', 'C3': 'C2-3', 'C4': null});
+    expect(labels(), {
+      'C001': null,
+      'C002': 'C002-003',
+      'C003': 'C002-003',
+      'C004': null,
+    });
     // Re-linking a member moves it into the new group.
     store.linkSharedCuts([ids[2], ids[3]]);
-    expect(labels(), {'C1': null, 'C2': null, 'C3': 'C3-4', 'C4': 'C3-4'});
+    expect(labels(), {
+      'C001': null,
+      'C002': null,
+      'C003': 'C003-004',
+      'C004': 'C003-004',
+    });
     store.unlinkSharedCut(ids[3]);
     expect(labels().values.toSet(), {null});
     expect(() => store.linkSharedCuts([ids[0]]), throwsArgumentError);
@@ -219,6 +229,7 @@ void main() {
     expect(store.roles()[1].stages, ['LO/연출', '원화/연출']);
     final byName = {for (final r in store.roles()) r.name: r.stages};
     expect(byName['액션작감'], ['LO/액션', '원화/액션']);
+    expect(byName['감독'], ['콘티/감독', 'LO/감독', '원화/감독']);
     // Every seeded role uses names of the two axes; 리테이크 is in none.
     for (final r in store.roles()) {
       for (final s in r.stages) {
@@ -316,7 +327,7 @@ void main() {
     expect(store.parts(r.episodeId).single.cutCount, 2);
     var g = store.partGroups().single;
     expect(g.total, 2);
-    expect(g.tasks.map((t) => t.sharedLabel), ['C1-2', 'C1-2']);
+    expect(g.tasks.map((t) => t.sharedLabel), ['C001-002', 'C001-002']);
     // Per-cut rate twice.
     expect(g.pay, 5000);
     // Two cuts over today and tomorrow.
@@ -341,19 +352,19 @@ void main() {
       ..linkSharedCuts([ids[1], ids[2]])
       ..removeCutIds([ids[3]]);
     var rows = store.cuts(r.episodeId);
-    expect(rows.map((c) => c.number), ['C1', 'C2', 'C3']);
+    expect(rows.map((c) => c.number), ['C001', 'C002', 'C003']);
     expect(rows.map((c) => c.sharedHeadCutId), [null, ids[1], ids[1]]);
-    expect(rows.map((c) => c.sharedLabel), [null, 'C2-3', 'C2-3']);
+    expect(rows.map((c) => c.sharedLabel), [null, 'C002-003', 'C002-003']);
     expect(rows.every((c) => !c.archived), isTrue);
 
     rows = store.cuts(r.episodeId, includeArchived: true);
     expect(rows.map((c) => (c.number, c.archived)), [
-      ('C1', false),
-      ('C2', false),
-      ('C3', false),
-      ('C4', true),
+      ('C001', false),
+      ('C002', false),
+      ('C003', false),
+      ('C004', true),
     ]);
     store.restore(ArchiveKind.cut, ids[3]);
-    expect(store.cuts(r.episodeId).last.number, 'C4');
+    expect(store.cuts(r.episodeId).last.number, 'C004');
   });
 }

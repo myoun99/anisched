@@ -62,13 +62,17 @@ class CutDraft {
       if (!removed.contains(c)) splits[c] ?? 1,
   ].fold(0, (a, b) => a + b);
 
-  /// Cells whose name is used twice on the grid or already [taken].
-  Set<String> clashes([Set<String> taken = const {}]) {
+  /// Cells whose name is used twice on the grid or already [taken]; names
+  /// are compared by [key] (the store compares stored values).
+  Set<String> clashes([
+    Set<String> taken = const {},
+    String Function(String name) key = _same,
+  ]) {
     final seen = <String, String>{};
     final out = <String>{};
     for (final c in cells) {
       if (removed.contains(c)) continue;
-      final n = nameOf(c);
+      final n = key(nameOf(c));
       if (taken.contains(n)) out.add(c);
       final other = seen[n];
       if (other != null) out.addAll([c, other]);
@@ -190,8 +194,10 @@ class CutNameClash implements Exception {
 List<int> register(CatalogueStore store, RegistrationDraft d) {
   if (d.stages.isEmpty) throw ArgumentError('No stage picked.');
   final ep = d.episodeId;
-  final taken = {for (final c in store.cuts(ep)) c.number};
-  final clash = d.cuts.clashes(taken);
+  // Numbers are matched by value: what the grid names `C012` is the cut
+  // stored as 12, whatever the style.
+  final taken = {for (final c in store.cuts(ep)) store.cutKey(c.number)};
+  final clash = d.cuts.clashes(taken, store.cutKey);
   if (clash.isNotEmpty) {
     throw CutNameClash([for (final c in clash) d.cuts.nameOf(c)]);
   }
@@ -211,8 +217,10 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
   final added = store.addCuts(ep, [
     for (final c in live) d.cuts.nameOf(c),
   ], partId: partId).added;
-  final idOf = {for (final c in store.cuts(ep)) c.number: c.id};
-  final cellId = {for (final c in live) c: idOf[d.cuts.nameOf(c)]};
+  final idOf = {for (final c in store.cuts(ep)) store.cutKey(c.number): c.id};
+  final cellId = {
+    for (final c in live) c: idOf[store.cutKey(d.cuts.nameOf(c))],
+  };
 
   final tasks = <int>[];
   final stageIds = <int>[];
@@ -255,3 +263,5 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
   }
   return tasks;
 }
+
+String _same(String name) => name;
