@@ -1275,26 +1275,24 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
     from = DateTime(from.year, from.month, from.day);
     to = DateTime(to.year, to.month, to.day);
     final days = to.difference(from).inHours ~/ 24;
-    final current = _stats(from, to, bucket, clientId, workId);
+    // The facts do not depend on the period: read them once for both.
+    final facts = _statsFacts(clientId, workId);
+    final filtered = clientId != null || workId != null;
+    final current = _stats(facts, from, to, bucket, filtered: filtered);
     current.previous = _stats(
+      facts,
       DateTime(from.year, from.month, from.day - days),
       from,
       bucket,
-      clientId,
-      workId,
+      filtered: filtered,
     );
     current.stagePaces = stagePaces();
     return current;
   }
 
-  Stats _stats(
-    DateTime from,
-    DateTime to,
-    StatsBucket bucket,
-    int? clientId,
-    int? workId,
-  ) {
-    final filtered = clientId != null || workId != null;
+  /// Every task the statistics count (finished and handed-off ones too),
+  /// with its client, for [clientId] / [workId] when given.
+  List<StatsFact> _statsFacts(int? clientId, int? workId) {
     final extra = {
       for (final r in db.select('''
 SELECT t.id, t.submitted_at, t.submitted_due_at, t.done_at, w.client_id,
@@ -1305,7 +1303,7 @@ JOIN works w ON w.id = s.work_id
 LEFT JOIN clients c ON c.id = w.client_id;'''))
         r['id'] as int: r,
     };
-    final facts = [
+    return [
       for (final t in taskRows(
         workId: workId,
         includeDone: true,
@@ -1336,6 +1334,15 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               worked: t.worked,
             ),
     ];
+  }
+
+  Stats _stats(
+    List<StatsFact> facts,
+    DateTime from,
+    DateTime to,
+    StatsBucket bucket, {
+    required bool filtered,
+  }) {
     final dayStart = settings.dayStartMinutes;
     final start = DateTime(
       from.year,
@@ -1907,6 +1914,14 @@ WHERE t.done_at >= ? AND t.done_at < ?
     final rounding = settings.secondsRounding;
     final rows = db.select(
       '''
+WITH open_units AS MATERIALIZED (
+  -- (stage, part — or loose episode) units that still have work in hand:
+  -- one pass here instead of a search per submitted task.
+  SELECT DISTINCT t2.stage_id, c2.part_id,
+         CASE WHEN c2.part_id IS NULL THEN c2.episode_id END AS loose_episode
+  FROM live_tasks t2 JOIN cuts c2 ON c2.id = t2.cut_id
+  WHERE ?3 = 0 AND t2.status <> 'submitted'
+)
 SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
@@ -1971,12 +1986,12 @@ WHERE (?2 IS NULL OR w.id = ?2)
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
   AND (p.id IS NULL OR p.archived_at IS NULL)
-  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND EXISTS (
-    SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
-    WHERE t2.stage_id = t.stage_id AND t2.status <> 'submitted'
-      AND (c2.part_id = c.part_id
-        OR (c.part_id IS NULL AND c2.part_id IS NULL
-            AND c2.episode_id = c.episode_id)))))
+  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND (
+    EXISTS (SELECT 1 FROM open_units o
+            WHERE o.stage_id = t.stage_id AND o.part_id = c.part_id)
+    OR (c.part_id IS NULL AND EXISTS (SELECT 1 FROM open_units o
+            WHERE o.stage_id = t.stage_id AND o.part_id IS NULL
+              AND o.loose_episode = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
       [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
@@ -1984,8 +1999,12 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     final sharedLabels = _sharedLabels();
     final cutStyle = settings.cutStyle;
     final episodeStyle = settings.episodeStyle;
-    String? cut(Object? v) =>
-        v == null ? null : shownNumber(v as String, cutStyle);
+    // Many rows share an episode, and a cut its stages: show each once.
+    final shownCuts = <String, String>{};
+    final shownEpisodes = <String, String>{};
+    String? cut(Object? v) => v == null
+        ? null
+        : shownCuts.putIfAbsent(v as String, () => shownNumber(v, cutStyle));
     return [
       for (final r in rows)
         TaskRow(
@@ -1998,9 +2017,9 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           clientColor: r['client_color'] as int?,
           currency: r['currency'] as String,
           episodeId: r['episode_id'] as int,
-          episodeNumber: shownNumber(
+          episodeNumber: shownEpisodes.putIfAbsent(
             r['episode_number'] as String,
-            episodeStyle,
+            () => shownNumber(r['episode_number'] as String, episodeStyle),
           ),
           stageId: r['stage_id'] as int,
           stageName: r['stage_name'] as String,
@@ -2765,10 +2784,51 @@ GROUP BY s.name;''',
   int _depth = 0;
   bool _placesHeld = false;
 
-  /// Before a date changes: [holdPlaces], once per outermost transaction.
+  /// Before a date changes: [holdPlaces], once per outermost transaction —
+  /// unless everything is held already ([_placesHeldAlready]).
   void _holdBeforeDates() {
     if (_placesHeld) return;
     _placesHeld = true;
-    holdPlaces();
+    if (!placesHeld) holdPlaces();
   }
+
+  /// Whether everything is held already ([holdPlaces] would change
+  /// nothing that shows): see [_placesHeldAlready].
+  bool get placesHeld => _placesHeldAlready();
+
+  /// The cheap check that lets most date writes skip [holdPlaces]: every
+  /// open unit has a place in the row order, and every open unit that
+  /// could be on the calendar (some start and some end, at any level — a
+  /// superset of the bars actually placed, so a miss only costs time) is
+  /// pinned. One grouped query instead of the whole layout. The keys are
+  /// [TaskRow.groupKey]'s, written in SQL; a test holds the two together.
+  bool _placesHeldAlready() =>
+      db.select('''
+WITH units AS (
+  SELECT CASE WHEN t.storyboard_id IS NOT NULL THEN 'storyboard:' || t.id
+              WHEN c.part_id IS NULL
+                THEN 'nopart:' || c.episode_id || ':' || t.stage_id
+              ELSE 'part:' || c.part_id || ':' || t.stage_id END AS key,
+         MAX(t.kickoff_at IS NOT NULL OR t.plan_start_at IS NOT NULL
+             OR k.kickoff_at IS NOT NULL OR pl.start_at IS NOT NULL)
+           AND MAX(t.due_at IS NOT NULL OR t.plan_end_at IS NOT NULL
+             OR d.due_at IS NOT NULL OR pl.end_at IS NOT NULL) AS dated
+  FROM live_tasks t
+  LEFT JOIN cuts c ON c.id = t.cut_id
+  LEFT JOIN part_stage_dues d
+    ON d.part_id = c.part_id AND d.stage_id = t.stage_id
+  LEFT JOIN part_stage_kickoffs k
+    ON k.part_id = c.part_id AND k.stage_id = t.stage_id
+  LEFT JOIN part_stage_plans pl
+    ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
+  WHERE t.handed_off_at IS NULL AND t.status <> 'submitted'
+  GROUP BY key
+)
+SELECT NOT EXISTS (
+  SELECT 1 FROM units u
+  WHERE NOT EXISTS (SELECT 1 FROM group_order o WHERE o.group_key = u.key)
+     OR (u.dated AND NOT EXISTS (
+           SELECT 1 FROM lane_pins l WHERE l.group_key = u.key))
+) AS held;''').first['held'] ==
+      1;
 }
