@@ -10,6 +10,7 @@ typedef AppDatabase = CommonDatabase;
 const bool sqliteHasWal = false;
 
 WasmSqlite3? _sqlite;
+IndexedDbFileSystem? _store;
 final _memory = InMemoryFileSystem(name: memoryVfs);
 
 /// The in-memory file system that holds documents on their way in
@@ -24,14 +25,16 @@ Future<void> initSqlite({
 }) async {
   if (_sqlite != null) return;
   final sqlite = await WasmSqlite3.loadFromUrl(Uri.parse(wasmUrl));
+  final store = await IndexedDbFileSystem.open(dbName: storeName);
   sqlite
-    ..registerVirtualFileSystem(
-      await IndexedDbFileSystem.open(dbName: storeName),
-      makeDefault: true,
-    )
+    ..registerVirtualFileSystem(store, makeDefault: true)
     ..registerVirtualFileSystem(_memory);
   _sqlite = sqlite;
+  _store = store;
 }
+
+/// Waits until every write has reached IndexedDB (the page may go away).
+Future<void> flushSqlite() async => _store?.flush();
 
 WasmSqlite3 get _lib =>
     _sqlite ?? (throw StateError('initSqlite() has not finished.'));

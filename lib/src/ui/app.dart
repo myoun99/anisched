@@ -30,7 +30,7 @@ class AnischedApp extends StatefulWidget {
   final WorkTimerStore? timer;
 
   /// The open document; null hides the file menu.
-  final DocumentSession? session;
+  final DocumentSessionBase? session;
 
   /// The last resume check.
   final ValueListenable<RemoteCheck?>? remote;
