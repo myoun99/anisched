@@ -23,6 +23,10 @@ const lineInset = 14.0;
 const _progressW = 112.0;
 const _signalW = 100.0;
 
+/// What today asks of a unit (「3/day」): wide lines only; a narrow one
+/// shows it in its opened details.
+const _perDayW = 64.0;
+
 /// The client column: a chip on wide lines, its square on narrow ones.
 const _clientW = 104.0;
 const _clientNarrowW = 28.0;
@@ -45,24 +49,36 @@ class PartHeader extends StatelessWidget {
       ),
       child: SizedBox(
         height: 30,
-        child: Row(
-          children: [
-            const SizedBox(width: lineInset),
-            Expanded(child: Text(S.title.t, style: style)),
-            SizedBox(
-              width: _progressW,
-              child: Text(S.progress.t, style: style),
-            ),
-            SizedBox(
-              width: _clientW,
-              child: Text(S.client.t, style: style),
-            ),
-            SizedBox(
-              width: _signalW,
-              child: Text(S.due.t, style: style, textAlign: TextAlign.right),
-            ),
-            const SizedBox(width: 14),
-          ],
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              const SizedBox(width: lineInset),
+              Expanded(child: Text(S.title.t, style: style)),
+              SizedBox(
+                width: _progressW,
+                child: Text(S.progress.t, style: style),
+              ),
+              if (box.maxWidth >= _narrowLine)
+                SizedBox(
+                  width: _perDayW,
+                  child: Text(
+                    S.perDay.t,
+                    style: style,
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              if (box.maxWidth >= _narrowLine) const SizedBox(width: 10),
+              SizedBox(
+                width: _clientW,
+                child: Text(S.client.t, style: style),
+              ),
+              SizedBox(
+                width: _signalW,
+                child: Text(S.due.t, style: style, textAlign: TextAlign.right),
+              ),
+              const SizedBox(width: 14),
+            ],
+          ),
         ),
       ),
     );
@@ -158,6 +174,17 @@ class PartLine extends StatelessWidget {
                     width: wide ? _progressW : 70,
                     child: _progressCell(c, b, wide),
                   ),
+                  if (wide)
+                    SizedBox(
+                      key: Key('per-day-${b?.key ?? g.key}'),
+                      width: _perDayW,
+                      child: FitText(
+                        perDayText(signals?.pace),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: c.muted),
+                      ),
+                    ),
+                  if (wide) const SizedBox(width: 10),
                   SizedBox(
                     width: wide ? _clientW : _clientNarrowW,
                     child: Align(
@@ -322,6 +349,15 @@ class PartLine extends StatelessWidget {
       children: [for (final s in b.stages) PartProgress(s, height: 3)],
     );
   }
+}
+
+/// What today asks of a unit, as a short token: 「3/day」, 「2.5/day」;
+/// nothing without a pace or with nothing left.
+String perDayText(Pace? pace) {
+  if (pace == null || pace.remaining == 0) return '';
+  final n = pace.today;
+  final shown = n == n.roundToDouble() ? '${n.round()}' : n.toStringAsFixed(1);
+  return '$shown/day';
 }
 
 /// What opens under a line: dates, plan, pace, pay, time and the cuts.
