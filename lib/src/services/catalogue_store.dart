@@ -1228,6 +1228,23 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
     ];
   }
 
+  /// The task the timer was last pointed at (유저 2026-11-28: the same cut
+  /// after a relaunch, kept in the document), or null when none was, or
+  /// it has since gone — deleted, handed off, or submitted.
+  int? timerTarget() {
+    final id = settings.timerTargetId;
+    if (id == null) return null;
+    final live = db.select(
+      'SELECT 1 FROM live_tasks WHERE id = ? AND handed_off_at IS NULL '
+      "AND status <> 'submitted';",
+      [id],
+    );
+    return live.isEmpty ? null : id;
+  }
+
+  /// Remembers [taskId] as the timer's target; null forgets it.
+  void setTimerTarget(int? taskId) => settings.timerTargetId = taskId;
+
   /// The running timer, if any.
   WorkInterval? runningTimer() {
     final rows = db.select(
