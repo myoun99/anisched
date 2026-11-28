@@ -299,6 +299,22 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // The same two picked, the ⋯ menu open where the bar is short of room.
+  'picked-more': (
+    AppView.list,
+    (t, size) async {
+      final lines = byKeyPrefix('line-');
+      await t.longPress(lines.at(0));
+      await t.pump();
+      await t.longPress(lines.at(1));
+      await t.pump();
+      final more = find.byKey(const Key('pick-more'));
+      if (more.evaluate().isNotEmpty) {
+        await t.tap(more);
+        await t.pump();
+      }
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
