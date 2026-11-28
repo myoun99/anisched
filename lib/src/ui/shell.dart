@@ -217,7 +217,7 @@ class _AppShellState extends State<AppShell> {
             const {DateTime.saturday, DateTime.sunday},
         daysOff: [
           if (st != null)
-            for (final d in st.daysOff()) d.range,
+            for (final d in st.restDays()) DaysOff(d.date),
         ],
         holidays: st == null || st.settings.showHolidays
             ? {for (final h in holidays) h.date: h.name}
