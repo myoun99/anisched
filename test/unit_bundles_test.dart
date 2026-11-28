@@ -13,7 +13,7 @@ import 'support/sample_catalogue.dart';
 
 final now = DateTime(2026, 11, 27, 14);
 
-/// 별빛 #07 part B: LO (all done, overdue) gets 原画 due in [days].
+/// 별빛 #07 part B: LO (one cut left, overdue) gets 原画 due in [days].
 PartGroup addGenga(CatalogueStore s, {int days = 5}) {
   final lo = s.partGroups().firstWhere(
     (g) => g.workTitle == '별빛 정류장' && g.partLabel == 'B',
@@ -22,6 +22,14 @@ PartGroup addGenga(CatalogueStore s, {int days = 5}) {
   s.addTasksForPart(lo.partId!, genga);
   s.setPartDue(lo.partId!, genga, now.add(Duration(days: days)));
   return lo;
+}
+
+/// Hands in what is left of [lo] (its one open cut): the stage has
+/// nothing left to work on, and shows only with `includeDone`.
+void finishLo(CatalogueStore s, PartGroup lo) {
+  for (final t in lo.tasks.where((t) => t.isOpen)) {
+    s.setStatus(t.id, TaskStatus.submitted);
+  }
 }
 
 Future<void> pumpShell(WidgetTester t, CatalogueStore store, AppView v) async {
@@ -90,16 +98,17 @@ void main() {
     expect(b.key, 'bundle:part:${lo.partId}');
     expect(b.total, 8);
     expect(b.together.total, 8);
-    expect(b.handed, 0);
+    expect(b.handed, 3); // LO's three handed-in cuts
     // A plain unit's bundle keeps the unit's own key.
     expect(bundles.firstWhere((b) => b.single).key, isNot(startsWith('b')));
   });
 
   test('the lead is the earliest deadline still to work on', () {
     final s = sampleCatalogue(now);
-    addGenga(s, days: 5);
-    final b = bundleUnits(s.partGroups()).singleWhere((b) => !b.single);
-    // LO is overdue but all done (nothing left to work): 原画 leads.
+    finishLo(s, addGenga(s, days: 5));
+    final b = bundleUnits(s.partGroups(includeDone: true))
+        .singleWhere((b) => !b.single);
+    // LO is overdue but all handed in (nothing left to work): 原画 leads.
     expect(b.lead.stageName, '원화');
   });
 
@@ -120,19 +129,21 @@ void main() {
   test('with nothing left to work on, the first stage leads', () {
     final s = sampleCatalogue(now);
     final lo = addGenga(s);
-    final b0 = bundleUnits(s.partGroups()).singleWhere((b) => !b.single);
+    finishLo(s, lo);
+    final b0 = bundleUnits(s.partGroups(includeDone: true))
+        .singleWhere((b) => !b.single);
     for (final t in b0.stages.last.tasks) {
-      s.setStatus(t.id, TaskStatus.done);
+      s.setStatus(t.id, TaskStatus.submitted);
     }
-    final b = bundleUnits(s.partGroups())
+    final b = bundleUnits(s.partGroups(includeDone: true))
         .singleWhere((b) => b.key == 'bundle:part:${lo.partId}');
     expect(b.lead.stageName, 'LO');
   });
 
   test('a bundle sits where its lead was; others keep their order', () {
     final s = sampleCatalogue(now);
-    addGenga(s, days: 30);
-    final groups = s.partGroups();
+    finishLo(s, addGenga(s, days: 30));
+    final groups = s.partGroups(includeDone: true);
     final bundles = bundleUnits(groups);
     final leads = [for (final b in bundles) b.lead.key];
     final order = [for (final g in groups) g.key];

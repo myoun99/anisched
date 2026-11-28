@@ -42,7 +42,7 @@ void main() {
   group('pace and signals', () {
     test('nothing left past the end is not behind', () {
       final g = PartGroup([
-        row(1, status: TaskStatus.done, due: DateTime(2026, 11, 2)),
+        row(1, status: TaskStatus.submitted, due: DateTime(2026, 11, 2)),
       ]);
       final pace = paceFor(g, now)!;
       expect(pace.workDays, 0);

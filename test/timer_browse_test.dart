@@ -75,7 +75,7 @@ void main() {
     await tapKey(t, 'browse-work-${g.workId}');
     await tapKey(t, 'browse-episode-${g.episodeId}');
     await tapKey(t, 'browse-unit-${g.key}');
-    final cut = cutUnits(g.tasks).first;
+    final cut = cutUnits(g.tasks.where((x) => x.isOpen)).first;
     await tapKey(t, 'browse-cut-${cut.first.id}');
     expect(find.byKey(const Key('browser')), findsNothing);
     expect(barCut(t), taskLabel(cut.first));
@@ -108,7 +108,7 @@ void main() {
       (o) =>
           o.key != g.key && o.episodeId == g.episodeId && o.partId == g.partId,
     );
-    store.setTimerTarget(g.tasks.first.id);
+    store.setTimerTarget(g.tasks.firstWhere((x) => x.isOpen).id);
     await t.pumpWidget(const SizedBox());
     await t.pumpWidget(
       MaterialApp(

@@ -44,7 +44,7 @@ void main() {
     timer.start(taskId: gengaTasks[0]);
     now = DateTime(2026, 11, 2, 12);
     timer.stop();
-    store.setStatus(gengaTasks[1], TaskStatus.done);
+    store.setStatus(gengaTasks[1], TaskStatus.submitted);
 
     final ids = store.handOffPart(r.partId!, genga, note: 'moved to B');
     expect(ids, hasLength(4));
@@ -69,7 +69,7 @@ void main() {
     );
     expect(s.total.worked, const Duration(hours: 2));
     expect(s.stages.map((x) => x.label), contains('원화'));
-    expect(s.total.done, 0);
+    expect(s.total.handed, 0);
     expect(s.total.earned, isEmpty);
     expect(s.handedOff, 4);
     expect(s.days.first.planned, 0); // its plan no longer occupies a lane

@@ -349,10 +349,10 @@ void main() {
 
     // The recent pace counts the pair once; money counts each cut.
     expect(store.usualPaces().singleWhere((u) => u.stageName == 'LO').cuts, 1);
-    store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.done);
+    store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.submitted);
     expect(store.monthlyTotals(2026, 11)['JPY']!.total, 7500);
     final stats = store.stats(from: DateTime(2026, 11), to: DateTime(2026, 12));
-    expect(stats.total.done, 2);
+    expect(stats.total.handed, 2);
     expect(stats.total.earned['JPY'], 7500);
   });
 

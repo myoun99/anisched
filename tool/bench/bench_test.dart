@@ -271,8 +271,7 @@ void _fill(CatalogueStore store) {
             );
           for (final id in ids) {
             final status = switch (n++ % 6) {
-              0 || 1 => TaskStatus.submitted,
-              2 => TaskStatus.done,
+              0 || 1 || 2 => TaskStatus.submitted,
               3 => TaskStatus.inProgress,
               4 => TaskStatus.retake,
               _ => TaskStatus.received,

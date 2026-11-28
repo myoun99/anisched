@@ -1,3 +1,4 @@
+import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/work_timer.dart';
@@ -81,10 +82,12 @@ void main() {
         ),
       );
       await t.pump();
-      final g = store.partGroups().firstWhere((g) => g.tasks.length > 2);
+      final g = store.partGroups().firstWhere(
+        (g) => g.tasks.where((x) => x.isOpen).length > 2,
+      );
       await t.tap(find.byKey(Key('line-${g.key}')));
       await t.pump();
-      final task = g.tasks.first;
+      final task = g.tasks.firstWhere((x) => x.isOpen);
       await t.tap(find.byKey(Key('cut-${task.id}')));
       await t.pump();
       return (store, timer, task.id);
@@ -126,7 +129,9 @@ void main() {
       );
     });
 
-    testWidgets('완료 then 제출; submitting pauses, the cut stays', (t) async {
+    testWidgets('제출 pauses, the cut stays (2026-11-28 유저: 완료와 제출 합침)', (
+      t,
+    ) async {
       final (store, timer, id) = await pick(t);
       await t.tap(find.byKey(const Key('timer-toggle')));
       await t.pump();
@@ -134,22 +139,18 @@ void main() {
       await t.tap(find.byKey(const Key('timer-finish')));
       await t.pump();
       await t.pump();
-      expect(find.text('제출'), findsWidgets);
-      await t.tap(find.byKey(const Key('timer-finish')));
-      await t.pump();
-      await t.pump();
       expect(timer.running(), isNull, reason: 'submitting pauses');
       expect(find.byKey(const Key('timer-cut')), findsOneWidget);
-      // A long press steps back.
+      // A long press steps back to work.
       await t.longPress(find.byKey(const Key('timer-finish')));
       await t.pump();
-      await t.tap(find.byKey(const Key('timer-back-done')));
+      await t.tap(find.byKey(const Key('timer-back-in_progress')));
       await t.pump();
       await t.pump();
       final row = store
           .taskRows(includeDone: true)
           .firstWhere((x) => x.id == id);
-      expect(row.status.name, 'done');
+      expect(row.status, TaskStatus.inProgress);
     });
 
     testWidgets('a long press on the bar fixes the time by hand', (t) async {

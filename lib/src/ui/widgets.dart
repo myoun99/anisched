@@ -12,7 +12,6 @@ extension StatusColor on AppColors {
     TaskStatus.inProgress => working,
     TaskStatus.submitted => submitted,
     TaskStatus.retake => retake,
-    TaskStatus.done => done,
   };
 
   /// A status as the colour of words (a cut's number): its own colour,
@@ -104,7 +103,6 @@ class PartProgress extends StatelessWidget {
 
   static const _order = [
     TaskStatus.submitted,
-    TaskStatus.done,
     TaskStatus.inProgress,
     TaskStatus.retake,
     TaskStatus.received,

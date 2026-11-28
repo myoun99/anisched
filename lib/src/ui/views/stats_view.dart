@@ -331,8 +331,8 @@ class _StatsViewState extends State<StatsView> {
     return [
       _Kpi(
         label: S.kDone.t,
-        value: '${t.done} cut',
-        note: _delta(context, t.done, p?.total.done),
+        value: '${t.handed} cut',
+        note: _delta(context, t.handed, p?.total.handed),
       ),
       _Kpi(
         label: S.kWorked.t,
@@ -444,7 +444,7 @@ class _StatsViewState extends State<StatsView> {
   // Cards.
 
   Widget _doneCard(BuildContext context, Stats s) {
-    final values = [for (final p in s.periods) p.done.toDouble()];
+    final values = [for (final p in s.periods) p.handed.toDouble()];
     final labels = [for (final p in s.periods) _periodLabel(p.start)];
     final avg = values.isEmpty
         ? 0.0
