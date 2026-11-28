@@ -2,6 +2,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/widgets.dart';
 import 'package:anisched/src/controllers/registration.dart';
 import 'package:flutter/gestures.dart';
 import 'package:anisched/src/ui/fold.dart';
@@ -33,6 +34,51 @@ Future<CatalogueStore> pumpRegister(WidgetTester t, Size size) async {
   return store;
 }
 
+Future<void> tapIn(WidgetTester t, Finder f) async {
+  await t.ensureVisible(f);
+  await t.pump();
+  await t.tap(f);
+  await t.pump();
+}
+
+/// 「범위로 추가」 [first] to [last].
+Future<void> addRange(WidgetTester t, int first, int last) async {
+  await t.enterText(find.byKey(const Key('reg-first')), '$first');
+  await t.enterText(find.byKey(const Key('reg-last')), '$last');
+  await t.pump();
+  await tapIn(t, find.byKey(const Key('cut-add-range')));
+}
+
+/// 「직접 추가」 one cut by [name].
+Future<void> addOne(WidgetTester t, String name) async {
+  await tapIn(t, find.byKey(const Key('cut-add-one')));
+  await t.pumpAndSettle();
+  await t.enterText(find.byKey(const Key('name-input')), name);
+  await t.tap(find.byKey(const Key('name-ok')));
+  await t.pumpAndSettle();
+}
+
+/// The blocks in reading order, by cell id.
+List<String> blocks(WidgetTester t) {
+  final ids =
+      find
+          .byWidgetPredicate((w) {
+            final k = w.key;
+            return k is ValueKey<String> && k.value.startsWith('cell-');
+          })
+          .evaluate()
+          .map((e) => (e.widget.key! as ValueKey<String>).value)
+          .toList()
+        ..sort((a, b) {
+          final pa = t.getTopLeft(find.byKey(Key(a)));
+          final pb = t.getTopLeft(find.byKey(Key(b)));
+          return pa.dy != pb.dy
+              ? pa.dy.compareTo(pb.dy)
+              : pa.dx.compareTo(pb.dx);
+        });
+  return [for (final id in ids) id.substring('cell-'.length)];
+}
+
 void main() {
   setUp(() {
     Folds.cutsInDetails.value = true;
@@ -46,37 +92,49 @@ void main() {
       await pumpRegister(t, size);
       expect(t.takeException(), isNull);
       expect(find.byKey(const Key('role-원화')), findsOneWidget);
-      if (size.width >= 1100) {
-        expect(find.byKey(const Key('cell-C001')), findsOneWidget);
+      // Four cards; the list empty until the tools fill it.
+      for (final k in ['work', 'roles', 'dates', 'cuts']) {
+        expect(find.byKey(Key('reg-sec-$k')), findsOneWidget);
       }
+      expect(blocks(t), isEmpty);
+      // No A/B, no 「+」 block: the tools above the list add.
+      expect(find.byKey(const Key('cut-split')), findsNothing);
+      expect(find.byKey(const Key('cell-add')), findsNothing);
+      expect(find.text('A/B'), findsNothing);
     });
   }
 
-  testWidgets('a role checks its stages; a stage box toggles alone', (t) async {
+  testWidgets('roles add up: two on, their stages together; one off', (
+    t,
+  ) async {
     await pumpRegister(t, const Size(1440, 900));
-    await t.tap(find.byKey(const Key('role-작감')));
-    await t.pump();
-    final lo = find.descendant(
-      of: find.byKey(const Key('stage-LO/작감')),
-      matching: find.byType(Checkbox),
-    );
-    expect(t.widget<Checkbox>(lo).value, isTrue);
-    expect(find.text('공정 2개'), findsOneWidget);
-    // Folded, a box unchecked leaves the row.
-    await t.tap(find.byKey(const Key('stage-LO/작감')));
-    await t.pump();
-    expect(find.byKey(const Key('stage-LO/작감')), findsNothing);
-    expect(find.text('공정 1개'), findsOneWidget);
-    // Unfolded, every stage shows, checked or not.
-    await t.tap(find.byKey(const Key('fold-stages')));
-    await t.pump();
-    expect(t.widget<Checkbox>(lo).value, isFalse);
-    final boxes = find.byWidgetPredicate(
-      (w) =>
-          w.key is ValueKey<String> &&
-          (w.key! as ValueKey<String>).value.startsWith('stage-'),
-    );
-    expect(boxes.evaluate().length, greaterThan(2));
+    bool checked(String stage) => t
+        .widget<Checkbox>(
+          find.descendant(
+            of: find.byKey(Key('stage-$stage')),
+            matching: find.byType(Checkbox),
+          ),
+        )
+        .value!;
+    await tapIn(t, find.byKey(const Key('fold-stages')));
+    // The first role (원화) is on at first.
+    expect(checked('원화'), isTrue);
+    expect(checked('LO/작감'), isFalse);
+    await tapIn(t, find.byKey(const Key('role-작감')));
+    // Both roles: the union of their stages.
+    expect(checked('원화'), isTrue);
+    expect(checked('LO/작감'), isTrue);
+    bool on(String role) =>
+        t.widget<ToolbarButton>(find.byKey(Key('role-$role'))).selected;
+    expect(on('원화') && on('작감'), isTrue);
+    // 작감 off again: its own stages go, 원화's stay.
+    await tapIn(t, find.byKey(const Key('role-작감')));
+    expect(checked('LO/작감'), isFalse);
+    expect(checked('원화'), isTrue);
+    // A stage box toggles alone.
+    await tapIn(t, find.byKey(const Key('stage-LO/작감')));
+    expect(checked('LO/작감'), isTrue);
+    expect(on('작감'), isFalse, reason: 'its other stages are not on');
   });
 
   testWidgets('the roles sit on one sliding row', (t) async {
@@ -110,7 +168,7 @@ void main() {
     expect(find.byWidgetPredicate((w) => w is RawScrollbar), findsWidgets);
   });
 
-  testWidgets('pick a work, make an episode, edit the grid, register', (
+  testWidgets('pick a work, make an episode, fill the list, register', (
     t,
   ) async {
     final store = await pumpRegister(t, const Size(1440, 900));
@@ -124,46 +182,71 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('pick-create')));
     await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('reg-count')), '10');
-    await t.pump();
-    expect(find.byKey(const Key('cell-C011')), findsNothing);
 
+    // First cut to last: 7~12 is six blocks.
+    await addRange(t, 7, 12);
+    expect(blocks(t), ['C007', 'C008', 'C009', 'C010', 'C011', 'C012']);
+    expect(find.text('6 cut'), findsOneWidget);
+    // Again over it: nothing twice.
+    await addRange(t, 10, 13);
+    expect(blocks(t).length, 7);
+
+    // Drag across three, delete them.
     final g = await t.startGesture(
-      t.getCenter(find.byKey(const Key('cell-C002'))),
+      t.getCenter(find.byKey(const Key('cell-C008'))),
       kind: PointerDeviceKind.mouse,
     );
-    await g.moveTo(t.getCenter(find.byKey(const Key('cell-C003'))));
-    await g.moveTo(t.getCenter(find.byKey(const Key('cell-C004'))));
+    await g.moveTo(t.getCenter(find.byKey(const Key('cell-C009'))));
+    await g.moveTo(t.getCenter(find.byKey(const Key('cell-C010'))));
     await g.up();
     await t.pump();
-    await t.tap(find.byKey(const Key('cut-remove')));
-    await t.pump();
-    expect(find.text('7 cut'), findsOneWidget);
+    await tapIn(t, find.byKey(const Key('cut-delete')));
+    expect(blocks(t), ['C007', 'C011', 'C012', 'C013']);
 
-    await t.tap(find.byKey(const Key('cell-add')));
-    await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('name-input')), 'BANK1');
-    await t.tap(find.byKey(const Key('name-ok')));
-    await t.pumpAndSettle();
-    expect(find.text('8 cut'), findsOneWidget);
+    // One by name: to the end.
+    await addOne(t, 'BANK1');
+    expect(blocks(t).last, 'BANK1');
+    expect(find.text('5 cut'), findsOneWidget);
 
-    await t.tap(find.byKey(const Key('cell-C005')));
-    await t.tap(find.byKey(const Key('cell-C006')));
-    await t.pump();
-    await t.tap(find.byKey(const Key('cut-share')));
-    await t.pump();
-    expect(find.text('8 cut'), findsOneWidget, reason: 'shared stays two');
+    // Shared: one block, still two cuts.
+    await tapIn(t, find.byKey(const Key('cell-C011')));
+    await tapIn(t, find.byKey(const Key('cell-C012')));
+    await tapIn(t, find.byKey(const Key('cut-share')));
+    expect(blocks(t), ['C007', 'C011', 'C013', 'BANK1']);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('cell-C011')),
+        matching: find.text('C011/C012'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('5 cut'), findsOneWidget, reason: 'shared stays two');
 
-    await t.tap(find.byKey(const Key('register')));
-    await t.pump();
+    await tapIn(t, find.byKey(const Key('register')));
     await t.pump();
     final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
     // Typed 「#99」: stored in the document's episode style.
     final ep = store.episodes(work.id).firstWhere((e) => e.number == '#99');
     final numbers = store.cuts(ep.id).map((c) => c.number).toSet();
-    expect(numbers.length, 8);
+    expect(numbers.length, 5);
     expect(numbers, contains('BANK1'));
   });
+
+  test(
+    'a range adds its blocks once, either way round; delete takes pairs',
+    () {
+      final d = CutDraft(count: 0);
+      expect(d.addRange(12, 7), 6);
+      expect(d.cells, ['C007', 'C008', 'C009', 'C010', 'C011', 'C012']);
+      expect(d.addRange(11, 13), 1, reason: 'only C013 is new');
+      d
+        ..toggleShared(['C007', 'C008'])
+        ..delete(['C008']);
+      expect(d.partner('C007'), isNull, reason: 'its pair went with it');
+      expect(d.cells.contains('C008'), isFalse);
+      expect(d.total, 6);
+    },
+  );
 
   test('a renamed cell moves to its new number', () {
     final draft = CutDraft(count: 3)..rename('C001', 'C010');
@@ -175,35 +258,11 @@ void main() {
     t,
   ) async {
     await pumpRegister(t, const Size(1440, 900));
-    await t.enterText(find.byKey(const Key('reg-count')), '1');
-    await t.pump();
+    await addRange(t, 1, 1);
     for (final name in ['12', '7', 'BANK', '12A']) {
-      await t.tap(find.byKey(const Key('cell-add')));
-      await t.pumpAndSettle();
-      await t.enterText(find.byKey(const Key('name-input')), name);
-      await t.tap(find.byKey(const Key('name-ok')));
-      await t.pumpAndSettle();
+      await addOne(t, name);
     }
-    // The cells in reading order (one row here).
-    final cells =
-        find
-            .byWidgetPredicate((w) {
-              final k = w.key;
-              return k is ValueKey<String> &&
-                  k.value.startsWith('cell-') &&
-                  k.value != 'cell-add';
-            })
-            .evaluate()
-            .map((e) => (e.widget.key! as ValueKey<String>).value)
-            .toList()
-          ..sort((a, b) {
-            final pa = t.getTopLeft(find.byKey(Key(a)));
-            final pb = t.getTopLeft(find.byKey(Key(b)));
-            return pa.dy != pb.dy
-                ? pa.dy.compareTo(pb.dy)
-                : pa.dx.compareTo(pb.dx);
-          });
-    expect(cells, ['cell-C001', 'cell-7', 'cell-12', 'cell-12A', 'cell-BANK']);
+    expect(blocks(t), ['C001', '7', '12', '12A', 'BANK']);
   });
 
   // LO and 原画 rarely share dates: each checked stage has its own row,
@@ -255,10 +314,8 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('pick-create')));
     await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('reg-count')), '2');
-    await t.pump();
-    await t.tap(find.byKey(const Key('register')));
-    await t.pump();
+    await addRange(t, 1, 2);
+    await tapIn(t, find.byKey(const Key('register')));
     await t.pump();
     final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
     final ep = store.episodes(work.id).firstWhere((e) => e.number == '#98');
@@ -304,19 +361,18 @@ void main() {
   testWidgets('reset empties the form; its undo puts it back', (t) async {
     await pumpRegister(t, const Size(1440, 900));
     await pickWork(t);
-    await t.enterText(find.byKey(const Key('reg-count')), '12');
-    await t.pump();
+    await addRange(t, 1, 12);
     expect(workPicked(t, '별빛 정류장'), isTrue);
     await t.tap(find.byKey(const Key('register-reset')));
     await t.pump();
     expect(workPicked(t, '별빛 정류장'), isFalse);
-    expect(find.text('100'), findsOneWidget, reason: 'the count as at first');
+    expect(blocks(t), isEmpty, reason: 'the list as at first');
     await t.pump(const Duration(milliseconds: 400));
     await t.tap(find.byKey(const Key('reset-undo')));
     await t.pump();
     await t.pump();
     expect(workPicked(t, '별빛 정류장'), isTrue);
-    expect(find.text('12'), findsOneWidget);
+    expect(blocks(t).length, 12);
   });
 
   testWidgets('a register starts the form over, with a note', (t) async {
@@ -328,21 +384,20 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('pick-create')));
     await t.pumpAndSettle();
-    await t.enterText(find.byKey(const Key('reg-count')), '3');
-    await t.pump();
-    await t.tap(find.byKey(const Key('register')));
-    await t.pump();
+    await addRange(t, 1, 3);
+    await tapIn(t, find.byKey(const Key('register')));
     await t.pump();
     expect(find.byKey(const Key('registered-snack')), findsOneWidget);
     expect(find.textContaining('3 cut'), findsWidgets);
     expect(workPicked(t, '별빛 정류장'), isFalse);
-    expect(find.text('100'), findsOneWidget);
+    expect(blocks(t), isEmpty);
   });
 
   testWidgets('a cell\'s name is edited as its value, the C outside', (
     t,
   ) async {
     await pumpRegister(t, const Size(1440, 900));
+    await addRange(t, 12, 12);
     await t.longPress(find.byKey(const Key('cell-C012')));
     await t.pumpAndSettle();
     final field = t.widget<TextField>(find.byKey(const Key('name-input')));

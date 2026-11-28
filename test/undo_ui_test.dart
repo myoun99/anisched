@@ -121,7 +121,7 @@ void main() {
     await submit(t, g);
     await t.tap(find.byKey(const Key('view-tab-register')));
     await t.pump();
-    await t.tap(find.byKey(const Key('reg-count')));
+    await t.tap(find.byKey(const Key('reg-last')));
     await t.pump();
     await keys(t, [LogicalKeyboardKey.controlLeft, LogicalKeyboardKey.keyZ]);
     expect(allSubmitted(store, g.key), isTrue);

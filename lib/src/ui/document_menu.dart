@@ -120,7 +120,10 @@ class DocumentMenu extends StatelessWidget {
         context,
         e,
         retry: () => _run(context, job, ref: ref),
-        restore: ref == null ? null : () => session.restoreLastWritten(ref),
+        // Offered only when this device holds a copy to put back.
+        restore: ref == null || !session.hasLastWritten(ref)
+            ? null
+            : () => session.restoreLastWritten(ref),
       );
     }
   }
@@ -268,8 +271,9 @@ class SaveState {
     error!,
     retry: fromSave ? session.save : recheck,
     restore: switch (session.document) {
-      final ref? => () => session.restoreLastWritten(ref),
-      null => null,
+      final ref? when session.hasLastWritten(ref) =>
+        () => session.restoreLastWritten(ref),
+      _ => null,
     },
   );
 

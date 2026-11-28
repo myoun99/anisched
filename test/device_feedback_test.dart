@@ -169,7 +169,7 @@ void main() {
 
   testWidgets('tapping outside a number field ends editing', (t) async {
     await pumpShell(t, const Size(390, 844), view: AppView.register);
-    final count = find.byKey(const Key('reg-count'));
+    final count = find.byKey(const Key('reg-last'));
     // Mid-screen, with room above it to tap outside.
     await Scrollable.ensureVisible(t.element(count), alignment: 0.5);
     await t.pump();
@@ -177,8 +177,8 @@ void main() {
     await t.pump();
     expect(FocusManager.instance.primaryFocus?.context?.widget, isNotNull);
     expect(t.testTextInput.isVisible, isTrue);
-    // A sure empty spot beside the field: the plain 「컷 수」 caption.
-    await t.tap(find.textContaining('컷 수', findRichText: true));
+    // A sure empty spot beside the field: the plain 「끝 컷」 caption.
+    await t.tap(find.textContaining('끝 컷', findRichText: true));
     await t.pump();
     expect(t.testTextInput.isVisible, isFalse);
   });
