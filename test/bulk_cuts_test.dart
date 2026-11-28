@@ -367,6 +367,29 @@ void main() {
     expect(stats.total.earned['JPY'], 7500);
   });
 
+  test('retaking one cut of a shared pair retakes the pair, each paid at '
+      'its own rate (유저 2026-11-28)', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C2', partLabel: 'B');
+    final lo = stage(w, 'LO');
+    store
+      ..setEpisodeRate(r.episodeId, lo, const Rate(RateUnit.fixed, 2500))
+      ..addTasksForPart(r.partId!, lo)
+      ..linkSharedCuts(r.cutIds);
+    final tasks = store.partGroups().single.tasks.map((t) => t.id).toList();
+    store.setStatus(tasks.first, TaskStatus.submitted);
+
+    expect(store.requestRetake(tasks.first, paidAmount: 2500), 2);
+    final g = store.partGroups().single;
+    expect(g.tasks.map((t) => (t.status, t.take)), [
+      (TaskStatus.retake, 2),
+      (TaskStatus.retake, 2),
+    ]);
+    expect(store.payFor(tasks.first), 5000);
+    expect(store.payFor(tasks.last), 5000);
+    expect(g.pay, 10000);
+  });
+
   test('the cut list shows shared groups and, on request, archived cuts', () {
     final w = store.createWork('W');
     final r = store.addEpisodeWithCuts(w, '#1', 'C1~C4');

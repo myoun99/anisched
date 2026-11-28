@@ -2089,6 +2089,13 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
   /// A shared (겸용) cut is one cut in progress (유저 2026-11-28): the
   /// status goes to the same stage's task of every live cut in its group.
   void setStatus(int taskId, TaskStatus status) => _transaction(() {
+    _sharedSiblings(taskId).forEach((id) => _setOneStatus(id, status));
+    _setOneStatus(taskId, status);
+  });
+
+  /// The same stage's live tasks on the other live cuts of [taskId]'s
+  /// shared (겸용) group; empty for a cut in no group.
+  List<int> _sharedSiblings(int taskId) => [
     for (final r in db.select(
       '''
 SELECT t2.id FROM tasks t JOIN cuts c ON c.id = t.cut_id
@@ -2097,11 +2104,9 @@ JOIN cuts c2 ON c2.archived_at IS NULL
 JOIN live_tasks t2 ON t2.cut_id = c2.id AND t2.stage_id = t.stage_id
 WHERE t.id = ?1 AND t2.id <> ?1;''',
       [taskId],
-    )) {
-      _setOneStatus(r['id'] as int, status);
-    }
-    _setOneStatus(taskId, status);
-  });
+    ))
+      r['id'] as int,
+  ];
 
   /// A shared group's head cut (the first) for cut row [c], or NULL when
   /// the cut is in no group with a live other cut.
@@ -2159,24 +2164,46 @@ WHERE id = ? AND submitted_at IS NULL;''',
 
   /// Records the next take (2, 3, …) and moves the task to retake.
   /// Free unless [paidAmount] is given.
-  int requestRetake(int taskId, {DateTime? dueAt, int? paidAmount}) {
-    final paid = paidAmount == null ? 0 : 1;
-    return _transaction(() {
-      final take =
-          db.select(
-                'SELECT COALESCE(MAX(take), 1) + 1 AS t FROM retakes '
-                'WHERE task_id = ?;',
-                [taskId],
-              ).first['t']
-              as int;
-      db.execute(
+  ///
+  /// A shared (겸용) cut is retaken whole (유저 2026-11-28): every live cut
+  /// of its group gets the stage's next take too, and with [paidAmount]
+  /// each of them is paid at its own rate (its task's pay without
+  /// retakes; [paidAmount] when that is unknown).
+  int requestRetake(int taskId, {DateTime? dueAt, int? paidAmount}) =>
+      _transaction(() {
+        for (final other in _sharedSiblings(taskId)) {
+          _retakeOne(
+            other,
+            dueAt,
+            paidAmount == null ? null : _basePay(other) ?? paidAmount,
+          );
+        }
+        return _retakeOne(taskId, dueAt, paidAmount);
+      });
+
+  int _retakeOne(int taskId, DateTime? dueAt, int? paidAmount) {
+    final take =
+        db.select(
+              'SELECT COALESCE(MAX(take), 1) + 1 AS t FROM retakes '
+              'WHERE task_id = ?;',
+              [taskId],
+            ).first['t']
+            as int;
+    db
+      ..execute(
         'INSERT INTO retakes (task_id, take, received_at, due_at, paid, '
         'amount) VALUES (?, ?, ?, ?, ?, ?);',
-        [taskId, take, _now(), dueAt?.millisecondsSinceEpoch, paid, paidAmount],
-      );
-      db.execute("UPDATE tasks SET status = 'retake' WHERE id = ?;", [taskId]);
-      return take;
-    });
+        [
+          taskId,
+          take,
+          _now(),
+          dueAt?.millisecondsSinceEpoch,
+          if (paidAmount == null) 0 else 1,
+          paidAmount,
+        ],
+      )
+      ..execute("UPDATE tasks SET status = 'retake' WHERE id = ?;", [taskId]);
+    return take;
   }
 
   /// The task's rate: its own override, else its episode's rate for the
@@ -2205,19 +2232,7 @@ WHERE t.id = ?;''',
   /// Pay for the task itself plus its paid retakes, or null if the rate or
   /// (for per-second rates) the cut length is missing.
   int? payFor(int taskId) {
-    final rate = rateFor(taskId);
-    if (rate == null) return null;
-    final row = db.select(
-      'SELECT c.length_ms, w.seconds_rounding FROM tasks t '
-      'LEFT JOIN cuts c ON c.id = t.cut_id '
-      'JOIN work_stages s ON s.id = t.stage_id '
-      'JOIN works w ON w.id = s.work_id WHERE t.id = ?;',
-      [taskId],
-    ).first;
-    final base = rate.payFor(
-      lengthMs: row['length_ms'] as int?,
-      rounding: _rounding(row['seconds_rounding'], settings.secondsRounding),
-    );
+    final base = _basePay(taskId);
     if (base == null) return null;
     final extra =
         db.select(
@@ -2227,6 +2242,23 @@ WHERE t.id = ?;''',
             ).first['s']
             as int;
     return base + extra;
+  }
+
+  /// The task's pay at its rate, retakes left out; null like [payFor].
+  int? _basePay(int taskId) {
+    final rate = rateFor(taskId);
+    if (rate == null) return null;
+    final row = db.select(
+      'SELECT c.length_ms, w.seconds_rounding FROM tasks t '
+      'LEFT JOIN cuts c ON c.id = t.cut_id '
+      'JOIN work_stages s ON s.id = t.stage_id '
+      'JOIN works w ON w.id = s.work_id WHERE t.id = ?;',
+      [taskId],
+    ).first;
+    return rate.payFor(
+      lengthMs: row['length_ms'] as int?,
+      rounding: _rounding(row['seconds_rounding'], settings.secondsRounding),
+    );
   }
 
   /// Pay for tasks completed in the billing period that closes in
