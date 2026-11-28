@@ -103,7 +103,6 @@ class _WorkViewState extends State<WorkView> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final red = Theme.of(context).colorScheme.error;
     final lanes = widget.lanes;
     final window = ChartWindow.of(
       widget.now,
@@ -144,50 +143,106 @@ class _WorkViewState extends State<WorkView> {
                     ),
                   ),
                 ),
-              ChartPager(days: window.days),
+              ValueListenableBuilder<bool>(
+                valueListenable: chartMonthView,
+                builder: (context, month, _) => month
+                    ? const SizedBox.shrink()
+                    : ChartPager(days: window.days),
+              ),
+              const MonthViewToggle(),
             ],
           ),
           Expanded(
             child: _withSide(
               context,
-              ChartViewport(
-                days: window.days,
-                labelWidth: _labelWidth,
-                child: ChartBoard(
-                  window: window,
-                  today: widget.now,
-                  days: widget.days,
-                  labelWidth: _labelWidth,
-                  rowCount: rowCount,
-                  corner: _corner(context),
-                  label: (context, r) => _laneLabel(context, lanes!, r),
-                  bars: (context, r) => [
-                    for (final s in lanes!.spans)
-                      if (lanes.laneOf[s.key] == r)
-                        _bar(s, window, lanes.overflow, red),
-                  ],
-                  rowTint: (r) =>
-                      r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
-                  rowWrap: (r, child) => DragTarget<String>(
-                    key: Key('lane-$r'),
-                    onAcceptWithDetails: (d) => widget.onPin?.call(d.data, r),
-                    builder: (context, candidates, _) => candidates.isEmpty
-                        ? child
-                        : DecoratedBox(
-                            position: DecorationPosition.foreground,
-                            decoration: BoxDecoration(
-                              color: c.selected.withValues(alpha: 0.5),
-                            ),
-                            child: child,
-                          ),
-                  ),
-                ),
+              ValueListenableBuilder<bool>(
+                valueListenable: chartMonthView,
+                builder: (context, month, _) => lanes == null
+                    ? const SizedBox.shrink()
+                    : month
+                    ? MonthStack(
+                        first: DateTime(widget.now.year, widget.now.month - 1),
+                        last: _lastMonth(lanes),
+                        month: (context, w) => _board(context, w, lanes, [
+                          for (var r = 0; r < rowCount; r++)
+                            if (_laneIn(lanes, r, w)) r,
+                        ], month: true),
+                      )
+                    : ChartViewport(
+                        days: window.days,
+                        labelWidth: _labelWidth,
+                        child: _board(context, window, lanes, [
+                          for (var r = 0; r < rowCount; r++) r,
+                        ], month: false),
+                      ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// One board of the lanes [rows] over [window]: the running view's,
+  /// or one month's in the month view.
+  Widget _board(
+    BuildContext context,
+    ChartWindow window,
+    LaneLayout lanes,
+    List<int> rows, {
+    required bool month,
+  }) {
+    final c = AppColors.of(context);
+    final red = Theme.of(context).colorScheme.error;
+    return ChartBoard(
+      window: window,
+      today: widget.now,
+      days: widget.days,
+      labelWidth: _labelWidth,
+      rowCount: rows.length,
+      shrinkWrap: month,
+      corner: _corner(context),
+      label: (context, i) => _laneLabel(context, lanes, rows[i]),
+      bars: (context, i) => [
+        for (final s in lanes.spans)
+          if (lanes.laneOf[s.key] == rows[i])
+            _bar(s, window, lanes.overflow, red),
+      ],
+      rowTint: (i) =>
+          rows[i] >= lanes.lanes ? red.withValues(alpha: 0.06) : null,
+      rowWrap: (i, child) => DragTarget<String>(
+        key: Key('lane-${rows[i]}'),
+        onAcceptWithDetails: (d) => widget.onPin?.call(d.data, rows[i]),
+        builder: (context, candidates, _) => candidates.isEmpty
+            ? child
+            : DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: BoxDecoration(
+                  color: c.selected.withValues(alpha: 0.5),
+                ),
+                child: child,
+              ),
+      ),
+    );
+  }
+
+  /// Lane [r] has work in [w].
+  static bool _laneIn(LaneLayout lanes, int r, ChartWindow w) =>
+      lanes.spans.any(
+        (s) =>
+            lanes.laneOf[s.key] == r &&
+            w.indexOf(s.end) >= 0 &&
+            w.indexOf(s.start) < w.days,
+      );
+
+  /// The month view runs to the last work's month (at least two on).
+  DateTime _lastMonth(LaneLayout lanes) {
+    var last = DateTime(widget.now.year, widget.now.month + 2);
+    for (final s in lanes.spans) {
+      final d = s.end.toLocal();
+      if (d.isAfter(last)) last = DateTime(d.year, d.month);
+    }
+    return last;
   }
 
   /// The opened work's head (its list line, a tap closes) and details.
