@@ -11,9 +11,8 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
-import '../client_chip.dart';
+import '../client_pick.dart';
 import '../fold.dart';
-import '../palette.dart';
 import '../format.dart';
 import '../instant.dart';
 import '../pick_field.dart';
@@ -421,47 +420,25 @@ class _RegisterViewState extends State<RegisterView> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            PickField<int>(
-              key: const Key('pick-client'),
-              current: _client?.value,
-              label: S.client.t,
+            ClientPick(
+              picked: _client,
+              reader: r,
+              colors: _clientColors,
               width: fw,
-              value: _client?.title,
-              search: (q) async {
-                if (r == null) return const [];
-                final found = await r.searchClients(q);
-                for (final x in found) {
-                  _clientColors[x.id] = x.color;
-                }
-                return [
-                  for (final x in found)
-                    (value: x.id, title: x.name, note: null),
-                ];
-              },
               onPicked: (x) => setState(() {
                 _client = x;
                 _work = null;
                 _episode = null;
                 _part = null;
               }),
-              onCreate: widget.onCreateClient == null
+              onCreate: widget.onCreateClient,
+              onColor: widget.onClientColor == null
                   ? null
-                  : (name) async => (
-                      value: widget.onCreateClient!(name),
-                      title: name,
-                      note: null,
-                    ),
+                  : (id, argb) {
+                      widget.onClientColor!(id, argb);
+                      setState(() {});
+                    },
             ),
-            if (_client case final cl? when widget.onClientColor != null)
-              ClientColorButton(
-                color: clientColorOf(cl.value, _clientColors[cl.value]),
-                swatches: clientSwatches,
-                tooltip: S.client.t,
-                onPicked: (col) {
-                  widget.onClientColor!(cl.value, col.toARGB32());
-                  setState(() => _clientColors[cl.value] = col.toARGB32());
-                },
-              ),
             PickField<int>(
               key: const Key('pick-work'),
               current: _work?.value,

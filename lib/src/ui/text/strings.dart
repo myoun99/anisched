@@ -492,6 +492,24 @@ enum S {
     '显示已收回',
   ),
 
+  // Editing a picked bundle (work, episode, part) and adding cuts to it.
+  edit('Edit', '編集', '편집', 'Modifier', '编辑'),
+  subtitle('Subtitle', 'サブタイトル', '부제', 'Sous-titre', '副标题'),
+  editWorkWide(
+    'Title and client apply to every episode of the title.',
+    '作品名と会社は、その作品の全話に適用されます。',
+    '작품 이름과 회사는 그 작품의 모든 화에 적용돼요.',
+    'Le titre et le client valent pour tous ses épisodes.',
+    '作品名和公司适用于该作品的所有集数。',
+  ),
+  cutsTaken(
+    'Already there: {names}',
+    'すでにあります：{names}',
+    '이미 있음: {names}',
+    'Déjà là : {names}',
+    '已存在：{names}',
+  ),
+
   // Put away (보관) and deleted for good (완전 삭제).
   archive('Archive', 'アーカイブ', '보관', 'Archiver', '归档'),
   unarchive('Unarchive', 'アーカイブ解除', '되돌리기', 'Désarchiver', '取消归档'),

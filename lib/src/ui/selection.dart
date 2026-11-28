@@ -59,6 +59,7 @@ const pickActions = [
 /// 2026-11-28). Status actions by their stored name.
 const pickPriority = [
   'done',
+  'edit',
   'submitted',
   'in_progress',
   'due',

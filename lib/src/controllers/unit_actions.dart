@@ -1,5 +1,6 @@
 /// What the picked-task actions write: holds (대기), pulling work
-/// (引き上げ) and deadlines, decided here so the widgets only ask and show.
+/// (引き上げ), deadlines and a bundle's names, decided here so the
+/// widgets only ask and show.
 library;
 
 import '../models/progress.dart';
@@ -96,4 +97,33 @@ class HoldPlan {
         if (t.handedOff == back) t.id,
     ],
   );
+}
+
+/// What the edit dialog saves for a bundle: its client, work title,
+/// episode number and subtitle, and part label (null: no part).
+typedef BundleEdit = ({
+  int? clientId,
+  String workTitle,
+  String episodeNumber,
+  String? episodeTitle,
+  String? partLabel,
+});
+
+/// Whether [picked] tasks are one bundle — one work, episode and part
+/// (stages may differ) — so they can be edited together.
+bool oneBundle(Iterable<TaskRow> picked) {
+  final keys = {for (final t in picked) (t.workId, t.episodeId, t.partId)};
+  return keys.length == 1;
+}
+
+/// Writes [e] for the bundle of [t]: the work's client and title (every
+/// episode of it), the episode's number and subtitle, the part's label.
+void applyBundleEdit(CatalogueStore store, TaskRow t, BundleEdit e) {
+  store
+    ..setWorkClient(t.workId, e.clientId)
+    ..renameWork(t.workId, e.workTitle)
+    ..renameEpisode(t.episodeId, e.episodeNumber, title: e.episodeTitle);
+  if (t.partId case final part? when e.partLabel != null) {
+    store.renamePart(part, e.partLabel!);
+  }
 }

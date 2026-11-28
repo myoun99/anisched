@@ -15,6 +15,7 @@ import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
+import 'bundle_editor.dart';
 import 'client_chip.dart';
 import 'delete_confirm.dart';
 import 'document_menu.dart';
@@ -688,6 +689,41 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  /// Edits the picked bundle's names: its client, the work's title (all
+  /// its episodes), the episode's number and subtitle, the part's label.
+  Future<void> _edit() async {
+    final picked = _pickedTasks;
+    if (widget.store == null || picked.isEmpty || !oneBundle(picked)) return;
+    final t = picked.first;
+    final episodes = await widget.reader?.episodes(t.workId) ?? const [];
+    if (!mounted) return;
+    final clientId = _works[t.workId]?.clientId;
+    final e = await editBundle(
+      context,
+      initial: (
+        clientId: clientId,
+        workTitle: t.workTitle,
+        episodeNumber: t.episodeNumber,
+        episodeTitle: episodes
+            .where((x) => x.id == t.episodeId)
+            .firstOrNull
+            ?.title,
+        partLabel: t.partId == null ? null : t.partLabel,
+      ),
+      clientName: clientId == null ? null : _clients[clientId]?.name,
+      reader: widget.reader,
+      onCreateClient: (name) {
+        var id = 0;
+        _write((s) => id = s.addClient(name));
+        return id;
+      },
+      onClientColor: (id, argb) => _write((s) => s.setClientColor(id, argb)),
+    );
+    if (e == null || !mounted) return;
+    _write((store) => applyBundleEdit(store, t, e));
+    _selection.clear();
+  }
+
   /// Deletes the picked tasks for good, after a confirmation that says
   /// what goes with them (cuts, emptied episodes and titles, timer time).
   Future<void> _delete() async {
@@ -932,6 +968,8 @@ class _AppShellState extends State<AppShell> {
             return p.isNotEmpty && p.every((t) => t.archived);
           },
           onDelete: widget.store == null ? null : () => unawaited(_delete()),
+          onEdit: widget.store == null ? null : () => unawaited(_edit()),
+          canEdit: () => oneBundle(_pickedTasks),
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);

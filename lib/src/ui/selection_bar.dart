@@ -25,7 +25,14 @@ class SelectionBar extends StatelessWidget {
     this.onArchive,
     this.allArchived,
     this.onDelete,
+    this.onEdit,
+    this.canEdit,
   });
+
+  /// Edits the picked bundle's names (work, episode, part, client); only
+  /// when [canEdit] (one bundle picked). Null hides it.
+  final VoidCallback? onEdit;
+  final bool Function()? canEdit;
 
   /// Puts the picked tasks away (보관), or brings back ones already put
   /// away; null hides it.
@@ -86,6 +93,14 @@ class SelectionBar extends StatelessWidget {
                   iconOf(st),
                   st.label,
                   on ? () => onApply!(st) : null,
+                ),
+              if (onEdit != null)
+                _Action(
+                  'edit',
+                  const Key('pick-edit'),
+                  Icons.edit_outlined,
+                  S.edit.t,
+                  n > 0 && (canEdit?.call() ?? true) ? onEdit : null,
                 ),
               if (onDue != null)
                 _Action(
