@@ -391,6 +391,15 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // The client list open: each line's colour, rename and delete.
+  'presets': (
+    AppView.register,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('pick-client')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
