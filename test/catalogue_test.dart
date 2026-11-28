@@ -334,6 +334,98 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       });
     });
 
+    test('a client\'s colour reaches its work\'s rows', () {
+      final studio = store.addClient('스튜디오 X', color: 0xFF336699);
+      final w = store.createWork('작품A', clientId: studio);
+      final ep = store.addEpisode(w, '#1');
+      final c1 = store.addCut(ep, 'C1');
+      final c2 = store.addCut(ep, 'C2');
+      final lo = stageId(w, 'LO');
+      store
+        ..addTask(lo, cutId: c1)
+        ..setStatus(store.addTask(lo, cutId: c2), TaskStatus.done);
+      final g = store.partGroups().single;
+      expect((g.clientName, g.clientColor), ('스튜디오 X', 0xFF336699));
+      expect(g.toSubmit, 2); // done is not handed in yet
+      store.setStatus(g.tasks.last.id, TaskStatus.submitted);
+      expect(store.partGroups().single.toSubmit, 1);
+      store.setClientColor(studio, null);
+      expect(store.clients().single.color, isNull);
+      expect(store.partGroups().single.clientColor, isNull);
+      final loose = store.createWork('회사 없음');
+      store.addTask(
+        stageId(loose, 'LO'),
+        cutId: store.addCut(store.addEpisode(loose, '#1'), 'C1'),
+      );
+      expect(
+        store.partGroups().where((g) => g.workId == loose).single.clientName,
+        isNull,
+      );
+    });
+
+    test('events: by day and time, grouped by episode, within the range', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#1');
+      final gone = store.addEpisode(w, '#2');
+      final day = DateTime(2026, 12, 3);
+      final late = store.addEvent(
+        episodeId: ep,
+        date: day,
+        timeMinutes: 14 * 60,
+        title: '아후레코',
+      );
+      final allDay = store.addEvent(episodeId: ep, date: day, title: '납품');
+      final mine = store.addEvent(date: day, title: '회의', note: '줌');
+      store
+        ..addEvent(episodeId: ep, date: DateTime(2026, 12, 10), title: '밖')
+        ..addEvent(episodeId: gone, date: day, title: '보관된 화')
+        ..archive(ArchiveKind.episode, gone);
+      final range = (from: DateTime(2026, 12), to: DateTime(2026, 12, 10));
+      var got = store.events(from: range.from, to: range.to);
+      expect(got.keys.toSet(), {ep, null});
+      expect(got[ep]!.map((e) => e.id), [allDay, late]);
+      expect(got[ep]!.first.date, day);
+      expect(got[null]!.single.note, '줌');
+      store.updateEvent(
+        mine,
+        episodeId: ep,
+        date: DateTime(2026, 12, 2),
+        timeMinutes: 9 * 60,
+        title: '회의',
+      );
+      store.deleteEvent(late);
+      got = store.events(from: range.from, to: range.to);
+      expect(got.keys, [ep]);
+      expect(got[ep]!.map((e) => (e.id, e.timeMinutes)), [
+        (mine, 9 * 60),
+        (allDay, null),
+      ]);
+      expect(
+        () => store.addEvent(date: day, timeMinutes: 24 * 60, title: 'x'),
+        throwsRangeError,
+      );
+    });
+
+    test('rows carry their stage\'s place in the work\'s list', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#1');
+      final c = store.addCut(ep, 'C1');
+      final lo = stageId(w, 'LO');
+      final key = stageId(w, '원화');
+      store
+        ..addTask(lo, cutId: c)
+        ..addTask(key, cutId: c);
+      Map<String, int> places() => {
+        for (final g in store.partGroups()) g.stageName: g.stagePosition,
+      };
+      expect(places()['LO']! < places()['원화']!, isTrue);
+      final order = [for (final s in store.stages(w)) s.id]
+        ..remove(key)
+        ..insert(0, key);
+      store.reorderStages(w, order);
+      expect(places()['원화']! < places()['LO']!, isTrue);
+    });
+
     test('numbers are stored as values and shown in the current style', () {
       final w = store.createWork('작품A');
       final ep = store.addEpisode(w, '#7');

@@ -9,55 +9,83 @@
 library;
 
 /// The work axis (Anicel `LayerProcess`, 용지 left out).
+///
+/// Colours: Anicel's layer-mark palette, cream column
+/// (`layer_mark_palette.dart`, set pixel by pixel by the user).
 enum StageWork {
-  conte('conte', '콘티'),
-  layout('layout', 'LO'),
-  roughKey('rough-key', '러프원'),
-  key('key', '원화'),
-  inbetween('inbetween', '동화'),
-  finish('finish', '시아게');
+  conte('conte', '콘티', 0xFFD1BAF7),
+  layout('layout', 'LO', 0xFFFFFDF7),
+  roughKey('rough-key', '러프원', 0xFFAEFCF2),
+  key('key', '원화', 0xFFB5FDB0),
+  inbetween('inbetween', '동화', 0xFFFFF2C2),
+  finish('finish', '시아게', 0xFFF2BDB7);
 
-  const StageWork(this.id, this.korean);
+  const StageWork(this.id, this.korean, this.color);
 
   /// Anicel's key (`layerProcess.<id>`).
   final String id;
 
   /// The stored Korean short form (Anicel `layerProcessAbbrev`, ko).
   final String korean;
+
+  /// ARGB.
+  final int color;
 }
 
 /// The checker axis (Anicel `LayerRevise`).
+///
+/// A check has its checker's colour whatever the work: `LO/작감` and
+/// `원화/작감` are both 작감's. 연출 · 작감 · 총작감 · 감독 · 총감독 are
+/// Anicel's cream column; 액션 · 동검 · 셀검 are **제안** (proposals —
+/// not in that palette).
 enum StageCheck {
-  direction('direction', '연출'),
-  animationDirector('animation-director', '작감'),
-  chiefAnimationDirector('chief-animation-director', '총작감'),
-  director('director', '감독'),
-  chiefDirector('chief-director', '총감독'),
-  actionAnimationDirector('action-animation-director', '액션'),
-  inbetweenCheck('inbetween-check', '동검'),
-  cellCheck('cell-check', '셀검');
+  direction('direction', '연출', 0xFFFFC1E8),
+  animationDirector('animation-director', '작감', 0xFFFFC663),
+  chiefAnimationDirector('chief-animation-director', '총작감', 0xFFEDFDCE),
+  director('director', '감독', 0xFFC0BEF7),
+  chiefDirector('chief-director', '총감독', 0xFFD7BEF7),
+  actionAnimationDirector('action-animation-director', '액션', 0xFFFFD9B0),
+  inbetweenCheck('inbetween-check', '동검', 0xFFF5E6A8),
+  cellCheck('cell-check', '셀검', 0xFFF7D0D6);
 
-  const StageCheck(this.id, this.korean);
+  const StageCheck(this.id, this.korean, this.color);
 
   /// Anicel's key (`layerRevise.<id>`).
   final String id;
 
   /// The stored Korean short form (Anicel `layerReviseAbbrev`, ko).
   final String korean;
+
+  /// ARGB.
+  final int color;
 }
 
-/// Stages outside the two axes (유저 2026-11-28).
+/// Stages outside the two axes (유저 2026-11-28). Their colours are
+/// **제안** (proposals — Anicel has no such marks).
 enum StageExtra {
-  characterDesign('character-design', '캐릭터디자인'),
+  characterDesign('character-design', '캐릭터디자인', 0xFFE6D3C3),
 
   /// Work that comes back from the rushes (ラッシュ): 「이 컷은 작감이
   /// 수정해 주세요」.
-  retake('retake', '리테이크');
+  retake('retake', '리테이크', 0xFFFF9E9E);
 
-  const StageExtra(this.id, this.korean);
+  const StageExtra(this.id, this.korean, this.color);
 
   final String id;
   final String korean;
+
+  /// ARGB.
+  final int color;
+}
+
+/// The colour of the stage named [name] (ARGB): its checker's when it is
+/// a check, else its work's, else its own (character design, retake);
+/// null for a name the user typed (the view's default). The one place a
+/// stage's colour comes from — once stages can be edited, a user's own
+/// colour will be looked up here first.
+int? stageColorOf(String name) {
+  final label = stageLabelOf(name);
+  return label?.check?.color ?? label?.work?.color ?? label?.extra?.color;
 }
 
 const _drawingChecks = [

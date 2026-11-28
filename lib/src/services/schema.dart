@@ -52,6 +52,7 @@ CREATE TABLE work_intervals (
   const Migration(14, _v14DoneBeforeSubmitted),
   const Migration(15, _v15NumberStylesAndRanks),
   const Migration(16, _v16NumbersAsValues),
+  const Migration(17, _v17ColorsAndEvents),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -196,6 +197,28 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
         [role, roles[i].$2[j], j],
       );
     }
+  }
+}
+
+/// 유저 2026-11-28: a colour per client (ARGB, null = default grey) and
+/// events on the calendar that are not work (아후레코 …): a local day as
+/// `YYYY-MM-DD`, an optional time in minutes, a title and a note, tied to
+/// an episode or (episode_id NULL) to none.
+void _v17ColorsAndEvents(CommonDatabase db) {
+  for (final sql in const [
+    'ALTER TABLE clients ADD COLUMN color INTEGER;',
+    '''
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  time_min INTEGER CHECK (time_min IS NULL OR time_min BETWEEN 0 AND 1439),
+  title TEXT NOT NULL,
+  note TEXT
+);''',
+    'CREATE INDEX events_day ON events(day);',
+  ]) {
+    db.execute(sql);
   }
 }
 

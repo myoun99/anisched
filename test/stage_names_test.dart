@@ -35,6 +35,16 @@ void main() {
     expect(stageLabelOf('LO 작감 수정'), isNull);
   });
 
+  test('a stage takes its checker\'s colour, else its work\'s', () {
+    expect(stageColorOf('원화'), 0xFFB5FDB0);
+    expect(stageColorOf('LO'), 0xFFFFFDF7);
+    expect(stageColorOf('LO/작감'), 0xFFFFC663);
+    expect(stageColorOf('원화/작감'), stageColorOf('LO/작감'));
+    expect(stageColorOf('콘티/감독'), 0xFFC0BEF7);
+    expect(stageColorOf('리테이크'), StageExtra.retake.color);
+    expect(stageColorOf('내 공정'), isNull);
+  });
+
   test('every allowed name reads back, and the default preset is allowed', () {
     for (final n in allStageNames) {
       expect(stageLabelOf(n), isNotNull, reason: n);

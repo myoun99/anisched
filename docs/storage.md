@@ -108,5 +108,6 @@ Dart 쪽은 `lib/src/platform/documents.dart` (`platform` 층: services 위, ui 
   파일 사이 이동은 메모리 VFS + `copyAllRows`(ATTACH 불가) — 같은 SQL 을 기기 테스트가 확인. 보낸 뒤 고친 것이 있으면 `dirty`.
   File System Access API(받은 파일에 바로 쓰기)는 크롬 계열만이라 **나중에**.
 - 기기 설정(테마 · 언어): 웹은 localStorage `anisched.device`.
+- `web/` 의 index.html · manifest · 아이콘은 UI 소유, 데이터 쪽은 `web/sqlite3.wasm` 만.
 - 빌드: `flutter build web --release --no-web-resources-cdn` (CanvasKit 을 빌드에 넣음 — CDN 이 막힌 곳 · 오프라인에서도 뜸).
   GitHub Pages 는 `--base-href /anisched/`. 64비트 정수 리터럴은 웹에서 컴파일 안 됨(FNV 시드는 실행 시 파싱 — 해시는 기기에서만).
