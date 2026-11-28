@@ -63,6 +63,39 @@ String _withoutPrefix(String t, String prefix) {
   return t;
 }
 
+/// The one cut order (유저 2026-11-28): numbers by value — 7 < 12 < 12A
+/// < 12B < 13 — then every name that is not a number (`BANK1`, `CAM`), all
+/// tied, so a stable sort (or the query's next key, the cut id) keeps them
+/// in the order they were added. [number] is a stored value; with [style],
+/// a number as typed or shown is read first ([storedNumber]).
+String cutSortKey(String number, [NumberStyle? style]) {
+  final v = style == null ? number : storedNumber(number, style);
+  final m = _storedValue.firstMatch(v);
+  return m == null ? '1' : '0${m[1]!.padLeft(10, '0')}${m[2]}';
+}
+
+/// [cutSortKey] as a comparator; names that are not numbers compare equal.
+int compareCutNumbers(String a, String b, [NumberStyle? style]) =>
+    cutSortKey(a, style).compareTo(cutSortKey(b, style));
+
+/// [items] in cut order ([compareCutNumbers]), stably: names that are not
+/// numbers keep the order they come in.
+List<T> sortedByCutNumber<T>(
+  Iterable<T> items,
+  String Function(T item) numberOf, [
+  NumberStyle? style,
+]) {
+  final keyed =
+      [
+        for (final (i, item) in items.indexed)
+          (key: cutSortKey(numberOf(item), style), index: i, item: item),
+      ]..sort((a, b) {
+        final c = a.key.compareTo(b.key);
+        return c != 0 ? c : a.index.compareTo(b.index);
+      });
+  return [for (final k in keyed) k.item];
+}
+
 /// A cut number as typed → its stored value ([storedNumber]).
 String parseCutInput(String typed, NumberStyle style) =>
     storedNumber(typed, style);

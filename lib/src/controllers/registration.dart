@@ -40,12 +40,18 @@ class CutDraft {
 
   String number(int n) => '$prefix${n.toString().padLeft(width, '0')}';
 
-  /// Cell ids in grid order: the run, then the added cuts.
-  List<String> get cells => [
-    ...cutNumberRun(start: start, count: count, prefix: prefix, width: width),
-    for (final e in extras)
-      if (!_inRun(e)) e,
-  ];
+  /// Cell ids in the one cut order ([sortedByCutNumber]): the run and the
+  /// added cuts by number, then added names that are not numbers in the
+  /// order they were added.
+  List<String> get cells => sortedByCutNumber(
+    [
+      ...cutNumberRun(start: start, count: count, prefix: prefix, width: width),
+      for (final e in extras)
+        if (!_inRun(e)) e,
+    ],
+    (id) => id,
+    (prefix: prefix, digits: width),
+  );
 
   bool _inRun(String id) {
     final m = RegExp(r'^(\D*)(\d+)$').firstMatch(id);

@@ -56,6 +56,7 @@ CREATE TABLE work_intervals (
   const Migration(18, _v18DaysOffAreEvents),
   const Migration(19, _v19CardEvents),
   const Migration(20, _v20NumbersAsValuesAgain),
+  const Migration(21, _v21CutOrder),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -200,6 +201,20 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
         [role, roles[i].$2[j], j],
       );
     }
+  }
+}
+
+/// 유저 2026-11-28: one cut order everywhere — numbers by value (7 < 12 <
+/// 12A < 13), then names that are not numbers in the order they were added
+/// (their keys tie; the cut id follows). The rule of
+/// `models/number_style.dart`'s `cutSortKey` at this version.
+void _v21CutOrder(CommonDatabase db) {
+  // A literal copy of the rule, so this step never changes once shipped.
+  final value = RegExp(r'^(0|[1-9]\d{0,8})([A-Z]*)$');
+  for (final r in db.select('SELECT id, number FROM cuts;')) {
+    final m = value.firstMatch(r['number'] as String);
+    final key = m == null ? '1' : '0${m[1]!.padLeft(10, '0')}${m[2]}';
+    db.execute('UPDATE cuts SET sort_key = ? WHERE id = ?;', [key, r['id']]);
   }
 }
 
