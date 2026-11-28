@@ -426,17 +426,22 @@ class _AppShellState extends State<AppShell> {
           return k != 0 ? k : a.stageName.compareTo(b.stageName);
         });
     if (!mounted) return;
+    // A shared group is one cut here too: its first task, its numbers.
+    final units = cutUnits(rows);
+    final current = now == null
+        ? null
+        : units.firstWhere((u) => u.any((t) => t.id == now.id)).first.id;
     final picked = await showCenteredPicker<int>(
       context: context,
       title: S.cutName.t,
-      current: now?.id,
-      searchable: rows.length > 12,
+      current: current,
+      searchable: units.length > 12,
       search: (q) async => [
-        for (final t in rows)
-          if (q.isEmpty || taskLabel(t).contains(q))
+        for (final u in units)
+          if (u.first case final t when q.isEmpty || unitText(u).contains(q))
             (
               value: t.id,
-              title: taskLabel(t),
+              title: unitText(u),
               note: [
                 stageText(t.stageName),
                 if (t.partLabel case final p?) S.partTitle.f({'p': p}),
@@ -878,9 +883,11 @@ class _AppShellState extends State<AppShell> {
       onAddCuts: writable ? (g) => unawaited(_addCuts(g)) : null,
       onTaskTap: widget.timer == null
           ? null
-          : (t) => _selection.isEmpty
-                ? _pickForTimer(t.id)
-                : _selection.toggleTask(t),
+          // A shared group's chip runs the timer on its first cut, and
+          // is picked whole.
+          : (u) => _selection.isEmpty
+                ? _pickForTimer(u.first.id)
+                : _selection.toggleUnit(u),
     );
     return switch (v) {
       AppView.list => SheetView(

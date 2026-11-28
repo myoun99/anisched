@@ -216,3 +216,16 @@ const _checkWords = {
   StageCheck.inbetweenCheck: ['IBC', '動検', '동검', 'IBC', '中检'],
   StageCheck.cellCheck: ['CC', 'セル検', '셀검', 'CC', '赛检'],
 };
+
+/// [tasks] as the cuts show: a shared (겸용) group of one stage is one
+/// ([TaskRow.unitKey]), in the order first seen.
+List<List<TaskRow>> cutUnits(Iterable<TaskRow> tasks) {
+  final by = <String, List<TaskRow>>{};
+  for (final t in tasks) {
+    (by[t.unitKey] ??= []).add(t);
+  }
+  return by.values.toList();
+}
+
+/// A cut as shown: a shared group's numbers joined, 「C012/C013」.
+String unitText(List<TaskRow> unit) => unit.map(taskLabel).join('/');

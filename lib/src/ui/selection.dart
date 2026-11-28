@@ -17,8 +17,11 @@ class TaskSelection extends ChangeNotifier {
   bool get isEmpty => _ids.isEmpty;
 
   Picked of(PartGroup g) {
+    // Tasks, not [PartGroup.total] (a shared group counts once there).
     final n = g.tasks.where((t) => _ids.contains(t.id)).length;
-    return n == 0 ? Picked.none : (n == g.total ? Picked.all : Picked.some);
+    return n == 0
+        ? Picked.none
+        : (n == g.tasks.length ? Picked.all : Picked.some);
   }
 
   bool has(TaskRow t) => _ids.contains(t.id);
@@ -35,6 +38,17 @@ class TaskSelection extends ChangeNotifier {
 
   void toggleTask(TaskRow t) {
     if (!_ids.remove(t.id)) _ids.add(t.id);
+    notifyListeners();
+  }
+
+  /// Picks one cut as shown — a shared (겸용) group's tasks together —
+  /// or drops it if all of it was picked.
+  void toggleUnit(List<TaskRow> unit) {
+    if (unit.every(has)) {
+      _ids.removeAll(unit.map((t) => t.id));
+    } else {
+      _ids.addAll(unit.map((t) => t.id));
+    }
     notifyListeners();
   }
 
