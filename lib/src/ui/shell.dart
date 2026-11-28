@@ -47,6 +47,7 @@ import 'views/timeline_view.dart';
 import 'views/work_view.dart';
 import 'text/strings.dart';
 import 'fit_text.dart';
+import 'notice.dart';
 
 /// The app's views: the list, the production timeline, the user's own
 /// work on parallel lanes, registration and settings.
@@ -184,24 +185,12 @@ class _AppShellState extends State<AppShell> {
   /// The file came back to life from this device's last save: say so.
   void _onRemote() {
     if (!mounted || widget.remote?.value is! RemoteRepaired) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('doc-repaired'),
-          content: Row(
-            spacing: 8,
-            children: [
-              Icon(
-                Icons.settings_backup_restore,
-                size: 18,
-                color: Theme.of(context).colorScheme.onInverseSurface,
-              ),
-              Flexible(child: Text(S.docRepaired.t)),
-            ],
-          ),
-        ),
-      );
+    showNotice(
+      context,
+      S.docRepaired.t,
+      key: const Key('doc-repaired'),
+      icon: Icons.settings_backup_restore,
+    );
   }
 
   /// Reloads the sheet's groups; the last ones stay on screen meanwhile.
@@ -698,19 +687,16 @@ class _AppShellState extends State<AppShell> {
     _write((store) => back ? store.undoHandOff(ids) : store.handOff(ids));
     _selection.clear();
     if (back) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('dropped-snack'),
-          content: Text('${S.dropped.t} · ${S.items.f({'n': ids.length})}'),
-          action: SnackBarAction(
-            key: const Key('dropped-undo'),
-            label: S.undoDrop.t,
-            onPressed: () => _write((store) => store.undoHandOff(ids)),
-          ),
-        ),
-      );
+    showNotice(
+      context,
+      '${S.dropped.t} · ${S.items.f({'n': ids.length})}',
+      key: const Key('dropped-snack'),
+      action: (
+        label: S.undoDrop.t,
+        onPressed: () => _write((store) => store.undoHandOff(ids)),
+        key: const Key('dropped-undo'),
+      ),
+    );
   }
 
   /// Puts the picked tasks away (보관) at once, with an undo; when every
@@ -727,19 +713,16 @@ class _AppShellState extends State<AppShell> {
     }
     _write((store) => store.archiveTasks(ids));
     _selection.clear();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('archived-snack'),
-          content: Text('${S.archive.t} · ${S.items.f({'n': ids.length})}'),
-          action: SnackBarAction(
-            key: const Key('archived-undo'),
-            label: S.undoDrop.t,
-            onPressed: () => _restore(ids),
-          ),
-        ),
-      );
+    showNotice(
+      context,
+      '${S.archive.t} · ${S.items.f({'n': ids.length})}',
+      key: const Key('archived-snack'),
+      action: (
+        label: S.undoDrop.t,
+        onPressed: () => _restore(ids),
+        key: const Key('archived-undo'),
+      ),
+    );
   }
 
   void _restore(List<int> ids) {
@@ -747,14 +730,11 @@ class _AppShellState extends State<AppShell> {
       _write((store) => store.restoreTasks(ids));
       _selection.clear();
     } on StateError {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            key: const Key('restore-blocked'),
-            content: Text(S.restoreBlocked.t),
-          ),
-        );
+      showNotice(
+        context,
+        S.restoreBlocked.t,
+        key: const Key('restore-blocked'),
+      );
     }
   }
 
@@ -836,14 +816,11 @@ class _AppShellState extends State<AppShell> {
       _write((s) => s.renumberCuts({cuts.single: name.trim()}));
       _selection.clear();
     } on StateError {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            key: const Key('rename-clash'),
-            content: Text(S.cutsTaken.f({'names': name.trim()})),
-          ),
-        );
+      showNotice(
+        context,
+        S.cutsTaken.f({'names': name.trim()}),
+        key: const Key('rename-clash'),
+      );
     }
   }
 
@@ -854,19 +831,16 @@ class _AppShellState extends State<AppShell> {
     if (cuts.isEmpty) return;
     _write((s) => s.removeCutIds(cuts));
     _selection.clear();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('takeout-snack'),
-          content: Text('${S.takeOut.t} · ${cuts.length} cut'),
-          action: SnackBarAction(
-            key: const Key('takeout-undo'),
-            label: S.undoDrop.t,
-            onPressed: () => _write((s) => putBack(s, cuts)),
-          ),
-        ),
-      );
+    showNotice(
+      context,
+      '${S.takeOut.t} · ${cuts.length} cut',
+      key: const Key('takeout-snack'),
+      action: (
+        label: S.undoDrop.t,
+        onPressed: () => _write((s) => putBack(s, cuts)),
+        key: const Key('takeout-undo'),
+      ),
+    );
   }
 
   /// Deletes the picked tasks for good, after a confirmation that says

@@ -124,6 +124,7 @@ class _WorkViewState extends State<WorkView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ViewToolbar(
+            basis: ToolbarBasis(Icons.person_outline, S.basisMine.t),
             children: [
               if (lanes != null && lanes.pinned.isNotEmpty)
                 ToolbarButton(

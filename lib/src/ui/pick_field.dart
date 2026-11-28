@@ -8,6 +8,7 @@ import 'instant.dart';
 import 'palette.dart';
 import 'theme.dart';
 import 'text/strings.dart';
+import 'notice.dart';
 
 /// One choice in a [PickField] list.
 typedef PickOption<T> = ({T value, String title, String? note});
@@ -405,21 +406,18 @@ class _PresetLineState<T> extends State<PresetLine<T>> {
     tools.delete(widget.option.value);
     widget.onChanged();
     final undo = tools.onUndo;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('preset-deleted'),
-          content: Text('${S.remove.t} · ${widget.option.title}'),
-          action: undo == null
-              ? null
-              : SnackBarAction(
-                  key: const Key('preset-undo'),
-                  label: S.undoDrop.t,
-                  onPressed: undo,
-                ),
-        ),
-      );
+    showNotice(
+      context,
+      '${S.remove.t} · ${widget.option.title}',
+      key: const Key('preset-deleted'),
+      action: undo == null
+          ? null
+          : (
+              label: S.undoDrop.t,
+              onPressed: undo,
+              key: const Key('preset-undo'),
+            ),
+    );
   }
 
   @override

@@ -30,8 +30,9 @@ ChartWindow monthWindow(DateTime month) => ChartWindow(
 );
 
 /// The months from [first] to [last] (inclusive), each built by [month]
-/// as a shrink-wrapped [ChartBoard] for its window, stacked and scrolled
-/// together; only the months on screen are built.
+/// as a shrink-wrapped [ChartBoard] for its window, stacked edge to edge
+/// with one line between them and scrolled together; only the months on
+/// screen are built.
 class MonthStack extends StatelessWidget {
   const MonthStack({
     super.key,
@@ -47,6 +48,7 @@ class MonthStack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = (last.year - first.year) * 12 + last.month - first.month + 1;
+    final line = AppColors.of(context).line;
     return OwnScroll(
       builder: (controller) => Scrollbar(
         controller: controller,
@@ -56,9 +58,13 @@ class MonthStack extends StatelessWidget {
           itemCount: count < 1 ? 1 : count,
           itemBuilder: (context, i) {
             final m = DateTime(first.year, first.month + i);
-            return Padding(
+            // No gap between months: one line where one ends.
+            return DecoratedBox(
               key: Key('month-${m.year}-${m.month}'),
-              padding: const EdgeInsets.only(bottom: 14),
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: line)),
+              ),
               child: month(context, monthWindow(m)),
             );
           },
