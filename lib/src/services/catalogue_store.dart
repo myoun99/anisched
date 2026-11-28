@@ -1099,6 +1099,33 @@ ORDER BY sort_key, id;''',
     };
   }
 
+  /// Every timer stretch on [taskId], oldest first (a running one last).
+  List<WorkInterval> intervalsOf(int taskId) => [
+    for (final r in db.select(
+      'SELECT id, started_at, stopped_at, task_id FROM work_intervals '
+      'WHERE task_id = ? ORDER BY started_at, id;',
+      [taskId],
+    ))
+      WorkInterval(
+        id: r['id'] as int,
+        start: _utc(r['started_at'] as int),
+        stop: _utcOrNull(r['stopped_at']),
+        taskId: taskId,
+      ),
+  ];
+
+  /// The other tasks the timer can move to from [taskId]: the live tasks
+  /// of the same episode, in display order (each row carries its part).
+  List<TaskRow> tasksBeside(int taskId) {
+    final rows = taskRows(includeDone: true);
+    final me = rows.where((t) => t.id == taskId).firstOrNull;
+    if (me == null) return const [];
+    return [
+      for (final t in rows)
+        if (t.episodeId == me.episodeId && t.id != taskId) t,
+    ];
+  }
+
   /// The running timer, if any.
   WorkInterval? runningTimer() {
     final rows = db.select(
@@ -1566,15 +1593,22 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
       );
   }
 
-  /// Sets [status]. The task's `submitted_at` is its FIRST hand-in (pace
-  /// and statistics count a cut once); handing in a retake stamps that
-  /// take's row instead.
+  /// Sets [status]. `done_at` is when the work was FIRST finished and
+  /// `submitted_at` when it was FIRST handed in (pace, totals and
+  /// statistics count a cut once); handing in a retake stamps that take's
+  /// row instead. Submitting work not marked done marks it done too.
   void setStatus(int taskId, TaskStatus status) {
     final now = _now();
     final submitted = status == TaskStatus.submitted ? 1 : 0;
-    final done = status == TaskStatus.done ? 1 : 0;
+    final done = submitted == 1 || status == TaskStatus.done ? 1 : 0;
     _transaction(() {
       if (submitted == 1) {
+        // Out of hand: a timer running on it pauses.
+        db.execute(
+          'UPDATE work_intervals SET stopped_at = MAX(?, started_at) '
+          'WHERE stopped_at IS NULL AND task_id = ?;',
+          [now, taskId],
+        );
         db.execute(
           '''
 UPDATE retakes SET submitted_at = ?
@@ -1596,7 +1630,8 @@ WHERE id = ? AND submitted_at IS NULL;''',
         'UPDATE tasks SET status = ?, '
         'submitted_at = CASE WHEN ? THEN COALESCE(submitted_at, ?) '
         'ELSE submitted_at END, '
-        'done_at = CASE WHEN ? THEN ? ELSE done_at END WHERE id = ?;',
+        'done_at = CASE WHEN ? THEN COALESCE(done_at, ?) ELSE done_at END '
+        'WHERE id = ?;',
         [status.dbName, submitted, now, done, now, taskId],
       );
     });
@@ -1797,9 +1832,9 @@ WHERE (?2 IS NULL OR w.id = ?2)
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
   AND (p.id IS NULL OR p.archived_at IS NULL)
-  AND (?3 = 1 OR t.status <> 'done' OR (t.storyboard_id IS NULL AND EXISTS (
+  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND EXISTS (
     SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
-    WHERE t2.stage_id = t.stage_id AND t2.status <> 'done'
+    WHERE t2.stage_id = t.stage_id AND t2.status <> 'submitted'
       AND (c2.part_id = c.part_id
         OR (c.part_id IS NULL AND c2.part_id IS NULL
             AND c2.episode_id = c.episode_id)))))
@@ -1937,6 +1972,47 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// Lets every bar be placed automatically again.
   void clearLanePins() => db.execute('DELETE FROM lane_pins;');
 
+  // ---- lines (the work tab's lanes) ----
+  // The lane count and names live in the settings (parallel_lanes,
+  // lane_names); these keep them, and the pins, in step.
+
+  /// The lanes in order: their names, null for an unnamed one.
+  List<String?> lanes() => settings.laneNames;
+
+  /// Adds a lane at the end; answers its index.
+  int addLane({String? name}) => _transaction(() {
+    final names = [...settings.laneNames, _blank(name)];
+    settings
+      ..parallelLanes = names.length
+      ..laneNames = names;
+    return names.length - 1;
+  });
+
+  /// Removes lane [index]: bars pinned to it are let go, bars pinned to
+  /// later lanes move down one. The last lane cannot go.
+  void removeLane(int index) => _transaction(() {
+    final names = settings.laneNames;
+    RangeError.checkValidIndex(index, names, 'index');
+    if (names.length == 1) throw StateError('The last lane cannot go.');
+    db
+      ..execute('DELETE FROM lane_pins WHERE lane = ?;', [index])
+      ..execute('UPDATE lane_pins SET lane = lane - 1 WHERE lane > ?;', [
+        index,
+      ]);
+    names.removeAt(index);
+    settings
+      ..parallelLanes = names.length
+      ..laneNames = names;
+  });
+
+  /// Names lane [index]; null or blank leaves it unnamed.
+  void renameLane(int index, String? name) {
+    final names = settings.laneNames;
+    RangeError.checkValidIndex(index, names, 'index');
+    names[index] = _blank(name);
+    settings.laneNames = names;
+  }
+
   /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
   /// display order, replacing any earlier order. Units not listed fall
   /// after the listed ones, by deadline.
@@ -1993,8 +2069,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
 SELECT s.name AS stage_name, COUNT(*) AS cuts
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.submitted_at, t.done_at) >= ?
-  AND COALESCE(t.submitted_at, t.done_at) < ?
+  AND COALESCE(t.done_at, t.submitted_at) >= ?
+  AND COALESCE(t.done_at, t.submitted_at) < ?
 GROUP BY s.name ORDER BY s.name;''',
         [_ms(from), _ms(today.end)],
       ))
@@ -2019,11 +2095,11 @@ GROUP BY s.name ORDER BY s.name;''',
     for (final r in db.select(
       '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts,
-       MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
+       MIN(COALESCE(t.done_at, t.submitted_at)) AS first_at
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
-  AND COALESCE(t.submitted_at, t.done_at) < ?
+  AND COALESCE(t.done_at, t.submitted_at) IS NOT NULL
+  AND COALESCE(t.done_at, t.submitted_at) < ?
 GROUP BY s.name;''',
       [_ms(today.end)],
     )) {

@@ -85,6 +85,14 @@ void main() {
     final taskIds = [for (final t in store.taskRows(includeDone: true)) t.id];
     expect(await reader.workedOn(taskIds), store.workedOn(taskIds));
     expect((await reader.runningTimer())?.id, store.runningTimer()?.id);
+    expect(
+      (await reader.intervalsOf(taskIds.first)).map((i) => i.id),
+      store.intervalsOf(taskIds.first).map((i) => i.id),
+    );
+    expect(
+      (await reader.tasksBeside(taskIds.first)).map((t) => t.id),
+      store.tasksBeside(taskIds.first).map((t) => t.id),
+    );
     final from = DateTime(2026, 10, 1);
     final to = DateTime(2026, 12, 1);
     // Arguments reach the store: a filter that matches nothing, a bucket.
@@ -107,6 +115,7 @@ void main() {
       store.stats(from: from, to: to).total.cuts,
     );
     expect(await reader.holding(), store.holding());
+    expect(await reader.lanes(), store.lanes());
     final due = DueTarget.part(part, lo);
     expect(
       (await reader.dueRevisions(due)).map((r) => r.dueAt),
@@ -150,16 +159,16 @@ void main() {
     final before = reader.generation;
     final pending = reader.partGroups(); // in flight…
     final id = store.partGroups().single.tasks.first.id;
-    store.setStatus(id, TaskStatus.done); // …when this lands
+    store.setStatus(id, TaskStatus.submitted); // …when this lands
     expect(reader.generation, greaterThan(before));
     expect((await pending).single.handed, 1);
   });
 
-  test('done units are hidden unless asked for', () async {
+  test('submitted units are hidden unless asked for', () async {
     final reader = await openReader();
     store.setStatusMany(
       store.partGroups().single.tasks.map((t) => t.id),
-      TaskStatus.done,
+      TaskStatus.submitted,
     );
     expect(await reader.partGroups(), isEmpty);
     expect(await reader.partGroups(includeDone: true), hasLength(1));

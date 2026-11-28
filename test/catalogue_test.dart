@@ -494,18 +494,18 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
     test('new works copy the edited preset; old works keep theirs', () {
       final before = store.createWork('작품A');
       final preset = store.defaultPresetId();
-      store.setPresetStages(preset, ['LO', 'LO 작감 수정', '원화']);
+      store.setPresetStages(preset, ['LO', 'LO/작감', '원화']);
       final after = store.createWork('작품B');
-      expect(store.stages(after).map((s) => s.name), ['LO', 'LO 작감 수정', '원화']);
+      expect(store.stages(after).map((s) => s.name), ['LO', 'LO/작감', '원화']);
       expect(store.stages(before).map((s) => s.name), defaultStageNames);
     });
 
     test('several presets; a work is made from the chosen one', () {
-      final sakkan = store.createPreset('작감용', ['LO 작감 수정', '원화 작감 수정']);
+      final sakkan = store.createPreset('작감용', ['LO/작감', '원화/작감']);
       expect(store.presets().map((p) => p.name), ['기본', '작감용']);
       expect(store.presets().first.isDefault, isTrue);
       final w = store.createWork('작품B', presetId: sakkan);
-      expect(store.stages(w).map((s) => s.name), ['LO 작감 수정', '원화 작감 수정']);
+      expect(store.stages(w).map((s) => s.name), ['LO/작감', '원화/작감']);
       expect(
         store.stages(store.createWork('작품C')).map((s) => s.name),
         defaultStageNames,

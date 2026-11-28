@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:anisched/src/models/work_interval.dart';
+import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/work_timer.dart';
@@ -285,6 +286,121 @@ void main() {
       expect(timer.selectionChanged(b, autoStart: auto)!.id, runningOnB);
       expect(timer.selectionChanged(null, autoStart: auto), isNull);
       expect(timer.running(), isNull);
+    });
+
+    test('submitting pauses a running timer and keeps its cut', () {
+      final w = store.createWork('W');
+      final r = store.addEpisodeWithCuts(w, '#1', 'C001');
+      final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
+      timer.start(taskId: a);
+      now = now.add(const Duration(minutes: 15));
+      store.setStatus(a, TaskStatus.submitted);
+      expect(timer.running(), isNull);
+      now = now.add(const Duration(hours: 1));
+      expect(store.workedOn([a]), {a: const Duration(minutes: 15)});
+      expect(store.intervalsOf(a).single.taskId, a);
+    });
+
+    test('the cuts beside a task: same episode, done ones too', () {
+      final w = store.createWork('W');
+      final r1 = store.addEpisodeWithCuts(w, '#1', 'C001~C003');
+      final r2 = store.addEpisodeWithCuts(w, '#2', 'C001');
+      final key = stage(w, '원화');
+      final a = store.addTask(key, cutId: r1.cutIds[0]);
+      final b = store.addTask(key, cutId: r1.cutIds[1]);
+      final c = store.addTask(key, cutId: r1.cutIds[2]);
+      store
+        ..addTask(key, cutId: r2.cutIds[0])
+        ..setStatus(c, TaskStatus.done);
+      expect(store.tasksBeside(a).map((t) => t.id), [b, c]);
+      expect(store.tasksBeside(999), isEmpty);
+    });
+  });
+
+  group('editing the record by hand', () {
+    late Database db;
+    late CatalogueStore store;
+    late WorkTimerStore timer;
+    late int task;
+    setUp(() {
+      now = t0;
+      db = openAppDatabase(':memory:');
+      store = CatalogueStore(db, clock: clock);
+      timer = WorkTimerStore(db, clock: clock);
+      final w = store.createWork('W');
+      final r = store.addEpisodeWithCuts(w, '#1', 'C001');
+      task = store.addTask(
+        store.stages(w).firstWhere((s) => s.name == '원화').id,
+        cutId: r.cutIds[0],
+      );
+    });
+    tearDown(() => db.close());
+    DateTime at(int h) => t0.subtract(Duration(hours: 10 - h));
+
+    test('left running overnight: cut the stop back', () {
+      timer.start(taskId: task);
+      now = t0.add(const Duration(hours: 9));
+      timer.editInterval(
+        timer.running()!.id,
+        stop: t0.add(const Duration(hours: 2)),
+      );
+      expect(timer.running(), isNull);
+      expect(store.workedOn([task]), {task: const Duration(hours: 2)});
+    });
+
+    test('add, move and delete stretches; listed oldest first', () {
+      final late = timer.addInterval(taskId: task, start: at(5), stop: at(6));
+      final early = timer.addInterval(taskId: task, start: at(1), stop: at(2));
+      expect(store.intervalsOf(task).map((i) => i.id), [early.id, late.id]);
+      timer.editInterval(early.id, start: at(0));
+      expect(store.workedOn([task]), {task: const Duration(hours: 3)});
+      timer.deleteInterval(late.id);
+      expect(store.intervalsOf(task).map((i) => i.id), [early.id]);
+    });
+
+    test('overlaps are refused; touching ends are fine', () {
+      final a = timer.addInterval(taskId: task, start: at(1), stop: at(3));
+      expect(
+        () => timer.addInterval(taskId: task, start: at(2), stop: at(4)),
+        throwsA(
+          isA<IntervalOverlapException>().having(
+            (e) => e.otherId,
+            'otherId',
+            a.id,
+          ),
+        ),
+      );
+      final b = timer.addInterval(start: at(3), stop: at(4)); // no task too
+      expect(
+        () => timer.editInterval(b.id, start: at(2)),
+        throwsA(isA<IntervalOverlapException>()),
+      );
+      // A running stretch reaches to now.
+      timer.start(taskId: task);
+      now = t0.add(const Duration(hours: 1));
+      expect(
+        () => timer.addInterval(
+          start: t0.add(const Duration(minutes: 30)),
+          stop: now,
+        ),
+        throwsA(isA<IntervalOverlapException>()),
+      );
+    });
+
+    test('backwards or future stretches are refused', () {
+      expect(
+        () => timer.addInterval(start: at(3), stop: at(2)),
+        throwsArgumentError,
+      );
+      expect(
+        () => timer.addInterval(
+          start: at(9),
+          stop: t0.add(const Duration(minutes: 1)),
+        ),
+        throwsArgumentError,
+      );
+      expect(() => timer.editInterval(42, stop: at(1)), throwsStateError);
+      expect(store.intervalsOf(task), isEmpty);
     });
   });
 }
