@@ -373,6 +373,14 @@ enum S {
     '此期间无数据',
   ),
 
+  zoomDrag(
+    'Drag sideways to zoom',
+    '左右にドラッグでズーム',
+    '좌우로 끌어 확대·축소',
+    'Glisser pour zoomer',
+    '左右拖动缩放',
+  ),
+
   // Date picker headings: what is being picked.
   pickDue('Deadline', '締切日', '마감 날짜', 'Échéance', '截止日期'),
   pickKickoff('Start date', '着手日', '착수일', 'Date de début', '开工日期'),

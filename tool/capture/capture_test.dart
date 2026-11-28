@@ -99,18 +99,23 @@ final scenarios = <String, (AppView, Scenario)>{
   'timeline-zoom': (
     AppView.timeline,
     (t, size) async {
-      await t.tap(find.byKey(const Key('chart-zoom-out')));
+      // Two steps out on the zoom, a week on.
+      await t.drag(
+        find.byKey(const Key('chart-zoom')),
+        const Offset(-ZoomDrag.stepPixels * 2 - 4, 0),
+      );
       await t.pump();
-      await t.tap(find.byKey(const Key('chart-zoom-out')));
-      await t.pump();
-      await t.tap(find.byKey(const Key('chart-next')));
+      chartView.value = chartView.value.scrolled(7);
       await t.pump();
     },
   ),
   'work-zoom': (
     AppView.work,
     (t, size) async {
-      await t.tap(find.byKey(const Key('chart-zoom-in')));
+      await t.drag(
+        find.byKey(const Key('chart-zoom')),
+        const Offset(ZoomDrag.stepPixels + 4, 0),
+      );
       await t.pump();
     },
   ),

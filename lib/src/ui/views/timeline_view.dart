@@ -98,15 +98,7 @@ class _TimelineViewState extends State<TimelineView> {
                   S.items.f({'n': rows.length}),
                   style: TextStyle(color: c.muted),
                 ),
-              ChartPager(
-                onShift: (d) => chartView.value = chartView.value.scrolled(d),
-                onToday: () =>
-                    chartView.value = ChartView(days: chartView.value.days),
-                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
-                  window.days,
-                  zoomIn: zoomIn,
-                ),
-              ),
+              ChartPager(days: window.days),
             ],
           ),
           Expanded(

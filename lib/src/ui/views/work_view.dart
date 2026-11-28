@@ -111,15 +111,7 @@ class _WorkViewState extends State<WorkView> {
                     ),
                   ),
                 ),
-              ChartPager(
-                onShift: (d) => chartView.value = chartView.value.scrolled(d),
-                onToday: () =>
-                    chartView.value = ChartView(days: chartView.value.days),
-                onZoom: (zoomIn) => chartView.value = chartView.value.stepped(
-                  window.days,
-                  zoomIn: zoomIn,
-                ),
-              ),
+              ChartPager(days: window.days),
             ],
           ),
           Expanded(
