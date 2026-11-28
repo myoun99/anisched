@@ -9,7 +9,8 @@ import 'support/sample_catalogue.dart';
 final now = DateTime(2026, 11, 27, 14);
 
 void main() {
-  for (final size in const [Size(1440, 900), Size(412, 915), Size(915, 412)]) {
+  // Other sizes and languages: language_test.
+  for (final size in const [Size(412, 915)]) {
     testWidgets('settings write through and lay out at $size', (t) async {
       t.view.physicalSize = size;
       t.view.devicePixelRatio = 1;

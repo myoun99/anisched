@@ -39,12 +39,8 @@ void main() {
     Folds.savedCuts.value = true;
   });
 
-  for (final size in const [
-    Size(1440, 900),
-    Size(800, 1280),
-    Size(412, 915),
-    Size(915, 412),
-  ]) {
+  // Phones: language_test lays every tab out there.
+  for (final size in const [Size(1440, 900)]) {
     testWidgets('register lays out at $size', (t) async {
       await pumpRegister(t, size);
       expect(t.takeException(), isNull);

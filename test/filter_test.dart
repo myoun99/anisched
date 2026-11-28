@@ -1,6 +1,7 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
+import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/filter.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
@@ -113,5 +114,66 @@ void main() {
     await t.pumpAndSettle();
     expect(store.hasGroupOrder, isTrue);
     expect(store.partGroups().first.key, isNot(first));
+  });
+
+  group('window edges', () {
+    // One open part moved around the edges of each window.
+    PartGroup edge(void Function(CatalogueStore s, PartGroup g) move) {
+      final s = sampleCatalogue(now);
+      final g = s.partGroups().firstWhere(
+        (g) => g.kind == GroupKind.part && g.status.isOpen,
+      );
+      move(s, g);
+      return s.partGroups().firstWhere((x) => x.key == g.key);
+    }
+
+    bool inRange(PartGroup g, DueRange r) =>
+        ViewFilter(range: r).matches(g, now, const {});
+
+    DateTime dayEnd(int days) =>
+        DateTime(now.year, now.month, now.day + days, 23, 59);
+
+    test('day 14 is within two weeks, day 15 later', () {
+      final at14 = edge(
+        (s, g) => s.setPartDue(g.partId!, g.stageId, dayEnd(14)),
+      );
+      expect(inRange(at14, DueRange.within14), isTrue);
+      expect(inRange(at14, DueRange.later), isFalse);
+      final at15 = edge(
+        (s, g) => s.setPartDue(g.partId!, g.stageId, dayEnd(15)),
+      );
+      expect(inRange(at15, DueRange.later), isTrue);
+    });
+
+    test('handed-in work leaves every deadline window', () {
+      final sent = edge((s, g) {
+        s.setPartDue(g.partId!, g.stageId, dayEnd(1));
+        s.setStatusMany([for (final t in g.tasks) t.id], TaskStatus.submitted);
+      });
+      for (final r in DueRange.values.where((r) => r != DueRange.all)) {
+        expect(inRange(sent, r), isFalse, reason: r.name);
+      }
+    });
+
+    test('today holds work whose start has come, not work starting later', () {
+      final started = edge(
+        (s, g) => s.setPartPlan(
+          g.partId!,
+          g.stageId,
+          start: dayEnd(-1),
+          end: dayEnd(2),
+        ),
+      );
+      expect(inRange(started, DueRange.today), isTrue);
+      final later = edge(
+        (s, g) => s.setPartPlan(
+          g.partId!,
+          g.stageId,
+          start: DateTime(now.year, now.month, now.day + 1),
+          end: dayEnd(3),
+        ),
+      );
+      expect(inRange(later, DueRange.today), isFalse);
+    });
   });
 }

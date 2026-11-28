@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/registration.dart';
+import '../controllers/unit_actions.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/lanes.dart';
@@ -305,16 +306,10 @@ class _AppShellState extends State<AppShell> {
         }
       });
 
-  /// Where a unit's deadline lives: the part × stage, or each task's own
-  /// (loose cuts, a storyboard).
-  static List<DueTarget> _dueTargets(PartGroup g) => g.kind == GroupKind.part
-      ? [DueTarget.part(g.partId!, g.stageId)]
-      : [for (final t in g.tasks) DueTarget.task(t.id)];
-
   /// A deadline picked (D label, details or timeline): a new round — the
   /// deadline was extended (2차 …), or the 1st when there was none.
   void _setDue(PartGroup g, DateTime due) => _write((store) {
-    for (final target in _dueTargets(g)) {
+    for (final target in dueTargets(g)) {
       store.extendDue(target, due);
     }
   });
@@ -326,7 +321,7 @@ class _AppShellState extends State<AppShell> {
   /// The rounds of a unit's deadline (one target: a part or storyboard).
   Future<List<DueRevision>> _revisions(PartGroup g) async {
     final reader = widget.reader;
-    final targets = _dueTargets(g);
+    final targets = dueTargets(g);
     if (reader == null || targets.length != 1) return const [];
     return reader.dueRevisions(targets.single);
   }
@@ -334,7 +329,7 @@ class _AppShellState extends State<AppShell> {
   /// Corrects one round of a unit's deadline.
   void _editRevision(PartGroup g, int revision, DateTime due) =>
       _write((store) {
-        for (final target in _dueTargets(g)) {
+        for (final target in dueTargets(g)) {
           store.editDueRevision(target, revision, due);
         }
       });
@@ -343,56 +338,21 @@ class _AppShellState extends State<AppShell> {
   /// one already waits, takes them off. Whole parts are held as parts, so
   /// cuts added later follow.
   Future<void> _toggleHold(List<TaskRow> tasks) async {
-    final open = [
-      for (final t in tasks)
-        if (t.status.isOpen) t,
-    ];
-    if (widget.store == null || open.isEmpty) return;
-    final release = open.every((t) => t.waiting);
-    final note = release ? null : await askHold(context);
-    if (!release && note == null) return;
-    final picked = {for (final t in open) t.id};
-    _write((store) {
-      final loose = <int>{...picked};
-      for (final g in _groups) {
-        if (g.kind != GroupKind.part) continue;
-        final ids = [
-          for (final t in g.tasks)
-            if (t.status.isOpen) t.id,
-        ];
-        if (ids.isEmpty || !ids.every(picked.contains)) continue;
-        store.setPartWaiting(
-          g.partId!,
-          g.stageId,
-          waiting: !release,
-          reason: note?.reason,
-          until: note?.until,
-        );
-        store.followPartWaiting(ids);
-        loose.removeAll(ids);
-      }
-      if (loose.isNotEmpty) {
-        store.setWaitingMany(
-          loose,
-          waiting: !release,
-          reason: note?.reason,
-          until: note?.until,
-        );
-      }
-    });
+    final plan = HoldPlan.of(_groups, tasks);
+    if (widget.store == null || plan.isEmpty) return;
+    final note = plan.release ? null : await askHold(context);
+    if (!plan.release && note == null) return;
+    _write(
+      (store) => plan.apply(store, reason: note?.reason, until: note?.until),
+    );
     _selection.clear();
   }
 
   /// Takes the picked tasks off the user (work moved to someone else) at
   /// once, with an undo; picked tasks already pulled come back instead.
   void _handOff() {
-    final picked = _pickedTasks;
-    if (widget.store == null || picked.isEmpty) return;
-    final back = picked.every((t) => t.handedOff);
-    final ids = [
-      for (final t in picked)
-        if (t.handedOff == back) t.id,
-    ];
+    final (:back, :ids) = planHandOff(_pickedTasks);
+    if (widget.store == null || ids.isEmpty) return;
     _write((store) => back ? store.undoHandOff(ids) : store.handOff(ids));
     _selection.clear();
     if (back) return;

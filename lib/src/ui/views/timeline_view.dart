@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
 import '../hold.dart';
@@ -150,7 +149,7 @@ class _TimelineViewState extends State<TimelineView> {
     final start = g.kickoffAt;
     final end = g.dueAt;
     if (start == null || end == null || end.isBefore(start)) return const [];
-    final handed = !g.status.isOpen || g.status == TaskStatus.submitted;
+    final handed = !g.status.isOpen; // submitted or done
     final onSchedule = widget.onSchedule;
     return [
       ChartBar(
