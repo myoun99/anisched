@@ -4,12 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../core/clock.dart';
 import '../models/progress.dart';
+import '../models/catalogue.dart';
+import 'fit_text.dart';
 import 'format.dart';
+import 'instant.dart';
+import 'text/strings.dart';
 import 'theme.dart';
 
-/// The work-time log along the bottom of every view: which cut, the time
-/// recorded on it so far (all sessions added up), and one start / pause
-/// toggle. Its space is always there.
+/// The work-time log along the bottom of every view: which cut (its name,
+/// title and episode each a button that opens the centred picker), the
+/// time recorded on it so far (all sessions added up), one start / pause
+/// toggle and the finish button — 완료, then 제출 (a long press steps back).
+/// A long press on the bar edits the recorded time by hand. Its space is
+/// always there.
 class TimerBar extends StatefulWidget {
   const TimerBar({
     super.key,
@@ -19,7 +26,25 @@ class TimerBar extends StatefulWidget {
     this.worked,
     this.onToggle,
     this.clock = systemClock,
+    this.onPickCut,
+    this.onPickWork,
+    this.onPickEpisode,
+    this.onStatus,
+    this.onEditTime,
   });
+
+  /// The time bar's pickers: another cut of the same episode, another
+  /// title, another episode of the title.
+  final VoidCallback? onPickCut;
+  final VoidCallback? onPickWork;
+  final VoidCallback? onPickEpisode;
+
+  /// Moves [task] on: done, submitted, or back.
+  final ValueChanged<TaskStatus>? onStatus;
+
+  /// Opens the stretches of [task] to fix by hand (a timer left on
+  /// overnight).
+  final VoidCallback? onEditTime;
 
   /// Whether time is being recorded on [task] now.
   final bool running;
@@ -71,9 +96,61 @@ class _TimerBarState extends State<TimerBar> {
     super.dispose();
   }
 
+  /// 00:00:00 — hours in two digits too: some cuts take many hours.
   static String _clock(Duration d) =>
-      '${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')}:'
+      '${d.inHours.toString().padLeft(2, '0')}:'
+      '${(d.inMinutes % 60).toString().padLeft(2, '0')}:'
       '${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  /// The finish button's next step: 완료 first, then 제출.
+  static TaskStatus? _next(TaskStatus s) => switch (s) {
+    TaskStatus.done => TaskStatus.submitted,
+    TaskStatus.submitted => null,
+    _ => TaskStatus.done,
+  };
+
+  Future<void> _stepBack(BuildContext context, TaskStatus s) async {
+    final on = widget.onStatus;
+    if (on == null) return;
+    final box = context.findRenderObject()! as RenderBox;
+    final at = box.localToGlobal(Offset.zero) & box.size;
+    final back = <(TaskStatus, String)>[
+      if (s == TaskStatus.submitted) (TaskStatus.done, S.backToDone.t),
+      if (s == TaskStatus.submitted || s == TaskStatus.done)
+        (TaskStatus.inProgress, S.backToWork.t),
+    ];
+    if (back.isEmpty) return;
+    final picked = await showMenu<TaskStatus>(
+      context: context,
+      popUpAnimationStyle: instant,
+      position: RelativeRect.fromLTRB(at.left, at.top - 8, at.right, at.top),
+      items: [
+        for (final (st, label) in back)
+          PopupMenuItem(
+            key: Key('timer-back-${st.dbName}'),
+            value: st,
+            child: Text(label),
+          ),
+      ],
+    );
+    if (picked != null) on(picked);
+  }
+
+  /// A plain text button for the bar's names.
+  Widget _name(
+    String key,
+    String text,
+    VoidCallback? onTap, {
+    TextStyle? style,
+  }) => InkWell(
+    key: Key(key),
+    borderRadius: BorderRadius.circular(6),
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: FitText(text, style: style),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -85,70 +162,128 @@ class _TimerBarState extends State<TimerBar> {
     final worked = t == null
         ? Duration.zero
         : (widget.worked?.call() ?? Duration.zero);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.panel,
-        border: Border(top: BorderSide(color: c.line)),
-      ),
-      child: SizedBox(
-        height: 52,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            spacing: 10,
-            children: [
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    text: t == null ? '—' : taskLabel(t),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+    return GestureDetector(
+      key: const Key('timer-bar'),
+      onLongPress: t == null ? null : widget.onEditTime,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.panel,
+          border: Border(top: BorderSide(color: c.line)),
+        ),
+        child: SizedBox(
+          height: 52,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              spacing: 10,
+              children: [
+                Expanded(
+                  child: Row(
                     children: [
-                      if (g != null)
-                        TextSpan(
-                          text:
-                              '  ${g.workTitle} ${episodeLabel(g.episodeNumber)} · '
-                              '${g.stageName}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.normal,
-                            color: c.muted,
-                            fontSize: 12,
+                      Flexible(
+                        flex: 3,
+                        child: _name(
+                          'timer-cut',
+                          t == null ? '—' : taskLabel(t),
+                          t == null ? null : widget.onPickCut,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
                           ),
                         ),
+                      ),
+                      if (g != null) ...[
+                        Flexible(
+                          flex: 4,
+                          child: _name(
+                            'timer-work',
+                            g.workTitle,
+                            widget.onPickWork,
+                            style: TextStyle(color: c.muted, fontSize: 12),
+                          ),
+                        ),
+                        Flexible(
+                          flex: 2,
+                          child: _name(
+                            'timer-episode',
+                            episodeLabel(g.episodeNumber),
+                            widget.onPickEpisode,
+                            style: TextStyle(color: c.muted, fontSize: 12),
+                          ),
+                        ),
+                        Flexible(
+                          flex: 2,
+                          child: FitText(
+                            g.stageName,
+                            style: TextStyle(color: c.faint, fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              Text(
-                _clock(worked),
-                key: const Key('timer-clock'),
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: run ? scheme.onSurface : c.muted,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              SizedBox.square(
-                dimension: 40,
-                child: IconButton.filled(
-                  key: const Key('timer-toggle'),
-                  tooltip: '',
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(
-                    backgroundColor: run ? scheme.primary : c.panelAlt,
-                    foregroundColor: run ? scheme.onPrimary : scheme.onSurface,
-                    side: run ? null : BorderSide(color: c.line),
-                  ),
-                  onPressed: t == null ? null : widget.onToggle,
-                  icon: Icon(
-                    run ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 22,
+                Text(
+                  _clock(worked),
+                  key: const Key('timer-clock'),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: run ? scheme.onSurface : c.muted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-              ),
-            ],
+                SizedBox.square(
+                  dimension: 40,
+                  child: IconButton.filled(
+                    key: const Key('timer-toggle'),
+                    tooltip: '',
+                    padding: EdgeInsets.zero,
+                    style: IconButton.styleFrom(
+                      backgroundColor: run ? scheme.primary : c.panelAlt,
+                      foregroundColor: run
+                          ? scheme.onPrimary
+                          : scheme.onSurface,
+                      side: run ? null : BorderSide(color: c.line),
+                    ),
+                    onPressed: t == null ? null : widget.onToggle,
+                    icon: Icon(
+                      run ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      size: 22,
+                    ),
+                  ),
+                ),
+                if (t != null && widget.onStatus != null)
+                  Builder(
+                    builder: (context) {
+                      final next = _next(t.status);
+                      return GestureDetector(
+                        onLongPress: () => _stepBack(context, t.status),
+                        child: OutlinedButton.icon(
+                          key: const Key('timer-finish'),
+                          onPressed: next == null
+                              ? null
+                              : () => widget.onStatus!(next),
+                          icon: Icon(
+                            next == TaskStatus.submitted
+                                ? Icons.send_outlined
+                                : Icons.check_circle_outline,
+                            size: 18,
+                          ),
+                          label: Text(
+                            next == TaskStatus.submitted || next == null
+                                ? S.stSubmitted.t
+                                : S.stDone.t,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
       ),

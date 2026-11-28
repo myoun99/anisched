@@ -38,10 +38,7 @@ void main() {
     await t.pumpWidget(
       MaterialApp(
         home: Center(
-          child: SizedBox(
-            width: 40,
-            child: FitText('별빛 정류장 #07 · 원화 · 4 cut'),
-          ),
+          child: SizedBox(width: 40, child: FitText('별빛 정류장 #07 · 원화 · 4 cut')),
         ),
       ),
     );
@@ -49,7 +46,9 @@ void main() {
     expect(find.byType(Tooltip), findsOneWidget);
     final roomy = FitText('LO');
     await t.pumpWidget(
-      MaterialApp(home: Center(child: SizedBox(width: 200, child: roomy))),
+      MaterialApp(
+        home: Center(child: SizedBox(width: 200, child: roomy)),
+      ),
     );
     expect(find.byType(Tooltip), findsNothing);
   });

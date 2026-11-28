@@ -383,6 +383,32 @@ enum S {
     '左右拖动缩放',
   ),
 
+  backToWork(
+    'Back to in progress',
+    '作業中に戻す',
+    '작업중으로 되돌리기',
+    'Revenir à en cours',
+    '退回进行中',
+  ),
+  backToDone('Back to done', '完了に戻す', '완료로 되돌리기', 'Revenir à terminé', '退回完成'),
+  editTime('Recorded time', '記録時間', '기록한 시간', 'Temps relevé', '记录时间'),
+  timeOverlap(
+    'Overlaps another stretch',
+    '他の記録と重なります',
+    '다른 기록과 겹침',
+    'Chevauche un autre relevé',
+    '与其他记录重叠',
+  ),
+  timeInvalid(
+    'The end must come after the start, and not in the future',
+    '終わりは始まりの後、未来でないこと',
+    '끝은 시작 뒤, 미래가 아니어야 함',
+    'La fin doit suivre le début, sans être future',
+    '结束须晚于开始且不在未来',
+  ),
+  timeStart('Started', '開始', '시작', 'Début', '开始'),
+  timeStop('Stopped', '終了', '끝', 'Fin', '结束'),
+
   // Date picker headings: what is being picked.
   pickDue('Deadline', '締切日', '마감 날짜', 'Échéance', '截止日期'),
   pickKickoff('Start date', '着手日', '착수일', 'Date de début', '开工日期'),
