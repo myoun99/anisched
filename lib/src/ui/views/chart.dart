@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/size_class.dart';
 import '../../models/progress.dart';
+import '../../services/device_settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';

@@ -314,6 +314,17 @@ enum S {
   register('Add', '登録', '등록', 'Ajouter', '登记'),
   resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
   inUse('In use', '使用中', '사용 중', 'Utilisé', '使用中'),
+  rulerRows('Ruler', '目盛り', '날짜 줄', 'Règle', '标尺'),
+  rulerYear('Year', '年', '년도', 'Année', '年'),
+  rulerMonth('Month', '月', '월', 'Mois', '月'),
+  rulerWeekday('Weekday', '曜日', '요일', 'Jour', '星期'),
+  numberClashes(
+    '{n} numbers clash',
+    '番号の重複 {n}件',
+    '번호 겹침 {n}건',
+    '{n} numéros en double',
+    '编号重复 {n} 项',
+  ),
   createNew('Create new', '新規作成', '새로 만들기', 'Créer', '新建'),
   createNamed(
     'Create “{name}”',

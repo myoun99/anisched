@@ -36,6 +36,17 @@ Future<Widget> _start() async {
     device.setShortcut(action, keys);
     shortcutKeys.value = device.shortcuts(apple: appleKeys);
   };
+  // Each chart tab's ruler rows, as this device last left them.
+  for (final tab in RulerTab.values) {
+    final rows = rulerRows[tab]!..value = device.rulerRows(tab);
+    rows.addListener(() {
+      final r = rows.value;
+      device
+        ..setRulerRow(tab, RulerRow.year, r.year)
+        ..setRulerRow(tab, RulerRow.month, r.month)
+        ..setRulerRow(tab, RulerRow.weekday, r.weekday);
+    });
+  }
   // The charts' month view, as this device last left it.
   chartMonthView.value = device.monthView;
   chartMonthView.addListener(() => device.monthView = chartMonthView.value);
