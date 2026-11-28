@@ -113,7 +113,8 @@ void main() {
     await t.pump();
     await t.pump();
     final work = store.works().firstWhere((w) => w.title == '별빛 정류장');
-    final ep = store.episodes(work.id).firstWhere((e) => e.number == '#99');
+    // Typed 「#99」: the 「#」 is display only.
+    final ep = store.episodes(work.id).firstWhere((e) => e.number == '99');
     final numbers = store.cuts(ep.id).map((c) => c.number).toSet();
     expect(numbers.length, 8);
     expect(numbers, contains('BANK1'));
