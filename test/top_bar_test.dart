@@ -50,4 +50,45 @@ void main() {
       );
     });
   }
+
+  for (final view in [
+    AppView.list,
+    AppView.timeline,
+    AppView.work,
+    AppView.stats,
+  ]) {
+    testWidgets('${view.name}: the toolbar sits at the right end', (t) async {
+      const size = Size(1280, 800);
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final store = sampleCatalogue(now);
+      await t.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: AppShell(
+            initialView: view,
+            reader: SyncCatalogueReader(store),
+            store: store,
+            clock: () => now,
+          ),
+        ),
+      );
+      await t.pump();
+      await t.pump();
+      final bar = find.byKey(const Key('view-toolbar'));
+      final wrap = t.renderObject<RenderBox>(bar);
+      var right = 0.0;
+      var left = double.infinity;
+      wrap.visitChildren((child) {
+        final box = child as RenderBox;
+        final x = box.localToGlobal(Offset.zero).dx;
+        if (x + box.size.width > right) right = x + box.size.width;
+        if (x < left) left = x;
+      });
+      // Its side padding is 12: the last control ends against it.
+      expect(right, closeTo(size.width - 12, 0.5));
+      expect(left, greaterThan(size.width / 2), reason: 'not on the left');
+    });
+  }
 }

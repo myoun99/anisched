@@ -368,7 +368,8 @@ class ToolbarButton extends StatelessWidget {
   }
 }
 
-/// The row of controls above a view's list.
+/// The row of controls above a view's list, at its right end (tools sit
+/// on the right, 유저 2026-11-28).
 class ViewToolbar extends StatelessWidget {
   const ViewToolbar({super.key, required this.children});
 
@@ -383,7 +384,16 @@ class ViewToolbar extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Wrap(spacing: 8, runSpacing: 8, children: children),
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            key: const Key('view-toolbar'),
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: children,
+          ),
+        ),
       ),
     );
   }

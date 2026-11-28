@@ -2,6 +2,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/controllers/registration.dart';
 import 'package:flutter/gestures.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:flutter/material.dart';
@@ -162,6 +163,47 @@ void main() {
     final numbers = store.cuts(ep.id).map((c) => c.number).toSet();
     expect(numbers.length, 8);
     expect(numbers, contains('BANK1'));
+  });
+
+  test('a renamed cell moves to its new number', () {
+    final draft = CutDraft(count: 3)..rename('C001', 'C010');
+    expect(draft.cells, ['C002', 'C003', 'C001']);
+    expect(draft.shown('C001'), 'C010');
+  });
+
+  testWidgets('added cuts take their place at once: 7 · 12 · 12A · BANK', (
+    t,
+  ) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await t.enterText(find.byKey(const Key('reg-count')), '1');
+    await t.pump();
+    for (final name in ['12', '7', 'BANK', '12A']) {
+      await t.tap(find.byKey(const Key('cell-add')));
+      await t.pumpAndSettle();
+      await t.enterText(find.byKey(const Key('name-input')), name);
+      await t.tap(find.byKey(const Key('name-ok')));
+      await t.pumpAndSettle();
+    }
+    // The cells in reading order (one row here).
+    final cells =
+        find
+            .byWidgetPredicate((w) {
+              final k = w.key;
+              return k is ValueKey<String> &&
+                  k.value.startsWith('cell-') &&
+                  k.value != 'cell-add';
+            })
+            .evaluate()
+            .map((e) => (e.widget.key! as ValueKey<String>).value)
+            .toList()
+          ..sort((a, b) {
+            final pa = t.getTopLeft(find.byKey(Key(a)));
+            final pb = t.getTopLeft(find.byKey(Key(b)));
+            return pa.dy != pb.dy
+                ? pa.dy.compareTo(pb.dy)
+                : pa.dx.compareTo(pb.dx);
+          });
+    expect(cells, ['cell-C001', 'cell-7', 'cell-12', 'cell-12A', 'cell-BANK']);
   });
 
   // LO and 原画 rarely share dates: each checked stage has its own row,

@@ -40,8 +40,8 @@ class CutDraft {
 
   String number(int n) => '$prefix${n.toString().padLeft(width, '0')}';
 
-  /// Cell ids in the one cut order ([sortedByCutNumber]): the run and the
-  /// added cuts by number, then added names that are not numbers in the
+  /// Cell ids in the one cut order ([sortedByCutNumber]) of their names
+  /// ([nameOf]): the run and the added or renamed cuts by number, then added names that are not numbers in the
   /// order they were added.
   List<String> get cells => sortedByCutNumber(
     [
@@ -49,7 +49,8 @@ class CutDraft {
       for (final e in extras)
         if (!_inRun(e)) e,
     ],
-    (id) => id,
+    // By the name a cell shows: a renamed cell moves to its new place.
+    nameOf,
     (prefix: prefix, digits: width),
   );
 

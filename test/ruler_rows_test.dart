@@ -70,6 +70,19 @@ void main() {
     expect(one.single.to - one.single.from, 28, reason: 'one cell');
   });
 
+  test('a cell\'s name: centred, else held at the cell\'s end in sight', () {
+    // A cell 0..300, the name 40 wide.
+    expect(spanLabelX(0, 300, 40, 0, 1000), 130, reason: 'centre in sight');
+    // Centre (150) left of sight: held at the visible start.
+    expect(spanLabelX(0, 300, 40, 200, 1000), 202);
+    // Centre right of sight: held at the visible end.
+    expect(spanLabelX(0, 300, 40, -500, 100), 58);
+    // Centre just in sight: the name is not cut by the edge.
+    expect(spanLabelX(0, 300, 40, 140, 1000), 142);
+    // Too little of the cell in sight for the whole name: from its start.
+    expect(spanLabelX(0, 300, 40, 290, 1000), 292);
+  });
+
   test('rows go year, month, days, weekdays, events; hidden ones fold', () {
     final all = ChartHeader.layout((year: true, month: true, weekday: true));
     expect(all.year < all.month, isTrue);
