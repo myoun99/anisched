@@ -605,6 +605,7 @@ ORDER BY sort_key, id;''')) {
   /// Removes the part's deadline for a stage, every revision; its cuts
   /// keep their own.
   void clearPartDue(int partId, int stageId) => _transaction(() {
+    _holdBeforeDates();
     _deleteRevisions(DueTarget.part(partId, stageId));
     db.execute(
       'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
@@ -641,6 +642,7 @@ ORDER BY sort_key, id;''')) {
   /// A new revision of [target]'s deadline (the deadline was extended);
   /// it becomes the deadline in force. Answers its number.
   int extendDue(DueTarget target, DateTime dueAt) => _transaction(() {
+    _holdBeforeDates();
     final (where, args) = _dueWhere(target);
     final next =
         db
@@ -664,6 +666,7 @@ ORDER BY sort_key, id;''')) {
   /// [StateError] when there is no such revision.
   void editDueRevision(DueTarget target, int revision, DateTime dueAt) =>
       _transaction(() {
+        _holdBeforeDates();
         final (where, args) = _dueWhere(target);
         db.execute(
           'UPDATE due_revisions SET due_at = ? WHERE $where AND revision = ?;',
@@ -678,6 +681,7 @@ ORDER BY sort_key, id;''')) {
   /// Drops revision [revision]; later ones move down a number. Removing
   /// the only one removes the deadline.
   void removeDueRevision(DueTarget target, int revision) => _transaction(() {
+    _holdBeforeDates();
     final (where, args) = _dueWhere(target);
     db.execute('DELETE FROM due_revisions WHERE $where AND revision = ?;', [
       ...args,
@@ -2047,10 +2051,15 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// placed and are listed in `unplaced` (group keys).
   ({LaneLayout layout, List<String> unplaced}) calendarLayout({
     CalendarBasis basis = CalendarBasis.work,
-  }) {
+  }) => _layout(partGroups(), basis);
+
+  ({LaneLayout layout, List<String> unplaced}) _layout(
+    List<PartGroup> groups,
+    CalendarBasis basis,
+  ) {
     final spans = <Span>[];
     final unplaced = <String>[];
-    for (final g in partGroups()) {
+    for (final g in groups) {
       if (!g.status.isOpen) continue;
       final (start, end) = switch (basis) {
         CalendarBasis.production => (g.kickoffAt, g.dueAt),
@@ -2077,6 +2086,45 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       unplaced: unplaced,
     );
   }
+
+  /// Keeps everything where it is now (유저 2026-11-28: lines and row order
+  /// change only when the user moves something or asks to sort): every
+  /// calendar bar not pinned yet is pinned to the lane it shows on, and
+  /// every unit without a saved place in the row order is added after the
+  /// saved ones, in the order shown. Runs by itself before any date
+  /// changes, so an edited bar or row stays put; new units find a free lane
+  /// (or the end of the list) the first time they show, and are held from
+  /// then on. [clearLanePins] and [clearGroupOrder] — the 「자동 정렬」
+  /// buttons — let everything be placed afresh.
+  void holdPlaces() => _transaction(() {
+    final groups = partGroups();
+    final layout = _layout(groups, CalendarBasis.work).layout;
+    for (final MapEntry(key: key, value: lane) in layout.laneOf.entries) {
+      if (layout.pinned.contains(key)) continue;
+      db.execute(
+        'INSERT OR IGNORE INTO lane_pins (group_key, lane) VALUES (?, ?);',
+        [key, lane],
+      );
+    }
+    final listed = {
+      for (final r in db.select('SELECT group_key FROM group_order;'))
+        r['group_key'] as String,
+    };
+    var next =
+        db
+                .select(
+                  'SELECT COALESCE(MAX(position) + 1, 0) AS n FROM group_order;',
+                )
+                .first['n']
+            as int;
+    for (final g in groups) {
+      if (listed.contains(g.key)) continue;
+      db.execute(
+        'INSERT INTO group_order (group_key, position) VALUES (?, ?);',
+        [g.key, next++],
+      );
+    }
+  });
 
   /// Pins a calendar bar (by group key) to [lane], as after a drag
   /// between lanes. The layout keeps it there unless it overlaps another
@@ -2460,6 +2508,7 @@ GROUP BY s.name;''',
   /// Like [setPartDue]: corrects the revision in force; null removes the
   /// task's own deadline, every revision.
   void setTaskDue(int taskId, DateTime? dueAt) => _transaction(() {
+    _holdBeforeDates();
     final target = DueTarget.task(taskId);
     if (dueAt == null) {
       _deleteRevisions(target);
@@ -2470,7 +2519,11 @@ GROUP BY s.name;''',
   });
 
   /// Sets or clears (null) when production work began for a part × stage.
-  void setPartKickoff(int partId, int stageId, DateTime? kickoffAt) {
+  void setPartKickoff(int partId, int stageId, DateTime? kickoffAt) =>
+      _transaction(() => _setPartKickoff(partId, stageId, kickoffAt));
+
+  void _setPartKickoff(int partId, int stageId, DateTime? kickoffAt) {
+    _holdBeforeDates();
     if (kickoffAt == null) {
       db.execute(
         'DELETE FROM part_stage_kickoffs WHERE part_id = ? AND stage_id = ?;',
@@ -2487,10 +2540,13 @@ GROUP BY s.name;''',
   }
 
   /// Sets or clears one task's own kickoff (a cut's override).
-  void setTaskKickoff(int taskId, DateTime? kickoffAt) => db.execute(
-    'UPDATE tasks SET kickoff_at = ? WHERE id = ?;',
-    [_ms(kickoffAt), taskId],
-  );
+  void setTaskKickoff(int taskId, DateTime? kickoffAt) => _transaction(() {
+    _holdBeforeDates();
+    db.execute('UPDATE tasks SET kickoff_at = ? WHERE id = ?;', [
+      _ms(kickoffAt),
+      taskId,
+    ]);
+  });
 
   /// Writes a part × stage's production schedule — kickoff and deadline —
   /// in one transaction, as a timeline bar dropped after a drag. A null
@@ -2513,7 +2569,11 @@ GROUP BY s.name;''',
   });
 
   /// Sets the user's own plan for a part × stage. Both null removes it.
-  void setPartPlan(int partId, int stageId, {DateTime? start, DateTime? end}) {
+  void setPartPlan(int partId, int stageId, {DateTime? start, DateTime? end}) =>
+      _transaction(() => _setPartPlan(partId, stageId, start, end));
+
+  void _setPartPlan(int partId, int stageId, DateTime? start, DateTime? end) {
+    _holdBeforeDates();
     if (start == null && end == null) {
       db.execute(
         'DELETE FROM part_stage_plans WHERE part_id = ? AND stage_id = ?;',
@@ -2534,10 +2594,13 @@ GROUP BY s.name;''',
     if (start != null && end != null && end.isBefore(start)) {
       throw ArgumentError('A plan cannot end before it starts.');
     }
-    db.execute(
-      'UPDATE tasks SET plan_start_at = ?, plan_end_at = ? WHERE id = ?;',
-      [_ms(start), _ms(end), taskId],
-    );
+    _transaction(() {
+      _holdBeforeDates();
+      db.execute(
+        'UPDATE tasks SET plan_start_at = ?, plan_end_at = ? WHERE id = ?;',
+        [_ms(start), _ms(end), taskId],
+      );
+    });
   }
 
   /// The rate unit preselected when entering this work's rates.
@@ -2652,6 +2715,7 @@ GROUP BY s.name;''',
 
   T _transaction<T>(T Function() body) {
     db.execute('SAVEPOINT catalogue;');
+    _depth++;
     try {
       final result = body();
       db.execute('RELEASE catalogue;');
@@ -2660,6 +2724,18 @@ GROUP BY s.name;''',
       db.execute('ROLLBACK TO catalogue;');
       db.execute('RELEASE catalogue;');
       rethrow;
+    } finally {
+      if (--_depth == 0) _placesHeld = false;
     }
+  }
+
+  int _depth = 0;
+  bool _placesHeld = false;
+
+  /// Before a date changes: [holdPlaces], once per outermost transaction.
+  void _holdBeforeDates() {
+    if (_placesHeld) return;
+    _placesHeld = true;
+    holdPlaces();
   }
 }
