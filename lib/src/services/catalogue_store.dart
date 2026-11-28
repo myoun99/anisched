@@ -895,35 +895,40 @@ ORDER BY sort_key, id;''')) {
       ms == null ? null : _utc(ms as int);
 
   /// Adds a client; [closingDay] null closes at month end.
-  int addClient(String name, {int? closingDay}) {
-    db.execute('INSERT INTO clients (name, closing_day) VALUES (?, ?);', [
-      name,
-      closingDay,
-    ]);
+  int addClient(String name, {int? closingDay, int? color}) {
+    db.execute(
+      'INSERT INTO clients (name, closing_day, color) VALUES (?, ?, ?);',
+      [name, closingDay, color],
+    );
     return db.lastInsertRowId;
   }
 
-  List<({int id, String name, int? closingDay})> clients() => [
+  /// Sets a client's colour (ARGB); null goes back to the default grey.
+  void setClientColor(int clientId, int? color) => db.execute(
+    'UPDATE clients SET color = ? WHERE id = ?;',
+    [color, clientId],
+  );
+
+  List<ClientRow> clients() => [
     for (final r in db.select(
-      'SELECT id, name, closing_day FROM clients WHERE archived_at IS NULL '
+      'SELECT id, name, closing_day, color FROM clients '
+      'WHERE archived_at IS NULL '
       'ORDER BY name, id;',
     ))
       (
         id: r['id'] as int,
         name: r['name'] as String,
         closingDay: r['closing_day'] as int?,
+        color: r['color'] as int?,
       ),
   ];
 
   /// Clients whose name contains [query] (any case; empty = all), most
   /// recently used first — by the latest activity on their works.
-  List<({int id, String name, int? closingDay})> searchClients(
-    String query, {
-    int limit = 50,
-  }) => [
+  List<ClientRow> searchClients(String query, {int limit = 50}) => [
     for (final r in db.select(
       '''
-SELECT cl.id, cl.name, cl.closing_day,
+SELECT cl.id, cl.name, cl.closing_day, cl.color,
   (SELECT MAX(COALESCE(
      (SELECT MAX(MAX(COALESCE(t.done_at, 0), COALESCE(t.submitted_at, 0),
                      COALESCE(t.received_at, 0)))
@@ -940,6 +945,7 @@ LIMIT ?;''',
         id: r['id'] as int,
         name: r['name'] as String,
         closingDay: r['closing_day'] as int?,
+        color: r['color'] as int?,
       ),
   ];
 
@@ -1044,6 +1050,92 @@ LIMIT ?;''',
         cutCount: r['cut_count'] as int,
       ),
   ];
+
+  // ---- events (유저 2026-11-28) ----
+
+  /// Puts an event on [date] (its local day), at [timeMinutes] past
+  /// midnight or all day (null), on [episodeId]'s rows or on none.
+  int addEvent({
+    int? episodeId,
+    required DateTime date,
+    int? timeMinutes,
+    required String title,
+    String? note,
+  }) {
+    _checkTime(timeMinutes);
+    db.execute(
+      'INSERT INTO events (episode_id, day, time_min, title, note) '
+      'VALUES (?, ?, ?, ?, ?);',
+      [episodeId, _day(date), timeMinutes, title, note],
+    );
+    return db.lastInsertRowId;
+  }
+
+  /// Rewrites every field of event [id].
+  void updateEvent(
+    int id, {
+    int? episodeId,
+    required DateTime date,
+    int? timeMinutes,
+    required String title,
+    String? note,
+  }) {
+    _checkTime(timeMinutes);
+    db.execute(
+      'UPDATE events SET episode_id = ?, day = ?, time_min = ?, title = ?, '
+      'note = ? WHERE id = ?;',
+      [episodeId, _day(date), timeMinutes, title, note, id],
+    );
+  }
+
+  void deleteEvent(int id) =>
+      db.execute('DELETE FROM events WHERE id = ?;', [id]);
+
+  /// Events on the local days from [from] up to (not including) [to],
+  /// grouped by episode (null: events on no episode); each list by day,
+  /// all-day ones first, then by time. Events of archived episodes are
+  /// left out.
+  Map<int?, List<EventRow>> events({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    final out = <int?, List<EventRow>>{};
+    for (final r in db.select(
+      '''
+SELECT ev.id, ev.episode_id, ev.day, ev.time_min, ev.title, ev.note
+FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
+LEFT JOIN works w ON w.id = e.work_id
+WHERE ev.day >= ? AND ev.day < ?
+  AND (ev.episode_id IS NULL
+       OR (e.archived_at IS NULL AND w.archived_at IS NULL))
+ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
+      [_day(from), _day(to)],
+    )) {
+      final day = (r['day'] as String).split('-').map(int.parse).toList();
+      final episode = r['episode_id'] as int?;
+      (out[episode] ??= []).add((
+        id: r['id'] as int,
+        episodeId: episode,
+        date: DateTime(day[0], day[1], day[2]),
+        timeMinutes: r['time_min'] as int?,
+        title: r['title'] as String,
+        note: r['note'] as String?,
+      ));
+    }
+    return out;
+  }
+
+  static String _day(DateTime d) {
+    final l = d.isUtc ? d.toLocal() : d;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${l.year.toString().padLeft(4, '0')}-${two(l.month)}-${two(l.day)}';
+  }
+
+  static void _checkTime(int? minutes) {
+    if (minutes != null) {
+      RangeError.checkValueInInterval(minutes, 0, 24 * 60 - 1, 'timeMinutes');
+    }
+  }
 
   /// An episode's cuts in number order — live ones, plus archived ones
   /// (taken-out numbers, to restore on the grid) with [includeArchived].
@@ -1804,6 +1896,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        THEN COALESCE(c.shared_with, c.id) END AS shared_head,
        s.id AS stage_id, s.name AS stage_name, s.position AS stage_position,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
+       cl.name AS client_name, cl.color AS client_color,
        e.id AS episode_id, e.number AS episode_number,
        c.id AS cut_id, c.number AS cut_number, c.length_ms,
        sb.id AS storyboard_id, sb.label AS storyboard_label,
@@ -1819,6 +1912,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
 FROM tasks t
 JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
+LEFT JOIN clients cl ON cl.id = w.client_id
 LEFT JOIN cuts c ON c.id = t.cut_id
 LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
 JOIN episodes e ON e.id = COALESCE(c.episode_id, sb.episode_id)
@@ -1872,6 +1966,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           take: r['take'] as int,
           workId: r['work_id'] as int,
           workTitle: r['title'] as String,
+          clientName: r['client_name'] as String?,
+          clientColor: r['client_color'] as int?,
           currency: r['currency'] as String,
           episodeId: r['episode_id'] as int,
           episodeNumber: shownNumber(

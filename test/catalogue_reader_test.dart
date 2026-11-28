@@ -115,6 +115,12 @@ void main() {
       store.stats(from: from, to: to).total.cuts,
     );
     expect(await reader.holding(), store.holding());
+    store.addEvent(episodeId: ep, date: DateTime(2026, 11, 28), title: 'E');
+    final window = (from: DateTime(2026, 11), to: DateTime(2026, 12));
+    expect(
+      await reader.events(from: window.from, to: window.to),
+      store.events(from: window.from, to: window.to),
+    );
     expect(await reader.lanes(), store.lanes());
     final due = DueTarget.part(part, lo);
     expect(

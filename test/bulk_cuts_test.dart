@@ -113,7 +113,12 @@ void main() {
     store
       ..renameClient(c, 'A스튜디오')
       ..setClientClosingDay(c, 25);
-    expect(store.clients().single, (id: c, name: 'A스튜디오', closingDay: 25));
+    expect(store.clients().single, (
+      id: c,
+      name: 'A스튜디오',
+      closingDay: 25,
+      color: null,
+    ));
     final w = store.createWork('가제');
     store
       ..renameWork(w, '본제')
