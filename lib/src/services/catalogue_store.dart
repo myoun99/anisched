@@ -113,7 +113,7 @@ class CatalogueStore {
     db.execute(
       'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
       'VALUES (?, ?, ?, ?, ?);',
-      [episodeId, v, naturalSortKey(v), lengthMs, partId],
+      [episodeId, v, cutSortKey(v), lengthMs, partId],
     );
     return db.lastInsertRowId;
   }
@@ -149,7 +149,7 @@ class CatalogueStore {
           skipped.add(typed);
           continue;
         }
-        insert.execute([episodeId, n, naturalSortKey(n), lengthMs, partId]);
+        insert.execute([episodeId, n, cutSortKey(n), lengthMs, partId]);
         added.add(db.lastInsertRowId);
       }
     } finally {
@@ -533,7 +533,7 @@ ORDER BY sort_key, id;''')) {
     final v = cutKey(number);
     db.execute('UPDATE cuts SET number = ?, sort_key = ? WHERE id = ?;', [
       v,
-      naturalSortKey(v),
+      cutSortKey(v),
       cutId,
     ]);
   }
@@ -2006,7 +2006,7 @@ ORDER BY 7 DESC, 1, 2;''');
     final cuts = db.select(
       'SELECT c.id FROM cuts c WHERE c.part_id = ? AND c.archived_at IS NULL '
       'AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.cut_id = c.id '
-      'AND t.stage_id = ? AND t.archived_at IS NULL) ORDER BY c.sort_key;',
+      'AND t.stage_id = ? AND t.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
       [partId, stageId],
     );
     if (cuts.isEmpty) return const <int>[];
@@ -2429,7 +2429,7 @@ WHERE (?2 IS NULL OR w.id = ?2)
             WHERE o.stage_id = t.stage_id AND o.part_id IS NULL
               AND o.loose_episode = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
-         c.sort_key, t.id;''',
+         c.sort_key, c.id, t.id;''',
       [
         now,
         workId,

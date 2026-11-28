@@ -501,3 +501,10 @@
 - 잎: `workedByStage`({공정: 시간}) · `intervals`(기간 안 구간 수) · `retakeRound` · `taskPay`(유료 리테이크 포함) · `status` · `handedOff`.
 - 기기 설정 `DeviceSettings.statsDetail`(기본 off) — 컷별 보기 전환.
 - 크기(벤치, 컷 1만 · 작업 2만 · 1년): 스토어 588ms(대부분 taskRows), 리더 왕복 709ms ⇒ 트리를 한 번에 준다(레벨별 lazy 는 펼칠 때마다 같은 계산을 다시 해야 해서 더 느림).
+
+## 컷 순서 (v21, 유저 2026-11-28)
+
+- 규칙 하나: 번호는 값으로 자연 정렬(7 < 12 < 12A < 12B < 13), **숫자가 아닌 이름(BANK1 · CAM)은 맨 뒤, 추가된 순서대로**.
+- models/number_style.dart: `cutSortKey(번호[, 표기])` · `compareCutNumbers` · `sortedByCutNumber(항목, 번호를 꺼내는 함수[, 표기])`(안정 정렬 — 이름끼리는 들어온 순서). 표기를 주면 화면 표기(`C012A`)도 값으로 읽어 비교.
+- 저장: `cuts.sort_key = cutSortKey(값)` (이름은 모두 같은 키 → 쿼리의 다음 키 `id` = 추가 순서). 이행 v21 이 기존 컷의 키를 같은 규칙으로 다시 씀.
+- 읽기: `cuts()` · `taskRows`(→ 카드 칩 · partGroups · statsTree 잎 · 타이머 피커 소스)가 모두 `c.sort_key, c.id` 순. 등록 초안 `CutDraft.cells` 도 `sortedByCutNumber`.
