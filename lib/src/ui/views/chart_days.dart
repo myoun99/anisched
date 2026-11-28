@@ -10,9 +10,9 @@ part of 'chart.dart';
 @immutable
 class DayLabels {
   DayLabels(this.window, this.dayWidth, double numberWidth)
-    : need = numberWidth + 6,
+    : need = numberWidth,
       step = _steps.firstWhere(
-        (k) => dayWidth * k >= numberWidth + 6,
+        (k) => numberFits(numberWidth, dayWidth * k),
         orElse: () => _steps.last,
       );
 
@@ -21,7 +21,7 @@ class DayLabels {
   final ChartWindow window;
   final double dayWidth;
 
-  /// Pixels a number needs, with a little room.
+  /// Pixels the widest number takes unsqueezed.
   final double need;
   final int step;
 
@@ -54,6 +54,13 @@ class DayLabels {
   @override
   int get hashCode => Object.hash(window, dayWidth, need);
 }
+
+/// Whether a day's number (or a weekday's letter) [width] wide fits a
+/// cell [room] wide under the app's fitting rule ([fitWord]: letter gaps
+/// first, then down to 70% wide). Only when it does not are days stepped
+/// over — never for zoom alone. The one test every day label goes by.
+bool numberFits(double width, double room) =>
+    !fitWord(width: width, gaps: 1, room: room).cut;
 
 /// How wide a day number is drawn: the widest two digits at the header's
 /// size.
@@ -476,13 +483,19 @@ class _HeaderPainter extends CustomPainter {
   final TextStyle style;
   final Lang lang;
 
-  TextPainter _text(String s, Color color, {bool bold = false}) => TextPainter(
+  TextPainter _text(
+    String s,
+    Color color, {
+    bool bold = false,
+    double spacing = 0,
+  }) => TextPainter(
     text: TextSpan(
       text: s,
       style: style.copyWith(
         fontSize: 11,
         color: color,
         fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        letterSpacing: spacing == 0 ? null : spacing,
       ),
     ),
     textDirection: TextDirection.ltr,
@@ -505,17 +518,31 @@ class _HeaderPainter extends CustomPainter {
           bold: true,
         ).paint(canvas, Offset(i * dw + 4, 4));
       }
-      // A number where its stretch starts (and today's, always); none so
+      // Every day's number when it fits its cell (squeezed if need be);
+      // else one where its stretch starts (and today's, always), none so
       // near today that the two would touch.
-      final near = i != today && (i - today).abs() * dw < labels.need;
+      final every = labels.step == 1;
+      final near = !every && i != today && (i - today).abs() * dw < labels.need;
       if (i != today && (!labels.labelled(i) || near)) continue;
-      final t = _text(
-        '${d.day}',
-        i == today ? red : (marks[days.kindOf(d)] ?? muted),
-        bold: i == today,
-      );
-      final x = labels.step == 1 ? i * dw + (dw - t.width) / 2 : i * dw + 2;
-      t.paint(canvas, Offset(x, 24));
+      final text = '${d.day}';
+      final color = i == today ? red : (marks[days.kindOf(d)] ?? muted);
+      var t = _text(text, color, bold: i == today);
+      if (!every) {
+        t.paint(canvas, Offset(i * dw + 2, 24));
+        continue;
+      }
+      // In its cell: letter gaps, then narrower, as FitText does.
+      final fit = fitWord(width: t.width, gaps: text.length - 1, room: dw);
+      if (fit.spacing != 0) {
+        t = _text(text, color, bold: i == today, spacing: fit.spacing);
+      }
+      final w = t.width * fit.scaleX;
+      canvas
+        ..save()
+        ..translate(i * dw + (dw - w) / 2, 24)
+        ..scale(fit.scaleX, 1);
+      t.paint(canvas, Offset.zero);
+      canvas.restore();
     }
     canvas.restore();
   }
