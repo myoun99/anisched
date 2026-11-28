@@ -3,6 +3,7 @@ import 'package:sqlite3/common.dart';
 import '../core/clock.dart';
 import '../models/catalogue.dart';
 import '../models/cut_numbers.dart';
+import '../models/dashboard.dart';
 import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
@@ -2824,8 +2825,11 @@ GROUP BY s.name;''',
 
   /// The deadline and plan signals and needed pace of every group in
   /// [partGroups], by group key.
-  Map<String, GroupSignals> signals({bool includeDone = false}) {
-    final now = clock();
+  Map<String, GroupSignals> signals({bool includeDone = false}) =>
+      _signalsOf(partGroups(includeDone: includeDone), clock());
+
+  /// [_signals] for each of [groups] as of [now], by group key.
+  Map<String, GroupSignals> _signalsOf(List<PartGroup> groups, DateTime now) {
     final dayStart = settings.dayStartMinutes;
     final rest = settings.restWeekdays;
     final off = _daysOff(from: now);
@@ -2833,7 +2837,7 @@ GROUP BY s.name;''',
     final paceEnd = settings.paceEnd;
     final recent = recentPerDay();
     return {
-      for (final g in partGroups(includeDone: includeDone))
+      for (final g in groups)
         g.key: _signals(g, now, dayStart, rest, off, holiday, paceEnd, recent),
     };
   }
@@ -2931,16 +2935,21 @@ GROUP BY s.name;''',
   /// listed ones — so overlapping parts add up.
   TodayView today({int horizonDays = 4}) {
     final now = clock();
+    final groups = partGroups();
+    return _todayOf(groups, _signalsOf(groups, now), now, horizonDays);
+  }
+
+  /// [today] over [groups] with their [signals] as of [now].
+  TodayView _todayOf(
+    List<PartGroup> groups,
+    Map<String, GroupSignals> signals,
+    DateTime now,
+    int horizonDays,
+  ) {
     final dayStart = settings.dayStartMinutes;
-    final rest = settings.restWeekdays;
-    final paceEnd = settings.paceEnd;
-    final off = _daysOff(from: now);
-    final holiday = restHoliday();
-    final recent = recentPerDay();
     int? left(DateTime? due) =>
         due == null ? null : dueInDays(due, now, dayStart);
 
-    final groups = partGroups();
     var late = 0;
     var cutsToday = 0.0;
     final entries = <TodayEntry>[];
@@ -2954,16 +2963,7 @@ GROUP BY s.name;''',
           if (d != null && d < 0) late++;
         }
       }
-      final sig = _signals(
-        g,
-        now,
-        dayStart,
-        rest,
-        off,
-        holiday,
-        paceEnd,
-        recent,
-      );
+      final sig = signals[g.key]!;
       final pace = sig.pace;
       if (pace != null) cutsToday += pace.today;
       final due = days != null && days <= horizonDays;
@@ -2997,6 +2997,93 @@ GROUP BY s.name;''',
       return a.group.status.urgency.compareTo(b.group.status.urgency);
     });
     return TodayView(entries: entries, late: late, cutsToday: cutsToday);
+  }
+
+  /// The dashboard tab (유저 2026-11-28) in one read: the [today] list,
+  /// today and this week as [stats] ranges (the week start setting), the
+  /// open cards due within [dueWithinDays] days or late (at most
+  /// [dueLimit], soonest first, each with its [signals] pace), events
+  /// ([events], [cardEvents]) and [holidays] of today and tomorrow,
+  /// retakes and [holding]'s waiting count.
+  Dashboard dashboard({
+    int horizonDays = 4,
+    int dueWithinDays = 7,
+    int dueLimit = 8,
+  }) {
+    final now = clock();
+    final dayStart = settings.dayStartMinutes;
+    final start = dayRange(now, dayStart).start;
+    final day = DateTime(start.year, start.month, start.day);
+    DateTime plus(int days) => DateTime(day.year, day.month, day.day + days);
+
+    final groups = partGroups();
+    final signals = _signalsOf(groups, now);
+    final today = _todayOf(groups, signals, now, horizonDays);
+
+    final dueSoon = <DashboardDue>[];
+    final retakeCards = <String>[];
+    final retakeUnits = <String>{};
+    for (final g in groups) {
+      if (!g.status.isOpen) continue;
+      final due = g.dueAt;
+      final days = due == null ? null : dueInDays(due, now, dayStart);
+      if (days != null && days <= dueWithinDays) {
+        dueSoon.add(
+          DashboardDue(group: g, daysLeft: days, pace: signals[g.key]?.pace),
+        );
+      }
+      final retakes = [
+        for (final t in g.tasks)
+          if (t.status == TaskStatus.retake) t.unitKey,
+      ];
+      if (retakes.isNotEmpty) {
+        retakeCards.add(g.key);
+        retakeUnits.addAll(retakes);
+      }
+    }
+    dueSoon.sort((a, b) {
+      final d = a.daysLeft.compareTo(b.daysLeft);
+      return d != 0 ? d : b.remaining.compareTo(a.remaining);
+    });
+
+    final events = [
+      ...this.events(from: day, to: plus(2)).values.expand((e) => e),
+      ...cardEvents(from: day, to: plus(2)).values.expand((e) => e),
+    ]..sort(_byWhen);
+
+    // One read of the statistics facts for the three ranges.
+    final facts = _statsFacts(null, null);
+    final weekFrom = plus(-((day.weekday - settings.weekStart) % 7));
+    DateTime weekPlus(int days) =>
+        DateTime(weekFrom.year, weekFrom.month, weekFrom.day + days);
+    StatsSlice range(DateTime from, DateTime to) =>
+        _stats(facts, from, to, StatsBucket.week, filtered: false).total;
+
+    return Dashboard(
+      day: day,
+      today: today,
+      todayStats: range(day, plus(1)),
+      running: runningTimer(),
+      timerTarget: timerTarget(),
+      dueSoon: dueSoon.take(dueLimit).toList(),
+      events: events,
+      holidays: holidays(from: day, to: plus(2)),
+      retakeCuts: retakeUnits.length,
+      retakeCards: retakeCards,
+      waiting: holding().waiting,
+      thisWeek: range(weekFrom, weekPlus(7)),
+      lastWeek: range(weekPlus(-7), weekFrom),
+      weekFrom: weekFrom,
+    );
+  }
+
+  /// Events by day, all-day first, then time, then id — as [events] lists.
+  static int _byWhen(EventRow a, EventRow b) {
+    final d = a.date.compareTo(b.date);
+    if (d != 0) return d;
+    final ta = a.timeMinutes ?? -1;
+    final tb = b.timeMinutes ?? -1;
+    return ta != tb ? ta.compareTo(tb) : a.id.compareTo(b.id);
   }
 
   static SecondsRounding _rounding(Object? work, SecondsRounding app) =>
