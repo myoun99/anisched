@@ -104,6 +104,7 @@ class _BundleEditorState extends State<_BundleEditor> {
     final c = AppColors.of(context);
     return AlertDialog(
       key: const Key('bundle-editor'),
+      scrollable: true,
       title: Row(
         spacing: 8,
         children: [const Icon(Icons.edit_outlined), Text(S.edit.t)],
@@ -119,7 +120,7 @@ class _BundleEditorState extends State<_BundleEditor> {
               picked: _client,
               reader: widget.reader,
               colors: _colors,
-              width: 240,
+              width: 200,
               onPicked: (x) => setState(() => _client = x),
               onCreate: widget.onCreateClient,
               onColor: widget.onClientColor == null

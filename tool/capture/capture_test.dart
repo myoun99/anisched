@@ -348,6 +348,37 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // The edit dialog for one picked bundle.
+  'bundle-edit': (
+    AppView.list,
+    (t, size) async {
+      await t.longPress(byKeyPrefix('line-').at(1));
+      await t.pump();
+      if (find.byKey(const Key('pick-edit')).evaluate().isEmpty) {
+        await t.tap(find.byKey(const Key('pick-more')));
+        await t.pump();
+      }
+      await t.tap(find.byKey(const Key('pick-edit')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // An opened unit's 「+」 and the add-cuts dialog, count 3.
+  'add-cuts': (
+    AppView.list,
+    (t, size) async {
+      Folds.cutsInDetails.value = true;
+      await t.tap(byKeyPrefix('line-').at(1));
+      await t.pump();
+      final add = byKeyPrefix('cut-add-').first;
+      await Scrollable.ensureVisible(t.element(add), alignment: 0.5);
+      await t.pump();
+      await t.tap(add);
+      await t.pump();
+      await t.enterText(find.byKey(const Key('add-count')), '3');
+      await t.pump();
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,

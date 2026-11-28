@@ -82,6 +82,7 @@ class _AddCutsState extends State<_AddCuts> {
     final clashes = _cuts.clashes(widget.taken);
     return AlertDialog(
       key: const Key('add-cuts'),
+      scrollable: true,
       title: Row(
         spacing: 8,
         children: [const Icon(Icons.add_box_outlined), Text(S.addCut.t)],

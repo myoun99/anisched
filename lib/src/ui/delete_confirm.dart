@@ -22,6 +22,7 @@ Future<bool?> confirmDelete(BuildContext context, DeletionSummary sum) =>
         ].join(' · ');
         return AlertDialog(
           key: const Key('delete-confirm'),
+          scrollable: true,
           icon: Icon(Icons.delete_outline, color: danger),
           title: Text(S.deleteAsk.t),
           content: Column(
