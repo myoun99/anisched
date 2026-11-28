@@ -1108,7 +1108,7 @@ LEFT JOIN works w ON w.id = e.work_id
 WHERE ev.day >= ? AND ev.day < ?
   AND (ev.episode_id IS NULL
        OR (e.archived_at IS NULL AND w.archived_at IS NULL))
-ORDER BY ev.day, ev.time_min IS NOT NULL, ev.time_min, ev.id;''',
+ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
       [_day(from), _day(to)],
     )) {
       final day = (r['day'] as String).split('-').map(int.parse).toList();
