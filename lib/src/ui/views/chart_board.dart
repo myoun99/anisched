@@ -132,6 +132,13 @@ class ChartBoard extends StatefulWidget {
 }
 
 class _ChartBoardState extends State<ChartBoard> {
+  /// A running window's part day ([RunningWindow.slide]): the date areas
+  /// slide by it, painted only. None for a month's fixed window.
+  ValueListenable<double>? get _slide => switch (widget.window) {
+    final RunningWindow w => w.slide,
+    _ => null,
+  };
+
   final _drag = ValueNotifier<ChartDrag?>(null);
   final _previewKey = GlobalKey();
 
@@ -158,12 +165,16 @@ class _ChartBoardState extends State<ChartBoard> {
           Expanded(
             child: ValueListenableBuilder<ChartWindow>(
               valueListenable: widget.window,
-              builder: (context, window, _) => Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (tint != null) ColoredBox(color: tint),
-                  ...widget.bars(context, i, window),
-                ],
+              builder: (context, window, _) => DaySlide(
+                window: window,
+                slide: _slide,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (tint != null) ColoredBox(color: tint),
+                    ...widget.bars(context, i, window),
+                  ],
+                ),
               ),
             ),
           ),
@@ -198,8 +209,15 @@ class _ChartBoardState extends State<ChartBoard> {
       padding: EdgeInsets.only(left: widget.labelWidth),
       child: ValueListenableBuilder<ChartWindow>(
         valueListenable: widget.window,
-        builder: (context, window, _) =>
-            _DayLayers(window: window, today: widget.today, days: widget.days),
+        builder: (context, window, _) => DaySlide(
+          window: window,
+          slide: _slide,
+          child: _DayLayers(
+            window: window,
+            today: widget.today,
+            days: widget.days,
+          ),
+        ),
       ),
     );
     final rows = RepaintBoundary(
@@ -248,56 +266,64 @@ class _ChartBoardState extends State<ChartBoard> {
         ),
       ),
     );
-    return _DragScope(
-      drag: _drag,
-      child: Column(
-        mainAxisSize: widget.shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.line)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: widget.labelWidth, child: widget.corner),
-                Expanded(
-                  child: ValueListenableBuilder<ChartWindow>(
-                    valueListenable: widget.window,
-                    builder: (context, window, _) => ChartHeader(
-                      window: window,
-                      today: widget.today,
-                      days: widget.days,
-                      onDayLongPress: widget.onDayLongPress,
-                      onEvent: widget.onDayEvent,
+    return _SlideScope(
+      slide: _slide,
+      child: _DragScope(
+        drag: _drag,
+        child: Column(
+          mainAxisSize: widget.shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: c.line)),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(width: widget.labelWidth, child: widget.corner),
+                  Expanded(
+                    child: ValueListenableBuilder<ChartWindow>(
+                      valueListenable: widget.window,
+                      builder: (context, window, _) => DaySlide(
+                        window: window,
+                        slide: _slide,
+                        child: ChartHeader(
+                          window: window,
+                          today: widget.today,
+                          days: widget.days,
+                          onDayLongPress: widget.onDayLongPress,
+                          onEvent: widget.onDayEvent,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (widget.shrinkWrap)
-            Stack(
-              children: [
-                Positioned.fill(child: layers),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var i = 0; i < widget.rowCount; i++) _row(context, i),
-                  ],
-                ),
-                Positioned.fill(child: preview),
-              ],
-            )
-          else
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [layers, rows, preview],
+                ],
               ),
             ),
-        ],
+            if (widget.shrinkWrap)
+              Stack(
+                children: [
+                  Positioned.fill(child: layers),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < widget.rowCount; i++)
+                        _row(context, i),
+                    ],
+                  ),
+                  Positioned.fill(child: preview),
+                ],
+              )
+            else
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [layers, rows, preview],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

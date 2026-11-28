@@ -294,19 +294,61 @@ void main() {
       expect(labels, 0);
     });
 
-    testWidgets('dragging empty space scrolls by whole days', (t) async {
+    // Smooth, not a day at a time: the days follow the finger by the
+    // pixel from the first, the whole day ticks over only when crossed.
+    testWidgets('dragging empty space scrolls by the pixel', (t) async {
       await pumpTimeline(t);
       const dayWidth = (1440 - 250) / 35;
-      await t.dragFrom(
-        const Offset(1300, 600),
-        const Offset(-dayWidth * 5 - 2, 0),
-      );
+      final day = find.byType(ChartHeader);
+      final x0 = t.getRect(day).left;
+      final g = await t.startGesture(const Offset(1300, 600));
+      await g.moveBy(const Offset(-10, 0));
       await t.pump();
-      expect(chartView.value.shift, 5);
+      expect(t.getRect(day).left, moreOrLessEquals(x0 - 10));
+      await g.moveBy(const Offset(-1, 0));
+      await t.pump();
+      expect(t.getRect(day).left, moreOrLessEquals(x0 - 11), reason: '1 px');
+      expect(chartView.value.shift, moreOrLessEquals(11 / dayWidth));
+      await g.moveBy(const Offset(-dayWidth * 5, 0));
+      await t.pump();
+      expect(chartView.value.shift, moreOrLessEquals(5 + 11 / dayWidth));
       expect(
         ChartWindow.of(now, SizeClass.wide, chartView.value).indexOf(now),
         6,
       );
+      await g.up();
+    });
+
+    testWidgets('a flick carries the days on after the finger lifts', (
+      t,
+    ) async {
+      await pumpTimeline(t);
+      await t.flingFrom(const Offset(1300, 600), const Offset(-200, 0), 2000);
+      final lifted = chartView.value.shift;
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      final later = chartView.value.shift;
+      expect(later, greaterThan(lifted));
+      await t.pumpAndSettle();
+      expect(chartView.value.shift, greaterThan(later));
+      // A touch stops it.
+      await t.flingFrom(const Offset(1300, 600), const Offset(-200, 0), 2000);
+      await t.pump(const Duration(milliseconds: 50));
+      final g = await t.startGesture(const Offset(1300, 600));
+      final held = chartView.value.shift;
+      await t.pump(const Duration(milliseconds: 200));
+      expect(chartView.value.shift, held);
+      await g.up();
+    });
+
+    testWidgets('a sideways drag starts before a list would', (t) async {
+      await pumpTimeline(t);
+      final g = await t.startGesture(const Offset(1300, 600));
+      // Under a touch screen's own slop (18), and more sideways than not.
+      await g.moveBy(const Offset(-8, 3));
+      await t.pump();
+      expect(chartView.value.shift, greaterThan(0));
+      await g.up();
     });
 
     testWidgets('dragging the zoom right zooms in, left zooms out', (t) async {
@@ -364,7 +406,7 @@ void main() {
       await g.up();
       await t.sendKeyUpEvent(LogicalKeyboardKey.space);
       await t.pump();
-      expect(chartView.value.shift, 3);
+      expect(chartView.value.shift, moreOrLessEquals(3 + 2 / dayWidth));
       expect(moved, isNull, reason: 'the bar did not move');
     });
 

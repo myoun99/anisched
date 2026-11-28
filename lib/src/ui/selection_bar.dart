@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../models/catalogue.dart';
 import 'format.dart';
+import 'instant.dart';
 import 'selection.dart';
 import 'theme.dart';
 import 'text/strings.dart';
+import 'widgets.dart';
 
-/// Always-present strip for acting on picked tasks: the count, a button per
-/// status, and clear. With nothing picked the buttons are disabled, so the
-/// layout never shifts.
+/// The strip for acting on picked tasks: the count, the actions and
+/// clear. As many actions as fit stand with their icon and words, most
+/// used first ([pickPriority]); the rest open from ⋯ as a list with
+/// words — never icons alone (a touch screen shows no tooltips).
 class SelectionBar extends StatelessWidget {
   const SelectionBar({
     super.key,
@@ -61,68 +64,73 @@ class SelectionBar extends StatelessWidget {
         final on = n > 0 && onApply != null;
         final waiting = allWaiting?.call() ?? false;
         final pulled = allHandedOff?.call() ?? false;
-        final actions = <_Action>[
-          for (final st in pickActions)
-            _Action(
-              Key('apply-${st.dbName}'),
-              iconOf(st),
-              st.label,
-              on ? () => onApply!(st) : null,
-            ),
-          if (onDue != null)
-            _Action(
-              const Key('pick-due'),
-              Icons.event_outlined,
-              S.due.t,
-              n > 0 ? onDue : null,
-            ),
-          if (onHold != null)
-            _Action(
-              const Key('pick-hold'),
-              waiting ? Icons.play_circle_outline : Icons.pause_circle_outline,
-              waiting ? S.unhold.t : S.hold.t,
-              n > 0 ? onHold : null,
-            ),
-          if (onHandOff != null)
-            _Action(
-              const Key('pick-drop'),
-              pulled ? Icons.undo : Icons.person_remove_outlined,
-              pulled ? S.undoDrop.t : S.dropped.t,
-              n > 0 ? onHandOff : null,
-            ),
-          _Action(
-            const Key('pick-clear'),
-            Icons.close,
-            S.clear.t,
-            n > 0 ? selection.clear : null,
-          ),
-        ];
-        // Words when they fit, icons alone (with their words as tooltips)
-        // when they do not — never a sideways scroll.
+        final actions =
+            <_Action>[
+              for (final st in pickActions)
+                _Action(
+                  st.dbName,
+                  Key('apply-${st.dbName}'),
+                  iconOf(st),
+                  st.label,
+                  on ? () => onApply!(st) : null,
+                ),
+              if (onDue != null)
+                _Action(
+                  'due',
+                  const Key('pick-due'),
+                  Icons.event_outlined,
+                  S.due.t,
+                  n > 0 ? onDue : null,
+                ),
+              if (onHold != null)
+                _Action(
+                  'hold',
+                  const Key('pick-hold'),
+                  waiting
+                      ? Icons.play_circle_outline
+                      : Icons.pause_circle_outline,
+                  waiting ? S.unhold.t : S.hold.t,
+                  n > 0 ? onHold : null,
+                ),
+              if (onHandOff != null)
+                _Action(
+                  'drop',
+                  const Key('pick-drop'),
+                  pulled ? Icons.undo : Icons.person_remove_outlined,
+                  pulled ? S.undoDrop.t : S.dropped.t,
+                  n > 0 ? onHandOff : null,
+                ),
+            ]..sort(
+              (a, b) => pickPriority
+                  .indexOf(a.id)
+                  .compareTo(pickPriority.indexOf(b.id)),
+            );
         return LayoutBuilder(
           builder: (context, box) {
             final style = DefaultTextStyle.of(context).style;
-            final full = _countWidth + _fullWidth(actions, style);
-            final compact = full > box.maxWidth;
-            final row = Row(
+            final shown = _fitting(actions, style, box.maxWidth);
+            final rest = actions.skip(shown).toList();
+            return Row(
               mainAxisSize: MainAxisSize.min,
-              spacing: compact ? 4 : 6,
+              spacing: _gap,
               children: [
-                _count(context, n, compact),
-                for (final a in actions)
+                _count(context, n),
+                for (final a in actions.take(shown))
                   _ActionButton(
                     key: a.key,
                     icon: a.icon,
                     label: a.label,
-                    iconOnly: compact,
                     onTap: a.onTap,
                   ),
+                if (rest.isNotEmpty) _more(context, rest),
+                _ActionButton(
+                  key: const Key('pick-clear'),
+                  icon: Icons.close,
+                  label: S.clear.t,
+                  iconOnly: true,
+                  onTap: n > 0 ? selection.clear : null,
+                ),
               ],
-            );
-            return FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: row,
             );
           },
         );
@@ -130,27 +138,77 @@ class SelectionBar extends StatelessWidget {
     );
   }
 
-  static const _countWidth = 56.0;
+  static const _gap = 6.0;
 
-  static double _fullWidth(List<_Action> actions, TextStyle style) {
-    var w = 0.0;
-    for (final a in actions) {
-      final t = TextPainter(
-        text: TextSpan(text: a.label, style: style),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
-      w += t.width + 16 + 4 + 22 + 6;
+  /// A square icon button (⋯, ✕).
+  static const _square = 34.0;
+
+  /// How many of [actions], in order, stand on the bar in [room]: all
+  /// when all fit; else as many as leave room for ⋯ too.
+  static int _fitting(List<_Action> actions, TextStyle style, double room) {
+    const fixed = _countWidth + _gap + _square;
+    final widths = [for (final a in actions) _width(a.label, style) + _gap];
+    final all = widths.fold(0.0, (s, w) => s + w);
+    if (fixed + all <= room) return actions.length;
+    var used = fixed + _square + _gap;
+    var n = 0;
+    while (n < widths.length && used + widths[n] <= room) {
+      used += widths[n];
+      n++;
     }
+    return n;
+  }
+
+  /// A button's width: padding, icon, gap, words.
+  static double _width(String label, TextStyle style) {
+    final t = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final w = t.width + 10 + 16 + 4 + 10;
+    t.dispose();
     return w;
   }
 
-  Widget _count(BuildContext context, int n, bool compact) {
+  /// ⋯: the actions that did not fit, as a list with their words; one
+  /// that cannot act now shows greyed.
+  Widget _more(BuildContext context, List<_Action> rest) =>
+      PopupMenuButton<VoidCallback>(
+        key: const Key('pick-more'),
+        tooltip: '',
+        popUpAnimationStyle: instant,
+        onSelected: (f) => f(),
+        itemBuilder: (_) => [
+          for (final a in rest)
+            PopupMenuItem<VoidCallback>(
+              key: a.key,
+              enabled: a.onTap != null,
+              value: a.onTap,
+              child: MenuLine(
+                icon: a.icon,
+                label: a.label,
+                enabled: a.onTap != null,
+              ),
+            ),
+        ],
+        child: const _ActionButton(
+          icon: Icons.more_horiz,
+          label: '',
+          iconOnly: true,
+          onTap: null,
+          live: true,
+        ),
+      );
+
+  static const _countWidth = 56.0;
+
+  Widget _count(BuildContext context, int n) {
     final c = AppColors.of(context);
     return SizedBox(
-      width: compact ? 28 : _countWidth,
+      width: _countWidth,
       child: Text(
-        compact ? '$n' : S.items.f({'n': n}),
+        S.items.f({'n': n}),
         key: const Key('picked-count'),
         textAlign: TextAlign.right,
         style: TextStyle(
@@ -163,8 +221,10 @@ class SelectionBar extends StatelessWidget {
 }
 
 class _Action {
-  const _Action(this.key, this.icon, this.label, this.onTap);
+  const _Action(this.id, this.key, this.icon, this.label, this.onTap);
 
+  /// Its place in [pickPriority].
+  final String id;
   final Key key;
   final IconData icon;
   final String label;
@@ -178,7 +238,11 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     this.onTap,
     this.iconOnly = false,
+    this.live = false,
   });
+
+  /// Drawn as usable without a tap of its own (⋯: its menu takes the tap).
+  final bool live;
 
   final String label;
   final IconData icon;
@@ -190,38 +254,43 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final enabled = onTap != null;
-    final button = InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: c.line),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: SizedBox(
-          height: 34,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: iconOnly ? 7 : 10),
-            child: Center(
-              widthFactor: 1,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 4,
-                children: [
-                  Icon(icon, size: 16, color: enabled ? null : c.faint),
-                  if (!iconOnly)
-                    Text(
-                      label,
-                      style: TextStyle(color: enabled ? null : c.faint),
-                    ),
-                ],
-              ),
+    final enabled = live || onTap != null;
+    final face = DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SizedBox(
+        height: 34,
+        width: iconOnly ? SelectionBar._square : null,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: iconOnly ? 0 : 10),
+          child: Center(
+            widthFactor: iconOnly ? null : 1,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 4,
+              children: [
+                Icon(icon, size: 16, color: enabled ? null : c.faint),
+                if (!iconOnly)
+                  Text(
+                    label,
+                    style: TextStyle(color: enabled ? null : c.faint),
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
-    return iconOnly ? Tooltip(message: label, child: button) : button;
+    if (live) return face;
+    final button = InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: face,
+    );
+    return iconOnly && label.isNotEmpty
+        ? Tooltip(message: label, child: button)
+        : button;
   }
 }

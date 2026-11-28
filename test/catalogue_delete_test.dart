@@ -65,30 +65,30 @@ void main() {
     final emptyPart = store.addPart(ep, 'B');
     store.addCuts(ep, ['1'], partId: part);
 
-    expect(
-      {for (final r in store.clients()) r.id: r.inUse},
-      {client: true, other: false},
-    );
-    expect(
-      {for (final r in store.searchClients('')) r.id: r.inUse},
-      {client: true, other: false},
-    );
-    expect(
-      {for (final r in store.works()) r.id: r.inUse},
-      {work: true, empty: false},
-    );
-    expect(
-      {for (final r in store.searchWorks('')) r.id: r.inUse},
-      {work: true, empty: false},
-    );
-    expect(
-      {for (final r in store.episodes(work)) r.id: r.inUse},
-      {ep: true, emptyEp: false},
-    );
-    expect(
-      {for (final r in store.parts(ep)) r.id: r.inUse},
-      {part: true, emptyPart: false},
-    );
+    expect({for (final r in store.clients()) r.id: r.inUse}, {
+      client: true,
+      other: false,
+    });
+    expect({for (final r in store.searchClients('')) r.id: r.inUse}, {
+      client: true,
+      other: false,
+    });
+    expect({for (final r in store.works()) r.id: r.inUse}, {
+      work: true,
+      empty: false,
+    });
+    expect({for (final r in store.searchWorks('')) r.id: r.inUse}, {
+      work: true,
+      empty: false,
+    });
+    expect({for (final r in store.episodes(work)) r.id: r.inUse}, {
+      ep: true,
+      emptyEp: false,
+    });
+    expect({for (final r in store.parts(ep)) r.id: r.inUse}, {
+      part: true,
+      emptyPart: false,
+    });
 
     store
       ..deletePart(emptyPart)

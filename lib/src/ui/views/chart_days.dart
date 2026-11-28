@@ -303,6 +303,7 @@ class ChartHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final style = DefaultTextStyle.of(context).style;
+    final slide = context.getInheritedWidgetOfExactType<_SlideScope>()?.slide;
     return SizedBox(
       height: height,
       child: Stack(
@@ -323,9 +324,22 @@ class ChartHeader extends StatelessWidget {
                 style: style,
                 lang: appLang.value,
                 numberWidth: chartNumberWidth(context),
+                pinned: slide != null,
               ),
             ),
           ),
+          if (slide != null)
+            RepaintBoundary(
+              child: CustomPaint(
+                painter: _MonthPin(
+                  window: window,
+                  slide: slide,
+                  ink: style.color ?? c.muted,
+                  style: style,
+                  lang: appLang.value,
+                ),
+              ),
+            ),
           // The ruler's long press, and its names: a holiday's, the
           // events' titles — small, under the day number.
           LayoutBuilder(
@@ -443,8 +457,11 @@ class _HeaderPainter extends CustomPainter {
     required this.style,
     required this.lang,
     required this.numberWidth,
+    this.pinned = false,
   });
 
+  /// The first month's name is drawn by [_MonthPin] instead.
+  final bool pinned;
   final double numberWidth;
   final ChartWindow window;
   final int today;
@@ -481,7 +498,7 @@ class _HeaderPainter extends CustomPainter {
     canvas.clipRect(Offset.zero & size);
     for (var i = 0; i < window.days; i++) {
       final d = window.dayAt(i);
-      if (i == 0 || d.day == 1) {
+      if ((i == 0 && !pinned) || d.day == 1) {
         _text(
           monthName(d.month, lang),
           ink,
@@ -511,6 +528,59 @@ class _HeaderPainter extends CustomPainter {
       old.muted != muted ||
       old.lang != lang ||
       old.numberWidth != numberWidth ||
+      old.pinned != pinned ||
       !mapEquals(old.marks, marks) ||
       old.days != days;
+}
+
+/// The month name at the visible left edge of a sliding header: it stays
+/// in sight as the part day slides (the first column goes under the
+/// edge), pushed out by the next month's name as that comes in. Its own
+/// layer, repainting with the slide alone.
+class _MonthPin extends CustomPainter {
+  _MonthPin({
+    required this.window,
+    required this.slide,
+    required this.ink,
+    required this.style,
+    required this.lang,
+  }) : super(repaint: slide);
+
+  final ChartWindow window;
+  final ValueListenable<double> slide;
+  final Color ink;
+  final TextStyle style;
+  final Lang lang;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dw = size.width / window.days;
+    final t = TextPainter(
+      text: TextSpan(
+        text: monthName(window.start.month, lang),
+        style: style.copyWith(
+          fontSize: 11,
+          color: ink,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    var x = slide.value * dw + 4;
+    for (var i = 1; i < window.days; i++) {
+      if (window.dayAt(i).day != 1) continue;
+      final next = i * dw + 4;
+      if (x + t.width + 6 > next) x = next - t.width - 6;
+      break;
+    }
+    t.paint(canvas, Offset(x, 4));
+  }
+
+  @override
+  bool shouldRepaint(_MonthPin old) =>
+      old.window != window ||
+      old.slide != slide ||
+      old.ink != ink ||
+      old.lang != lang;
 }

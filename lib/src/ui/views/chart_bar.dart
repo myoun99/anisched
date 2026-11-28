@@ -145,30 +145,30 @@ class _ChartBarState extends State<ChartBar> {
   Color _ink(BuildContext context) =>
       widget.textColor ?? Theme.of(context).colorScheme.onSurface;
 
-  Widget _handle(BarEdge edge, double width) => GestureDetector(
+  // The date area's own quick drag, so the grip (deeper, so first to see
+  // each move) wins the gesture over it; measured from where the finger
+  // went down.
+  Widget _handle(BarEdge edge, double width) => quickHorizontalDrag(
     key: Key('bar-${edge.name}'),
     behavior: HitTestBehavior.opaque,
-    // Measured from where the finger went down, so nothing is lost while
-    // the date area's own drag competes for the gesture.
-    dragStartBehavior: DragStartBehavior.down,
-    onHorizontalDragStart: (d) {
+    onStart: (d) {
       setState(() => _edge = edge);
       _from = d.globalPosition.dx;
       _dx = 0;
       _preview();
     },
-    onHorizontalDragUpdate: (d) {
+    onUpdate: (d) {
       // No rebuild: only the preview layer redraws.
       _dx = d.globalPosition.dx - _from;
       _preview();
     },
-    onHorizontalDragEnd: (_) {
+    onEnd: (_) {
       final (s, e) = _dates();
       _endPreview();
       setState(() => _edge = null);
       widget.onDates?.call(s, e);
     },
-    onHorizontalDragCancel: () {
+    onCancel: () {
       _endPreview();
       setState(() => _edge = null);
     },
@@ -212,69 +212,92 @@ class _ChartBarState extends State<ChartBar> {
         final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
-        // The part inside the window; an end past it is cut (the bar
-        // goes on in the next window or month).
-        final from = left < 0 ? 0.0 : left;
-        final to = left + width > box.maxWidth ? box.maxWidth : left + width;
-        if (to <= from) return const SizedBox.shrink();
-        final cutStart = left < -0.5;
-        final cutEnd = left + width > box.maxWidth + 0.5;
-        final grips = widget.onDates != null;
-        final grip = BarGrip.widthFor(dw);
-        final startEnd = cutStart
-            ? CutMark(edge: BarEdge.start, width: grip, ink: _ink(context))
-            : grips
-            ? _handle(BarEdge.start, grip)
-            : null;
-        final endEnd = cutEnd
-            ? CutMark(edge: BarEdge.end, width: grip, ink: _ink(context))
-            : grips
-            ? _handle(BarEdge.end, grip)
-            : null;
-        // The label takes every pixel between the ends, or hides.
-        final room =
-            to -
-            from -
-            (startEnd == null ? 0 : grip) -
-            (endEnd == null ? 0 : grip);
-        final showLabel = room >= BarGrip.minLabel;
-        const r = Radius.circular(4);
-        final bar = Opacity(
-          opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: widget.color,
-              // A cut end is square: the bar goes on past it.
-              borderRadius: BorderRadius.horizontal(
-                left: cutStart ? Radius.zero : r,
-                right: cutEnd ? Radius.zero : r,
+        Widget place(double lo, double hi) {
+          // The part in sight, lo..hi; an end past it is cut (the bar
+          // goes on past the edge, in the next days or month).
+          final from = left < lo ? lo : left;
+          final to = left + width > hi ? hi : left + width;
+          if (to <= from) return const SizedBox.shrink();
+          final cutStart = left < lo - 0.5;
+          final cutEnd = left + width > hi + 0.5;
+          final grips = widget.onDates != null;
+          final grip = BarGrip.widthFor(dw);
+          // A sliver at an edge (mid-slide) is too thin for its ends: the
+          // colour alone then.
+          final ends = to - from >= 2 * grip;
+          final startEnd = !ends
+              ? null
+              : cutStart
+              ? CutMark(edge: BarEdge.start, width: grip, ink: _ink(context))
+              : grips
+              ? _handle(BarEdge.start, grip)
+              : null;
+          final endEnd = !ends
+              ? null
+              : cutEnd
+              ? CutMark(edge: BarEdge.end, width: grip, ink: _ink(context))
+              : grips
+              ? _handle(BarEdge.end, grip)
+              : null;
+          // The label takes every pixel between the ends, or hides.
+          final room =
+              to -
+              from -
+              (startEnd == null ? 0 : grip) -
+              (endEnd == null ? 0 : grip);
+          final showLabel = room >= BarGrip.minLabel;
+          const r = Radius.circular(4);
+          final bar = Opacity(
+            opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: widget.color,
+                // A cut end is square: the bar goes on past it.
+                borderRadius: BorderRadius.horizontal(
+                  left: cutStart ? Radius.zero : r,
+                  right: cutEnd ? Radius.zero : r,
+                ),
+                // A faint edge keeps near-white bars (LO) visible.
+                border: widget.outline == null
+                    ? Border.all(color: barInk.withValues(alpha: 0.18))
+                    : Border.all(color: widget.outline!, width: 1.5),
               ),
-              // A faint edge keeps near-white bars (LO) visible.
-              border: widget.outline == null
-                  ? Border.all(color: barInk.withValues(alpha: 0.18))
-                  : Border.all(color: widget.outline!, width: 1.5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ?startEnd,
+                  Expanded(child: _face(label: showLabel)),
+                  ?endEnd,
+                ],
+              ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ?startEnd,
-                Expanded(child: _face(label: showLabel)),
-                ?endEnd,
-              ],
-            ),
-          ),
-        );
-        return Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              left: from,
-              width: to - from,
-              top: ChartBoard.barTop,
-              height: ChartBoard.barHeight,
-              child: bar,
-            ),
-          ],
+          );
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                left: from,
+                width: to - from,
+                top: ChartBoard.barTop,
+                height: ChartBoard.barHeight,
+                child: bar,
+              ),
+            ],
+          );
+        }
+
+        // The edges in sight move with the part-day slide: a bar that
+        // reaches either one follows it frame by frame, the rest never.
+        final slide = context
+            .getInheritedWidgetOfExactType<_SlideScope>()
+            ?.slide;
+        final shown = widget.window.shown * dw;
+        if (slide == null || (left >= dw && left + width <= shown)) {
+          return place(0, slide == null ? box.maxWidth : shown + dw);
+        }
+        return ValueListenableBuilder<double>(
+          valueListenable: slide,
+          builder: (context, f, _) => place(f * dw, shown + f * dw),
         );
       },
     );

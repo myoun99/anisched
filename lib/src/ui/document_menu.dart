@@ -10,6 +10,7 @@ import '../platform/documents.dart';
 import '../services/document_session.dart';
 import 'pick_field.dart';
 import 'theme.dart';
+import 'widgets.dart';
 import 'text/strings.dart';
 
 /// Where the user picks a document to open, and where Save As puts it.
@@ -140,12 +141,12 @@ class DocumentMenu extends StatelessWidget {
         PopupMenuItem(
           key: const Key('file-new'),
           value: () => unawaited(_run(context, session.startUntitled)),
-          child: _MenuLine(icon: Icons.note_add_outlined, label: S.fileNew.t),
+          child: MenuLine(icon: Icons.note_add_outlined, label: S.fileNew.t),
         ),
         PopupMenuItem(
           key: const Key('file-open'),
           value: () => unawaited(_open(context, null)),
-          child: _MenuLine(
+          child: MenuLine(
             icon: browser
                 ? Icons.upload_file_outlined
                 : Icons.folder_open_outlined,
@@ -156,8 +157,8 @@ class DocumentMenu extends StatelessWidget {
           key: const Key('file-save-as'),
           value: () => unawaited(_saveAs(context)),
           child: browser
-              ? _MenuLine(icon: Icons.download_outlined, label: S.fileExport.t)
-              : _MenuLine(
+              ? MenuLine(icon: Icons.download_outlined, label: S.fileExport.t)
+              : MenuLine(
                   icon: doc == null
                       ? Icons.save_outlined
                       : Icons.save_as_outlined,
@@ -168,7 +169,7 @@ class DocumentMenu extends StatelessWidget {
         for (final r in recents)
           PopupMenuItem(
             value: () => unawaited(_open(context, r)),
-            child: _MenuLine(icon: Icons.history, label: displayName(r)),
+            child: MenuLine(icon: Icons.history, label: displayName(r)),
           ),
       ],
       child: Padding(
@@ -256,18 +257,3 @@ class SaveState {
 }
 
 /// A file menu line: an icon, then its word.
-class _MenuLine extends StatelessWidget {
-  const _MenuLine({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    spacing: 10,
-    children: [
-      Icon(icon, size: 18, color: AppColors.of(context).muted),
-      Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-    ],
-  );
-}
