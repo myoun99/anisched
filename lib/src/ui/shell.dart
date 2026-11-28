@@ -1099,13 +1099,6 @@ class _AppShellState extends State<AppShell> {
           onShare: widget.store == null ? null : _share,
           share: () => shareActionFor(_pickedTasks),
           onRename: widget.store == null ? null : () => unawaited(_renameCut()),
-          onSplit: widget.store == null
-              ? null
-              : () {
-                  final picked = _pickedTasks;
-                  _write((s) => splitPicked(s, picked));
-                  _selection.clear();
-                },
           onTakeOut: widget.store == null ? null : _takeOut,
           cutCount: () => pickedCuts(_pickedTasks).length,
           allHandedOff: () {

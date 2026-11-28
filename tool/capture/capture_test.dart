@@ -476,7 +476,8 @@ final scenarios = <String, (AppView, Scenario)>{
       }
     },
   ),
-  // ③ The register screen's cut grid with its margins.
+  // ③ The register's list: a range added, a shared pair, one by name,
+  // two blocks picked.
   'register-grid': (
     AppView.register,
     (t, size) async {
@@ -484,21 +485,28 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pumpAndSettle();
       await t.tap(find.text('별빛 정류장').last);
       await t.pumpAndSettle();
-      final grid = find.byKey(const Key('cell-C001'));
-      await t.scrollUntilVisible(
-        grid,
-        200,
-        scrollable: find
-            .descendant(
-              of: find.byType(CustomScrollView),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
-      await t.drag(find.byType(CustomScrollView), const Offset(0, -60));
+      Future<void> tap(Finder f) async {
+        await t.ensureVisible(f);
+        await t.pump();
+        await t.tap(f);
+        await t.pump();
+      }
+
+      await t.enterText(find.byKey(const Key('reg-first')), '1');
+      await t.enterText(find.byKey(const Key('reg-last')), '24');
       await t.pump();
-      await t.tap(grid);
-      await t.tap(find.byKey(const Key('cell-C002')));
+      await tap(find.byKey(const Key('cut-add-range')));
+      await tap(find.byKey(const Key('cut-add-one')));
+      await t.pumpAndSettle();
+      await t.enterText(find.byKey(const Key('name-input')), 'BANK1');
+      await t.tap(find.byKey(const Key('name-ok')));
+      await t.pumpAndSettle();
+      await tap(find.byKey(const Key('cell-C004')));
+      await tap(find.byKey(const Key('cell-C005')));
+      await tap(find.byKey(const Key('cut-share')));
+      await tap(find.byKey(const Key('cell-C010')));
+      await tap(find.byKey(const Key('cell-C011')));
+      await t.ensureVisible(find.byKey(const Key('reg-sec-cuts')));
       await t.pump();
     },
   ),

@@ -465,6 +465,42 @@ class _OwnScrollState extends State<OwnScroll> {
   Widget build(BuildContext context) => widget.builder(_controller);
 }
 
+/// A cut's block: the one face of a cut on a card's details and on the
+/// register's list — the plain edge (or [edge]), filled when [picked],
+/// its [children] in a row (the number, then what goes with it).
+class CutBlock extends StatelessWidget {
+  const CutBlock({
+    super.key,
+    required this.children,
+    this.picked = false,
+    this.edge,
+  });
+
+  final List<Widget> children;
+  final bool picked;
+  final Color? edge;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: picked ? c.selected : c.panel,
+        border: Border.all(color: edge ?? c.line),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
 /// A card on the page: the second panel tone, a hairline and round
 /// corners — the settings groups and the statistics tiles and charts.
 class Panel extends StatelessWidget {

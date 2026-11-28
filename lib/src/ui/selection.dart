@@ -83,7 +83,6 @@ const pickPriority = [
   'received',
   'drop',
   'rename',
-  'split',
   'takeout',
   'archive',
   'delete',

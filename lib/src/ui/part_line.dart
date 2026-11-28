@@ -679,76 +679,63 @@ class _CutChip extends StatelessWidget {
     final c = AppColors.of(context);
     final accent = Theme.of(context).colorScheme.primary;
     final t = task;
-    final Widget face = DecoratedBox(
-      decoration: BoxDecoration(
-        color: picked ? c.selected : c.panel,
-        // A shared cut looks like any other: only its words differ.
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 6,
-          children: [
-            if (t.archived)
-              Icon(Icons.archive_outlined, size: 12, color: c.muted)
-            else if (t.handedOff)
-              Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
-            else if (t.waiting && t.status.isOpen)
-              const HoldMark(),
-            Flexible(
-              child: FitText.rich(
-                tooltip: false,
+    // A shared cut looks like any other: only its words differ.
+    final Widget face = CutBlock(
+      picked: picked,
+      children: [
+        if (t.archived)
+          Icon(Icons.archive_outlined, size: 12, color: c.muted)
+        else if (t.handedOff)
+          Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
+        else if (t.waiting && t.status.isOpen)
+          const HoldMark(),
+        Flexible(
+          child: FitText.rich(
+            tooltip: false,
+            TextSpan(
+              children: [
                 TextSpan(
-                  children: [
-                    TextSpan(
-                      text: unitText(unit),
-                      // The number in its status's colour (no dot).
-                      style: TextStyle(
-                        color: c.ink(t.status),
-                        fontWeight: FontWeight.w700,
-                        decoration: t.handedOff
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
-                    if (unit.length == 1 && t.sharedLabel != null)
-                      TextSpan(
-                        text: ' ${t.sharedLabel}',
-                        style: TextStyle(fontSize: 10, color: c.muted),
-                      ),
-                    if (t.take > 1)
-                      TextSpan(
-                        text: ' T${t.take}',
-                        style: TextStyle(
-                          color: c.retake,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                    // No length: nothing (not a dash).
-                    if (t.lengthMs != null)
-                      TextSpan(
-                        text: '  ${formatLength(t.lengthMs)}',
-                        style: TextStyle(color: c.muted),
-                      ),
-                    if (t.dueOverridden)
-                      TextSpan(
-                        text: '  ${formatDate(t.dueAt)}',
-                        style: TextStyle(
-                          color: accent,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ],
+                  text: unitText(unit),
+                  // The number in its status's colour (no dot).
+                  style: TextStyle(
+                    color: c.ink(t.status),
+                    fontWeight: FontWeight.w700,
+                    decoration: t.handedOff ? TextDecoration.lineThrough : null,
+                  ),
                 ),
-              ),
+                if (unit.length == 1 && t.sharedLabel != null)
+                  TextSpan(
+                    text: ' ${t.sharedLabel}',
+                    style: TextStyle(fontSize: 10, color: c.muted),
+                  ),
+                if (t.take > 1)
+                  TextSpan(
+                    text: ' T${t.take}',
+                    style: TextStyle(
+                      color: c.retake,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                // No length: nothing (not a dash).
+                if (t.lengthMs != null)
+                  TextSpan(
+                    text: '  ${formatLength(t.lengthMs)}',
+                    style: TextStyle(color: c.muted),
+                  ),
+                if (t.dueOverridden)
+                  TextSpan(
+                    text: '  ${formatDate(t.dueAt)}',
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
     final child = waiting ? Opacity(opacity: 0.45, child: face) : face;
     if (onTap == null && onLongPress == null) return child;

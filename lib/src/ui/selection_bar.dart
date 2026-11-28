@@ -31,18 +31,16 @@ class SelectionBar extends StatelessWidget {
     this.onShare,
     this.share,
     this.onRename,
-    this.onSplit,
     this.onTakeOut,
     this.cutCount,
   });
 
   /// The picked cuts' own tools (were the register screen's): join them
   /// as shared or take their group apart ([share] says which, null:
-  /// neither applies); rename one; split into A/B; take out. Null hides.
+  /// neither applies); rename one; take out. Null hides.
   final VoidCallback? onShare;
   final ShareAction? Function()? share;
   final VoidCallback? onRename;
-  final VoidCallback? onSplit;
   final VoidCallback? onTakeOut;
 
   /// How many cuts are picked (storyboards are none).
@@ -138,14 +136,6 @@ class SelectionBar extends StatelessWidget {
                   Icons.drive_file_rename_outline,
                   S.name.t,
                   cuts == 1 ? onRename : null,
-                ),
-              if (onSplit != null)
-                _Action(
-                  'split',
-                  const Key('pick-split'),
-                  Icons.call_split,
-                  'A/B',
-                  cuts > 0 ? onSplit : null,
                 ),
               if (onTakeOut != null)
                 _Action(
