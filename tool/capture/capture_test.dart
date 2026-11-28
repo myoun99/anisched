@@ -94,6 +94,14 @@ final scenarios = <String, (AppView, Scenario)>{
   ),
   'settings': (AppView.settings, (t, size) async {}),
   'timeline': (AppView.timeline, (t, size) async {}),
+  // Mid-drag: the days slid by part of a day, bars cut at the edges.
+  'timeline-slide': (
+    AppView.timeline,
+    (t, size) async {
+      chartView.value = chartView.value.scrolled(2.45);
+      await t.pump();
+    },
+  ),
 
   // Round 3: the date area zoomed out two steps and scrolled a week on.
   'timeline-zoom': (
