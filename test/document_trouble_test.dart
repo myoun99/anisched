@@ -34,20 +34,31 @@ class _Picker implements DocumentPicker {
   ) async => false;
 }
 
-/// A button that shows [error]'s dialog, counting 「다시 시도」 taps.
-Future<List<int>> pumpTrouble(WidgetTester t, Object error) async {
-  final retries = [0];
+/// A button that shows [error]'s dialog, counting 「다시 시도」 taps
+/// (first) and restores (second; [restored] is what a restore answers).
+Future<List<int>> pumpTrouble(
+  WidgetTester t,
+  Object error, {
+  bool restored = true,
+}) async {
+  final retries = [0, 0];
   await t.pumpWidget(
     MaterialApp(
       theme: AppTheme.light(),
-      home: Builder(
-        builder: (context) => TextButton(
-          onPressed: () => showDocumentTrouble(
-            context,
-            error,
-            retry: () async => retries[0]++,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showDocumentTrouble(
+              context,
+              error,
+              retry: () async => retries[0]++,
+              restore: () async {
+                retries[1]++;
+                return restored;
+              },
+            ),
+            child: const Text('go'),
           ),
-          child: const Text('go'),
         ),
       ),
     ),
@@ -79,6 +90,8 @@ void main() {
     NotADocumentException('a.anisched', 'x', kind: NotADocumentKind.foreignApp):
         DocumentTroubleKind.notDocument,
     const RemoteMissing(): DocumentTroubleKind.unreachable,
+    DocumentWriteMismatchException(ref, 4096, 0):
+        DocumentTroubleKind.unfinished,
     StateError('boom'): DocumentTroubleKind.other,
   };
   for (final MapEntry(key: error, value: kind) in cases.entries) {
@@ -196,5 +209,61 @@ void main() {
     expect(find.byType(SnackBar), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
     expect(find.byKey(const Key('doc-trouble-retry')), findsOneWidget);
+  });
+
+  for (final kind in NotADocumentKind.values) {
+    final can = const {
+      NotADocumentKind.empty,
+      NotADocumentKind.notSqlite,
+      NotADocumentKind.damaged,
+    }.contains(kind);
+    testWidgets('a ${kind.name} file ${can ? 'offers' : 'does not offer'} '
+        'this device\'s last save', (t) async {
+      await pumpTrouble(t, NotADocumentException('a', 'x', kind: kind));
+      expect(
+        find.byKey(const Key('doc-trouble-restore')),
+        can ? findsOneWidget : findsNothing,
+      );
+    });
+  }
+
+  testWidgets('restore runs; with no copy here a snackbar says so', (t) async {
+    final e = NotADocumentException('a', 'x', kind: NotADocumentKind.empty);
+    var calls = await pumpTrouble(t, e);
+    await t.tap(find.byKey(const Key('doc-trouble-restore')));
+    await t.pump();
+    expect(calls, [0, 1]);
+    expect(find.byKey(const Key('doc-restore-none')), findsNothing);
+
+    calls = await pumpTrouble(t, e, restored: false);
+    await t.tap(find.byKey(const Key('doc-trouble-restore')));
+    await t.pump();
+    await t.pump();
+    expect(calls, [0, 1]);
+    expect(find.byKey(const Key('doc-restore-none')), findsOneWidget);
+  });
+
+  testWidgets('a file repaired on return says so once', (t) async {
+    final store = CatalogueStore(openAppDatabase(':memory:'));
+    final remote = ValueNotifier<RemoteCheck?>(null);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          reader: SyncCatalogueReader(store),
+          store: store,
+          remote: remote,
+        ),
+      ),
+    );
+    await t.pump();
+    remote.value = const RemoteSame();
+    await t.pump();
+    expect(find.byKey(const Key('doc-repaired')), findsNothing);
+    remote.value = const RemoteRepaired();
+    await t.pump();
+    await t.pump();
+    expect(find.byKey(const Key('doc-repaired')), findsOneWidget);
+    expect(find.text('문서를 복구했어요'), findsOneWidget);
   });
 }

@@ -9,6 +9,7 @@ import 'instant.dart';
 import 'pick_field.dart';
 import 'text/strings.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Edits a picked bundle (one work · episode · part), shaped like the
 /// event dialog: the client (picked or made, coloured — the register
@@ -117,10 +118,7 @@ class _BundleEditorState extends State<_BundleEditor> {
     return AlertDialog(
       key: const Key('bundle-editor'),
       scrollable: true,
-      title: Row(
-        spacing: 8,
-        children: [const Icon(Icons.edit_outlined), Text(S.edit.t)],
-      ),
+      title: DialogTitle(Icons.edit_outlined, S.edit.t),
       content: SizedBox(
         width: 360,
         child: Column(

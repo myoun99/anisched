@@ -579,11 +579,9 @@ void main() {
           Folds.cutsInDetails.value = false;
           chartMonthView.value = false;
           statsAsTable.value = false;
-          rulerRows[RulerTab.timeline]!.value = (
-            year: false,
-            month: true,
-            weekday: true,
-          );
+          for (final r in rulerRows.values) {
+            r.value = defaultRulerRows;
+          }
           Folds.dueRounds.value = false;
           chartView.value = const ChartView();
           chartMonthView.value = false;

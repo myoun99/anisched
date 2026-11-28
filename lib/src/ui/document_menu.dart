@@ -105,12 +105,23 @@ class DocumentMenu extends StatelessWidget {
     return n.endsWith('.anisched') ? n.substring(0, n.length - 9) : n;
   }
 
-  Future<void> _run(BuildContext context, Future<void> Function() job) async {
+  /// Runs [job]; a failure shows its dialog, which can try again or put
+  /// [ref] back from this device's last save.
+  Future<void> _run(
+    BuildContext context,
+    Future<void> Function() job, {
+    DocumentRef? ref,
+  }) async {
     try {
       await job();
     } on Object catch (e) {
       if (!context.mounted) return;
-      await showDocumentTrouble(context, e, retry: () => _run(context, job));
+      await showDocumentTrouble(
+        context,
+        e,
+        retry: () => _run(context, job, ref: ref),
+        restore: ref == null ? null : () => session.restoreLastWritten(ref),
+      );
     }
   }
 
@@ -126,7 +137,7 @@ class DocumentMenu extends StatelessWidget {
   Future<void> _open(BuildContext context, DocumentRef? known) async {
     final ref = known ?? await picker.pickOpen(context);
     if (ref == null || !context.mounted) return;
-    await _run(context, () => session.openDocument(ref));
+    await _run(context, () => session.openDocument(ref), ref: ref);
   }
 
   @override
@@ -256,6 +267,10 @@ class SaveState {
     context,
     error!,
     retry: fromSave ? session.save : recheck,
+    restore: switch (session.document) {
+      final ref? => () => session.restoreLastWritten(ref),
+      null => null,
+    },
   );
 
   /// Checks the document again and hands the answer to [remote] (when it

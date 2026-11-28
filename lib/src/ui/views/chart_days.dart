@@ -150,6 +150,17 @@ Color chartStripe(BuildContext context) {
   return Color.lerp(c.panel, c.line, 0.14)!;
 }
 
+/// A marked day's column colour: its mark washed into the panel, opaque —
+/// the same whether or not the day falls on a band.
+Map<DayKind, Color> chartDayFills(BuildContext context) {
+  final panel = AppColors.of(context).panel;
+  final alpha = chartMarkAlpha(context);
+  return {
+    for (final e in dayMarkColors(context).entries)
+      e.key: Color.alphaBlend(e.value.withValues(alpha: alpha), panel),
+  };
+}
+
 /// How strongly a marked day's colour washes its column.
 double chartMarkAlpha(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark ? 0.13 : 0.075;
@@ -178,7 +189,7 @@ class _BackgroundPainter extends CustomPainter {
   /// Every other numbered stretch (Excel-like bands).
   final Color stripe;
 
-  /// Marked days' washes, over the bands.
+  /// Marked days' fills (opaque: in place of the band, not over it).
   final Map<DayKind, Color> wash;
   final double numberWidth;
 
@@ -190,9 +201,12 @@ class _BackgroundPainter extends CustomPainter {
     final band = Paint()..color = stripe;
     for (var i = 0; i < window.days; i++) {
       final r = Rect.fromLTWH(i * dw, 0, dw, size.height);
-      if (labels.shaded(i)) canvas.drawRect(r, band);
+      // One colour a day, never two over each other: a day off's own,
+      // else the band's on every other stretch.
       if (wash[days.kindOf(window.dayAt(i))] case final w?) {
         canvas.drawRect(r, Paint()..color = w);
+      } else if (labels.shaded(i)) {
+        canvas.drawRect(r, band);
       }
     }
   }
@@ -259,10 +273,7 @@ class _DayLayers extends StatelessWidget {
               window: window,
               days: days,
               stripe: chartStripe(context),
-              wash: {
-                for (final e in dayMarkColors(context).entries)
-                  e.key: e.value.withValues(alpha: chartMarkAlpha(context)),
-              },
+              wash: chartDayFills(context),
               numberWidth: chartNumberWidth(context),
             ),
           ),
@@ -286,11 +297,14 @@ class _DayLayers extends StatelessWidget {
 /// always show.
 final rulerRows = {
   for (final tab in RulerTab.values)
-    tab: ValueNotifier<RulerRows>((year: false, month: true, weekday: true)),
+    tab: ValueNotifier<RulerRows>(defaultRulerRows),
 };
 
-/// The date ruler, top to bottom: the year and the month (each run of
-/// days one cell, its name centred in the part in sight), the day
+/// The ruler rows before a tab is tuned: all of them (유저 2026-11-28).
+const RulerRows defaultRulerRows = (year: true, month: true, weekday: true);
+
+/// The date ruler, top to bottom: the year and the month (each a merged
+/// cell on plain ground, its name centred in the cell), the day
 /// numbers, the weekdays, then holidays' and events' names. Year, month
 /// and weekday rows show as [rows] says.
 class ChartHeader extends StatelessWidget {
@@ -299,7 +313,7 @@ class ChartHeader extends StatelessWidget {
     required this.window,
     required this.today,
     this.days = const ChartDays(),
-    this.rows = (year: false, month: true, weekday: true),
+    this.rows = defaultRulerRows,
     this.onDayLongPress,
     this.onEvent,
   });
@@ -356,7 +370,6 @@ class ChartHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final style = DefaultTextStyle.of(context).style;
-    final slide = context.getInheritedWidgetOfExactType<_SlideScope>()?.slide;
     final at = layout(rows);
     return SizedBox(
       height: at.height,
@@ -386,9 +399,9 @@ class ChartHeader extends StatelessWidget {
               child: CustomPaint(
                 painter: _SpanPainter(
                   window: window,
-                  slide: slide,
                   ink: style.color ?? c.muted,
                   line: c.line,
+                  panel: c.panel,
                   style: style,
                   lang: appLang.value,
                   yearTop: rows.year ? at.year : null,
@@ -445,26 +458,28 @@ class ChartHeader extends StatelessWidget {
   }
 }
 
-/// The ruler's year and month rows: each run of days of one year (one
-/// month) is one cell, its name centred in the part of it in sight — so
-/// it stays readable as the days slide; a faint line where a run starts.
-/// Its own layer, repainting with the slide alone.
+/// The ruler's year and month rows as a spreadsheet's merged cells: each
+/// year (month) one cell on plain ground — no bands, no day-off colour, no
+/// day lines inside — its name centred in the whole cell, a line only
+/// where a cell starts.
 class _SpanPainter extends CustomPainter {
   _SpanPainter({
     required this.window,
-    required this.slide,
     required this.ink,
     required this.line,
+    required this.panel,
     required this.style,
     required this.lang,
     this.yearTop,
     this.monthTop,
-  }) : super(repaint: slide);
+  });
 
   final ChartWindow window;
-  final ValueListenable<double>? slide;
   final Color ink;
   final Color line;
+
+  /// The rows' plain ground (no bands, no day-off colour, no day lines).
+  final Color panel;
   final TextStyle style;
   final Lang lang;
 
@@ -475,20 +490,26 @@ class _SpanPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final dw = size.width / window.days;
-    final lo = (slide?.value ?? 0) * dw;
-    final hi = lo + window.shown * dw;
     final rule = Paint()
       ..color = line
       ..strokeWidth = 1;
+    final ground = Paint()..color = panel;
     void row(
       double top,
-      Object Function(DateTime d) keyOf,
+      DateTime Function(DateTime d) first,
+      DateTime Function(DateTime d) next,
       String Function(DateTime d) name,
     ) {
-      for (final (a, b) in chartRuns(window, keyOf)) {
+      const h = ChartHeader.spanRow;
+      for (final cell in spanCells(window, first, next)) {
+        final x0 = cell.from * dw;
+        final x1 = cell.to * dw;
+        if (cell.from > 0) {
+          canvas.drawLine(Offset(x0, top), Offset(x0, top + h), rule);
+        }
         final t = TextPainter(
           text: TextSpan(
-            text: name(window.dayAt(a)),
+            text: name(cell.day),
             style: style.copyWith(
               fontSize: 11,
               color: ink,
@@ -498,27 +519,33 @@ class _SpanPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
           maxLines: 1,
         )..layout();
-        final x0 = a * dw;
-        final x1 = b * dw;
-        if (a > 0) {
-          canvas.drawLine(Offset(x0, top), Offset(x0, top + 13), rule);
-        }
-        // Centred in what shows of the run, kept inside the run.
-        final from = x0 > lo ? x0 : lo;
-        final to = x1 < hi ? x1 : hi;
-        if (to <= from) continue;
-        var x = (from + to - t.width) / 2;
-        if (x + t.width > x1 - 2) x = x1 - 2 - t.width;
-        if (x < x0 + 2) x = x0 + 2;
-        t.paint(canvas, Offset(x, top));
+        // Centred in the whole merged cell, as a spreadsheet centres
+        // merged cells: in sight or not.
+        t.paint(canvas, Offset((x0 + x1 - t.width) / 2, top));
+        t.dispose();
       }
     }
 
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    if (yearTop case final y?) row(y, (d) => d.year, (d) => '${d.year}');
+    // Plain ground from the ruler's top edge down through these rows.
+    final bottom = (monthTop ?? yearTop!) + ChartHeader.spanRow;
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, bottom), ground);
+    if (yearTop case final y?) {
+      row(
+        y,
+        (d) => DateTime(d.year),
+        (d) => DateTime(d.year + 1),
+        (d) => '${d.year}',
+      );
+    }
     if (monthTop case final y?) {
-      row(y, (d) => d.year * 12 + d.month, (d) => monthName(d.month, lang));
+      row(
+        y,
+        (d) => DateTime(d.year, d.month),
+        (d) => DateTime(d.year, d.month + 1),
+        (d) => monthName(d.month, lang),
+      );
     }
     canvas.restore();
   }
@@ -526,30 +553,33 @@ class _SpanPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SpanPainter old) =>
       old.window != window ||
-      old.slide != slide ||
       old.ink != ink ||
+      old.panel != panel ||
       old.lang != lang ||
       old.yearTop != yearTop ||
       old.monthTop != monthTop;
 }
 
-/// [window]'s days in runs of one [keyOf] (a year, a month): each run's
-/// first and past-last column.
-List<(int, int)> chartRuns(
+/// The merged cells of a year or month row over [window]: for each year
+/// (month) with a day in it, its whole stretch in columns — [first] and
+/// [next] give its first day and the one after — reaching past the
+/// window's edges when it does, and a day in it to name it by.
+List<({double from, double to, DateTime day})> spanCells(
   ChartWindow window,
-  Object Function(DateTime day) keyOf,
-) {
-  final runs = <(int, int)>[];
-  var start = 0;
-  for (var i = 1; i <= window.days; i++) {
-    if (i == window.days ||
-        keyOf(window.dayAt(i)) != keyOf(window.dayAt(start))) {
-      runs.add((start, i));
-      start = i;
-    }
-  }
-  return runs;
-}
+  DateTime Function(DateTime d) first,
+  DateTime Function(DateTime d) next,
+) => [
+  for (
+    var d = first(window.start);
+    window.indexOf(d) < window.days;
+    d = next(d)
+  )
+    (
+      from: window.indexOf(d).toDouble(),
+      to: window.indexOf(next(d)).toDouble(),
+      day: d,
+    ),
+];
 
 /// What the ruler says on a day: a holiday's name, the day's events.
 typedef _Note = ({String? holiday, List<EventRow> events});
