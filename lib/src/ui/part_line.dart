@@ -647,7 +647,8 @@ class _AddCutChip extends StatelessWidget {
   }
 }
 
-/// One cut in the opened details: its status, name, take, length and own
+/// One cut in the opened details: its name in its status's colour, take,
+/// length (when known) and own
 /// deadline; faded when on hold or pulled.
 class _CutChip extends StatelessWidget {
   const _CutChip({
@@ -681,11 +682,8 @@ class _CutChip extends StatelessWidget {
     final Widget face = DecoratedBox(
       decoration: BoxDecoration(
         color: picked ? c.selected : c.panel,
-        border: Border.all(
-          color: unit.length > 1 || t.sharedLabel != null
-              ? Theme.of(context).colorScheme.primary
-              : c.line,
-        ),
+        // A shared cut looks like any other: only its words differ.
+        border: Border.all(color: c.line),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Padding(
@@ -694,14 +692,12 @@ class _CutChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           spacing: 6,
           children: [
-            Dot(c.of(t.status)),
             if (t.archived)
               Icon(Icons.archive_outlined, size: 12, color: c.muted)
             else if (t.handedOff)
               Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),
-            if (unit.length > 1) Icon(Icons.link, size: 12, color: c.muted),
             Flexible(
               child: FitText.rich(
                 tooltip: false,
@@ -709,7 +705,9 @@ class _CutChip extends StatelessWidget {
                   children: [
                     TextSpan(
                       text: unitText(unit),
+                      // The number in its status's colour (no dot).
                       style: TextStyle(
+                        color: c.ink(t.status),
                         fontWeight: FontWeight.w700,
                         decoration: t.handedOff
                             ? TextDecoration.lineThrough
@@ -730,10 +728,12 @@ class _CutChip extends StatelessWidget {
                           fontSize: 11,
                         ),
                       ),
-                    TextSpan(
-                      text: '  ${formatLength(t.lengthMs)}',
-                      style: TextStyle(color: c.muted),
-                    ),
+                    // No length: nothing (not a dash).
+                    if (t.lengthMs != null)
+                      TextSpan(
+                        text: '  ${formatLength(t.lengthMs)}',
+                        style: TextStyle(color: c.muted),
+                      ),
                     if (t.dueOverridden)
                       TextSpan(
                         text: '  ${formatDate(t.dueAt)}',

@@ -14,6 +14,17 @@ extension StatusColor on AppColors {
     TaskStatus.retake => retake,
     TaskStatus.done => done,
   };
+
+  /// A status as the colour of words (a cut's number): its own colour,
+  /// but 받음's grey taken darker in light mode and lighter in dark so it
+  /// reads as words.
+  Color ink(TaskStatus s) => s == TaskStatus.received
+      ? Color.lerp(
+          muted,
+          panel.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+          0.3,
+        )!
+      : of(s);
 }
 
 /// Small filled dot, e.g. a status or a work colour.
