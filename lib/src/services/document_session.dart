@@ -113,6 +113,10 @@ abstract interface class DocumentSessionBase {
   /// (`NotADocumentKind.empty`). False when there is no such copy.
   Future<bool> restoreLastWritten(DocumentRef ref);
 
+  /// Whether this device keeps a copy of its last write to [ref] — what
+  /// [restoreLastWritten] would put back. A quick local check.
+  bool hasLastWritten(DocumentRef ref);
+
   /// Starts a new untitled document (empty catalogue, seeded presets).
   Future<void> startUntitled();
 

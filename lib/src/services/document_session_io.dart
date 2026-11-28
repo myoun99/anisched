@@ -406,6 +406,9 @@ class DocumentSession implements DocumentSessionBase {
   }
 
   @override
+  bool hasLastWritten(DocumentRef ref) => _pinOf(ref.location) != null;
+
+  @override
   Future<bool> restoreLastWritten(DocumentRef ref) async {
     if (_pinOf(ref.location) == null) return false;
     final copy = '${_pinPath(ref.location)}.$documentExtension';
