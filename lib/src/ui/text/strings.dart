@@ -311,6 +311,7 @@ enum S {
   shared('Shared', '兼用', '겸용', 'Partagé', '兼用'),
   name('Name', '名前', '이름', 'Nom', '名称'),
   register('Add', '登録', '등록', 'Ajouter', '登记'),
+  resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
   savedCuts(
     '{title} cuts {n}',
     '{title} 登録済み {n}',

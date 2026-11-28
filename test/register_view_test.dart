@@ -285,4 +285,76 @@ void main() {
     expect(dueOf(first).day, 10);
     expect(dueOf(second).day, 20);
   });
+
+  /// The work picker's shown value: the picked work, or none.
+  bool workPicked(WidgetTester t, String title) => find
+      .descendant(
+        of: find.byKey(const Key('pick-work')),
+        matching: find.text(title),
+      )
+      .evaluate()
+      .isNotEmpty;
+
+  Future<void> pickWork(WidgetTester t) async {
+    await t.tap(find.byKey(const Key('pick-work')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('별빛 정류장').last);
+    await t.pumpAndSettle();
+  }
+
+  testWidgets('the foot: reset on the left, register on the right', (
+    t,
+  ) async {
+    await pumpRegister(t, const Size(390, 844));
+    final reset = t.getRect(find.byKey(const Key('register-reset')));
+    final add = t.getRect(find.byKey(const Key('register')));
+    final tabs = t.getRect(find.byKey(const Key('view-switch')));
+    expect(reset.left, lessThan(60));
+    expect(add.right, greaterThan(390 - 60));
+    expect((reset.center.dy - add.center.dy).abs(), lessThan(2));
+    expect(add.bottom, lessThanOrEqualTo(tabs.top), reason: 'above the tabs');
+    // Nothing to register yet: greyed.
+    expect(
+      t.widget<FilledButton>(find.byKey(const Key('register'))).onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('reset empties the form; its undo puts it back', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await pickWork(t);
+    await t.enterText(find.byKey(const Key('reg-count')), '12');
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isTrue);
+    await t.tap(find.byKey(const Key('register-reset')));
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isFalse);
+    expect(find.text('100'), findsOneWidget, reason: 'the count as at first');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.byKey(const Key('reset-undo')));
+    await t.pump();
+    await t.pump();
+    expect(workPicked(t, '별빛 정류장'), isTrue);
+    expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('a register starts the form over, with a note', (t) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await pickWork(t);
+    await t.tap(find.byKey(const Key('pick-episode')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('pick-search')), '#97');
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pick-create')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('reg-count')), '3');
+    await t.pump();
+    await t.tap(find.byKey(const Key('register')));
+    await t.pump();
+    await t.pump();
+    expect(find.byKey(const Key('registered-snack')), findsOneWidget);
+    expect(find.textContaining('3 cut'), findsWidgets);
+    expect(workPicked(t, '별빛 정류장'), isFalse);
+    expect(find.text('100'), findsOneWidget);
+  });
 }

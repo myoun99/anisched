@@ -100,7 +100,6 @@ class _RegisterViewState extends State<RegisterView> {
   /// Dates set on one stage's row, by stage name; a stage without its own
   /// takes the stage above's (the first: [_kickoff], no deadline).
   final _ownDates = <String, ({DateTime? kickoff, DateTime? due})>{};
-  String? _done;
 
   /// While dragging across the grid: true picks, false drops.
   bool? _paint;
@@ -261,7 +260,7 @@ class _RegisterViewState extends State<RegisterView> {
   void _register() {
     final cb = widget.onRegister;
     if (cb == null || !_ready) return;
-    final n = cb(
+    cb(
       RegistrationDraft(
         workId: _work!.value,
         episodeId: _episode!.value,
@@ -278,19 +277,104 @@ class _RegisterViewState extends State<RegisterView> {
         },
       ),
     );
-    setState(() {
-      _done = S.registered.f({'n': n});
-      _picked.clear();
-      _cuts = CutDraft(
-        start: _cuts.start + _cuts.count,
-        count: _cuts.count,
-        prefix: _cuts.prefix,
-        width: _cuts.width,
-      );
-      _start.text = '${_cuts.start}';
-    });
-    unawaited(_loadTaken());
+    final cuts = _cuts.total;
+    // Saved: the form starts over, as when the screen first opened.
+    setState(_clear);
+    _snack(
+      '${S.register.t} · $cuts cut',
+      key: 'registered-snack',
+    );
   }
+
+  /// Everything typed and picked, to put back after a reset.
+  ({
+    PickOption<int>? client,
+    PickOption<int>? work,
+    PickOption<int>? episode,
+    String? part,
+    Set<String> stages,
+    CutDraft cuts,
+    String start,
+    String count,
+    Map<String, ({DateTime? kickoff, DateTime? due})> dates,
+  })
+  _snapshot() => (
+    client: _client,
+    work: _work,
+    episode: _episode,
+    part: _part,
+    stages: {..._stages},
+    cuts: _cuts,
+    start: _start.text,
+    count: _count.text,
+    dates: {..._ownDates},
+  );
+
+  /// The form as the screen first opens it: nothing picked, the first
+  /// role's stages, cuts 1-100, starting today.
+  void _clear() {
+    _client = null;
+    _work = null;
+    _episode = null;
+    _part = null;
+    _stages
+      ..clear()
+      ..addAll(widget.roles.isEmpty ? const [] : widget.roles.first.stages);
+    _start.text = '1';
+    _count.text = '100';
+    _cuts = CutDraft(prefix: _cuts.prefix, width: _cuts.width);
+    _ownDates.clear();
+    _picked.clear();
+    _pickedSaved.clear();
+    _taken = const {};
+    _saved = const [];
+  }
+
+  /// 「초기화」: the form empties at once; the snack bar's undo puts back
+  /// what was there (no confirmation first).
+  void _reset() {
+    final was = _snapshot();
+    setState(_clear);
+    _snack(
+      S.resetForm.t,
+      key: 'reset-snack',
+      undo: () {
+        setState(() {
+          _client = was.client;
+          _work = was.work;
+          _episode = was.episode;
+          _part = was.part;
+          _stages
+            ..clear()
+            ..addAll(was.stages);
+          _cuts = was.cuts;
+          _start.text = was.start;
+          _count.text = was.count;
+          _ownDates
+            ..clear()
+            ..addAll(was.dates);
+        });
+        unawaited(_loadTaken());
+      },
+    );
+  }
+
+  void _snack(String text, {required String key, VoidCallback? undo}) =>
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: Key(key),
+            content: Text(text),
+            action: undo == null
+                ? null
+                : SnackBarAction(
+                    key: const Key('reset-undo'),
+                    label: S.undoDrop.t,
+                    onPressed: undo,
+                  ),
+          ),
+        );
 
   /// The checked stages, in order.
   List<String> get _checked => [
@@ -358,91 +442,98 @@ class _RegisterViewState extends State<RegisterView> {
     final clashes = _clashes;
     return ColoredBox(
       color: c.panel,
-      child: Listener(
-        onPointerUp: (_) {
-          if (_paint != null) setState(() => _paint = null);
-        },
-        onPointerCancel: (_) {
-          if (_paint != null) setState(() => _paint = null);
-        },
-        child: OwnScroll(
-          builder: (controller) => Scrollbar(
-            controller: controller,
-            child: CustomScrollView(
-              key: _scrollKey,
-              controller: controller,
-              physics: _paint == null
-                  ? null
-                  : const NeverScrollableScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                  sliver: SliverToBoxAdapter(child: _form(context)),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                  sliver: SliverToBoxAdapter(child: _summary(context)),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
-                  sliver: SliverToBoxAdapter(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FoldToggle(
-                        key: const Key('fold-new-cuts'),
-                        state: Folds.newCuts,
-                        label: '${cells.length} cut',
+      child: Column(
+        children: [
+          Expanded(
+            child: Listener(
+              onPointerUp: (_) {
+                if (_paint != null) setState(() => _paint = null);
+              },
+              onPointerCancel: (_) {
+                if (_paint != null) setState(() => _paint = null);
+              },
+              child: OwnScroll(
+                builder: (controller) => Scrollbar(
+                  controller: controller,
+                  child: CustomScrollView(
+                    key: _scrollKey,
+                    controller: controller,
+                    physics: _paint == null
+                        ? null
+                        : const NeverScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                        sliver: SliverToBoxAdapter(child: _form(context)),
                       ),
-                    ),
-                  ),
-                ),
-                if (Folds.newCuts.value)
-                  SliverPadding(
-                    padding: _gridPadding,
-                    sliver: SliverGrid.builder(
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 60,
-                            mainAxisExtent: 24,
-                            mainAxisSpacing: 2,
-                            crossAxisSpacing: 2,
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        sliver: SliverToBoxAdapter(child: _summary(context)),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
+                        sliver: SliverToBoxAdapter(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FoldToggle(
+                              key: const Key('fold-new-cuts'),
+                              state: Folds.newCuts,
+                              label: '${cells.length} cut',
+                            ),
                           ),
-                      itemCount: cells.length + 1,
-                      itemBuilder: (context, i) => i == cells.length
-                          ? _plusCell(context)
-                          : _cell(
-                              context,
-                              cells[i],
-                              clashes.contains(cells[i]),
-                            ),
-                    ),
-                  ),
-                if (_saved.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-                    sliver: SliverToBoxAdapter(child: _savedBar(context)),
-                  ),
-                  if (Folds.savedCuts.value)
-                    SliverPadding(
-                      padding: _gridPadding,
-                      sliver: SliverGrid.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 60,
-                              mainAxisExtent: 24,
-                              mainAxisSpacing: 2,
-                              crossAxisSpacing: 2,
-                            ),
-                        itemCount: _saved.length,
-                        itemBuilder: (context, i) =>
-                            _savedCell(context, _saved[i]),
+                        ),
                       ),
-                    ),
-                ],
-              ],
+                      if (Folds.newCuts.value)
+                        SliverPadding(
+                          padding: _gridPadding,
+                          sliver: SliverGrid.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 60,
+                                  mainAxisExtent: 24,
+                                  mainAxisSpacing: 2,
+                                  crossAxisSpacing: 2,
+                                ),
+                            itemCount: cells.length + 1,
+                            itemBuilder: (context, i) => i == cells.length
+                                ? _plusCell(context)
+                                : _cell(
+                                    context,
+                                    cells[i],
+                                    clashes.contains(cells[i]),
+                                  ),
+                          ),
+                        ),
+                      if (_saved.isNotEmpty) ...[
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                          sliver: SliverToBoxAdapter(child: _savedBar(context)),
+                        ),
+                        if (Folds.savedCuts.value)
+                          SliverPadding(
+                            padding: _gridPadding,
+                            sliver: SliverGrid.builder(
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 60,
+                                    mainAxisExtent: 24,
+                                    mainAxisSpacing: 2,
+                                    crossAxisSpacing: 2,
+                                  ),
+                              itemCount: _saved.length,
+                              itemBuilder: (context, i) =>
+                                  _savedCell(context, _saved[i]),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+          _actions(context),
+        ],
       ),
     );
   }
@@ -692,16 +783,47 @@ class _RegisterViewState extends State<RegisterView> {
           selected: false,
           onTap: any ? () => setState(_picked.clear) : null,
         ),
-        FilledButton(
-          key: const Key('register'),
-          onPressed: _ready ? _register : null,
-          child: Text(S.register.t),
-        ),
-        SizedBox(
-          width: 80,
-          child: Text(_done ?? '', style: TextStyle(color: c.muted)),
-        ),
       ],
+    );
+  }
+
+  /// The screen's foot, fixed above the tabs (and the keyboard): 「초기화」
+  /// on the left, quiet; 「등록」 on the right, the main action.
+  Widget _actions(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      key: const Key('register-actions'),
+      decoration: BoxDecoration(
+        color: c.panel,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // The quiet one gives way first on a narrow screen.
+            Flexible(
+              child: TextButton.icon(
+                key: const Key('register-reset'),
+                onPressed: widget.onRegister == null ? null : _reset,
+                style: TextButton.styleFrom(foregroundColor: c.muted),
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: Text(
+                  S.resetForm.t,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            FilledButton(
+              key: const Key('register'),
+              onPressed: _ready ? _register : null,
+              child: Text(S.register.t),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
