@@ -235,6 +235,7 @@ class FilterButton extends StatelessWidget {
       ],
       child: ToolbarButton(
         label: _label,
+        icon: Icons.filter_list,
         selected: !filter.isDefault,
         dropdown: true,
       ),

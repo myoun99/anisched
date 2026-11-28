@@ -184,13 +184,6 @@ enum S {
 
   // Work lanes.
   autoPlace('Auto', '自動配置', '자동 배치', 'Auto', '自动排列'),
-  todayBusy(
-    'Today {a} / {b}',
-    '今日 {a} / {b}',
-    '오늘 {a} / {b}',
-    'Auj. {a} / {b}',
-    '今天 {a} / {b}',
-  ),
   overflow('Over', 'あふれ', '넘침', 'Excès', '溢出'),
   laneHead('Lanes', 'ライン', '라인', 'Lignes', '通道'),
   addLane('Add a lane', 'ラインを追加', '라인 추가', 'Ajouter une ligne', '添加通道'),

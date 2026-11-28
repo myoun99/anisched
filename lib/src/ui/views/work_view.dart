@@ -112,12 +112,6 @@ class _WorkViewState extends State<WorkView> {
     final rowCount = lanes == null
         ? 0
         : (lanes.usedLanes > lanes.lanes ? lanes.usedLanes : lanes.lanes);
-    final today = chartDay(widget.now);
-    final busy = lanes == null
-        ? 0
-        : lanes.spans
-              .where((s) => !s.start.isAfter(today) && !s.end.isBefore(today))
-              .length;
     return ColoredBox(
       color: c.panel,
       child: Column(
@@ -129,19 +123,9 @@ class _WorkViewState extends State<WorkView> {
                 ToolbarButton(
                   key: const Key('lanes-auto'),
                   label: S.autoPlace.t,
+                  icon: Icons.auto_fix_high,
                   selected: false,
                   onTap: widget.onClearPins,
-                ),
-              if (lanes != null && widget.layout.size != SizeClass.narrow)
-                SizedBox(
-                  height: 34,
-                  child: Center(
-                    widthFactor: 1,
-                    child: Text(
-                      S.todayBusy.f({'a': busy, 'b': lanes.lanes}),
-                      style: TextStyle(color: c.muted),
-                    ),
-                  ),
                 ),
               ValueListenableBuilder<bool>(
                 valueListenable: chartMonthView,

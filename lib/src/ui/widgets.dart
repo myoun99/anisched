@@ -304,11 +304,17 @@ class ToolbarButton extends StatelessWidget {
     required this.selected,
     this.onTap,
     this.dropdown = false,
+    this.icon,
   });
 
+  /// The words; with an [icon], only its tooltip (toolbars speak in
+  /// icons — the user's rule).
   final String label;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// Shown instead of the label.
+  final IconData? icon;
 
   /// Shows a drop-down arrow after the label.
   final bool dropdown;
@@ -325,24 +331,29 @@ class ToolbarButton extends StatelessWidget {
       child: SizedBox(
         height: 34,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: icon == null ? 12 : 7),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label),
-              if (dropdown)
+              if (icon case final i?)
+                Icon(i, size: 20, color: selected ? null : c.muted)
+              else
+                Text(label),
+              if (dropdown && icon == null)
                 Icon(Icons.arrow_drop_down, size: 20, color: c.muted),
             ],
           ),
         ),
       ),
     );
-    if (onTap == null) return body;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: body,
-    );
+    final tapped = onTap == null
+        ? body
+        : InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: body,
+          );
+    return icon == null ? tapped : Tooltip(message: label, child: tapped);
   }
 }
 
