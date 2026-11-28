@@ -8,6 +8,9 @@ import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
 import '../../services/document_session.dart';
+import '../../services/settings_store.dart';
+import '../../models/number_style.dart';
+import '../pick_field.dart';
 import '../../services/device_settings.dart';
 import '../../services/recovery_snapshots.dart';
 import '../document_menu.dart';
@@ -16,6 +19,7 @@ import '../instant.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
+import '../fit_text.dart';
 
 /// The user's settings: rest weekdays, days off, parallel lanes, when a
 /// day starts, per-second rounding, usual speeds and this month's pay.
@@ -268,10 +272,8 @@ class _SettingsViewState extends State<SettingsView> {
                   _Line(
                     children: [
                       Expanded(
-                        child: Text(
-                          p.stageName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: FitText(
+                          stageText(p.stageName),
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -297,6 +299,7 @@ class _SettingsViewState extends State<SettingsView> {
           ),
       ],
     );
+    final notation = _notation(context);
     final pay = _Group(
       icon: Icons.payments_outlined,
       title: S.rate.t,
@@ -335,10 +338,8 @@ class _SettingsViewState extends State<SettingsView> {
                     ),
                     if (e.value.unpriced > 0)
                       Flexible(
-                        child: Text(
+                        child: FitText(
                           S.unpriced.f({'n': e.value.unpriced}),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.muted),
                         ),
                       ),
@@ -377,10 +378,8 @@ class _SettingsViewState extends State<SettingsView> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       Expanded(
-                        child: Text(
+                        child: FitText(
                           st.detail ?? DocumentMenu.displayName(doc.document),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.muted),
                         ),
                       ),
@@ -431,7 +430,7 @@ class _SettingsViewState extends State<SettingsView> {
                 ),
             ],
           );
-    final groups = [display, restDays, workLines, pay, ?storage];
+    final groups = [display, restDays, workLines, notation, pay, ?storage];
     return ColoredBox(
       color: c.panel,
       child: OwnScroll(
@@ -464,7 +463,7 @@ class _SettingsViewState extends State<SettingsView> {
                           spacing: gap,
                           children: [
                             column([display, restDays, workLines]),
-                            column([pay, ?storage]),
+                            column([notation, pay, ?storage]),
                           ],
                         )
                       : column(groups),
@@ -474,6 +473,120 @@ class _SettingsViewState extends State<SettingsView> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 표기: how cut and episode numbers are written, one style each for
+  /// the whole document, with a one-line preview.
+  Widget _notation(BuildContext context) {
+    final c = AppColors.of(context);
+    final st = widget.store?.settings;
+    final cut = st?.cutStyle ?? defaultCutStyle;
+    final ep = st?.episodeStyle ?? defaultEpisodeStyle;
+    Widget row(
+      String key,
+      String label,
+      IconData icon,
+      NumberStyle style,
+      String usual,
+      List<int> digits,
+      void Function(SettingsStore s, NumberStyle v) save,
+    ) {
+      final custom = style.prefix != usual && style.prefix.isNotEmpty;
+      return _Field(
+        icon: icon,
+        label: label,
+        child: Row(
+          spacing: 8,
+          children: [
+            Expanded(
+              flex: 3,
+              child: _FillRow(
+                children: [
+                  SegmentButton(
+                    key: Key('$key-prefix-usual'),
+                    label: usual,
+                    selected: style.prefix == usual,
+                    onTap: () => _set(
+                      (s) => save(s.settings, (
+                        prefix: usual,
+                        digits: style.digits,
+                      )),
+                    ),
+                  ),
+                  SegmentButton(
+                    key: Key('$key-prefix-none'),
+                    label: S.prefixNone.t,
+                    selected: style.prefix.isEmpty,
+                    onTap: () => _set(
+                      (s) =>
+                          save(s.settings, (prefix: '', digits: style.digits)),
+                    ),
+                  ),
+                  SegmentButton(
+                    key: Key('$key-prefix-custom'),
+                    icon: Icons.edit_outlined,
+                    label: custom ? style.prefix : '',
+                    tooltip: S.prefixCustom.t,
+                    selected: custom,
+                    onTap: () async {
+                      final p = await askName(
+                        context,
+                        title: '$label · ${S.prefixCustom.t}',
+                        initial: custom ? style.prefix : '',
+                      );
+                      if (p == null) return;
+                      _set(
+                        (s) => save(s.settings, (
+                          prefix: p.trim(),
+                          digits: style.digits,
+                        )),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: _FillRow(
+                children: [
+                  for (final d in digits)
+                    SegmentButton(
+                      key: Key('$key-digits-$d'),
+                      label: S.digitsN.f({'n': d}),
+                      selected: style.digits == d,
+                      onTap: () => _set(
+                        (s) =>
+                            save(s.settings, (prefix: style.prefix, digits: d)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _Group(
+      icon: Icons.tag,
+      title: S.notation.t,
+      children: [
+        row('cut', S.cutNotation.t, Icons.movie_outlined, cut, 'C', const [
+          3,
+          4,
+        ], (s, v) => s.cutStyle = v),
+        row('episode', S.episodeNotation.t, Icons.tv_outlined, ep, '#', const [
+          2,
+          3,
+        ], (s, v) => s.episodeStyle = v),
+        Text(
+          '${formatCutNumber(1, cut)} · ${formatEpisodeNumber(7, ep)}',
+          key: const Key('notation-preview'),
+          style: TextStyle(color: c.muted),
+        ),
+      ],
     );
   }
 
@@ -552,10 +665,8 @@ class _Field extends StatelessWidget {
           children: [
             Icon(icon, size: 15, color: c.muted),
             Expanded(
-              child: Text(
+              child: FitText(
                 label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),

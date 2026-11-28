@@ -71,4 +71,32 @@ void main() {
     );
     themeModeSetting.value = ThemeMode.system;
   });
+
+  testWidgets('표기 sets the cut and episode styles, with a preview', (t) async {
+    t.view.physicalSize = const Size(1440, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final store = sampleCatalogue(now);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          initialView: AppView.settings,
+          reader: SyncCatalogueReader(store),
+          store: store,
+          clock: () => now,
+        ),
+      ),
+    );
+    await t.pump();
+    expect(find.text('C001 · #07'), findsOneWidget);
+    await t.ensureVisible(find.byKey(const Key('cut-digits-4')));
+    await t.tap(find.byKey(const Key('cut-digits-4')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('episode-prefix-none')));
+    await t.pump();
+    expect(store.settings.cutStyle, (prefix: 'C', digits: 4));
+    expect(store.settings.episodeStyle.prefix, '');
+    expect(find.text('C0001 · 07'), findsOneWidget);
+  });
 }

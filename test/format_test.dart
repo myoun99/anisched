@@ -1,6 +1,8 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
+import 'package:anisched/src/models/number_style.dart';
 import 'package:anisched/src/ui/format.dart';
+import 'package:anisched/src/ui/text/strings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/sample_catalogue.dart';
@@ -71,12 +73,42 @@ void main() {
     expect(groupTitle(part), endsWith('파트'));
   });
 
-  test('an episode number reads with #; a name stays; # is not stored', () {
-    expect(episodeLabel('07'), '#07');
+  test('a part-less unit reads as its cut range, gaps and all', () {
+    final store = sampleCatalogue(DateTime(2026, 11, 27));
+    final work = store.works().first.id;
+    final ep = store.addEpisode(work, '30');
+    final stage = store.stages(work).first.id;
+    for (final n in ['C001', 'C002', 'C003', 'C007', 'C008']) {
+      store.addTask(stage, cutId: store.addCut(ep, n));
+    }
+    final loose = store.partGroups().firstWhere(
+      (g) => g.kind == GroupKind.noPart,
+    );
+    expect(groupTitle(loose), 'C001~C003, C007, C008');
+  });
+
+  test('a bare episode number reads in the document style; names stay', () {
+    addTearDown(() => episodeStyle.value = defaultEpisodeStyle);
+    expect(episodeLabel('7'), '#07');
     expect(episodeLabel('#07'), '#07');
     expect(episodeLabel('극장판'), '극장판');
-    expect(episodeNumberOf('#07'), '07');
-    expect(episodeNumberOf(' 12 '), '12');
-    expect(episodeNumberOf('#SP'), '#SP');
+    episodeStyle.value = (prefix: '', digits: 3);
+    expect(episodeLabel('7'), '007');
+    expect(typedEpisodeNumber('#7'), 7);
+    expect(typedEpisodeNumber(' 12 '), 12);
+    expect(typedEpisodeNumber('SP'), isNull);
+  });
+
+  test('stages read in the user language; typed names stay', () {
+    addTearDown(() => appLang.value = Lang.ko);
+    appLang.value = Lang.ja;
+    expect(stageText('원화/작감'), '原画/作監');
+    expect(stageText('LO'), 'LO');
+    expect(stageText('리테이크'), 'リテイク');
+    appLang.value = Lang.en;
+    expect(stageText('동화/동검'), 'IB/IBC');
+    expect(stageText('내 공정'), '내 공정');
+    appLang.value = Lang.ko;
+    expect(stageText('원화/작감'), '원화/작감');
   });
 }

@@ -2,6 +2,7 @@ import 'package:anisched/src/core/size_class.dart';
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
+import 'package:anisched/src/ui/part_line.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:anisched/src/ui/views/sheet_view.dart';
 import 'package:anisched/src/ui/fold.dart';
@@ -30,10 +31,13 @@ Future<List<PartGroup>> pumpSheet(
       home: Scaffold(
         body: SheetView(
           parts: groups,
-          signals: store.signals(includeDone: true),
+
           now: now,
           layout: ScreenLayout.of(size.width, size.height),
-          paceOf: store.paceOf,
+          wiring: UnitWiring(
+            signals: store.signals(includeDone: true),
+            paceOf: store.paceOf,
+          ),
         ),
       ),
     ),

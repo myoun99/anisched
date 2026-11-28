@@ -2,8 +2,12 @@
 /// models stay free of display strings.
 library;
 
+import 'package:flutter/foundation.dart';
+
 import '../models/catalogue.dart';
 import '../models/progress.dart';
+import '../models/number_style.dart';
+import '../models/stage_names.dart';
 import 'text/strings.dart';
 
 extension TaskStatusLabel on TaskStatus {
@@ -96,9 +100,13 @@ Map<String, int> totalsByCurrency(Iterable<PartGroup> groups) {
 }
 
 /// 「B파트」, 「파트 없음」 for an episode's loose cuts, or a storyboard's label.
+///
+/// Every screen names a unit through this one function. A part-less unit
+/// reads as its cut range (C001~C050, C060~C102) — 「파트 없음」 told
+/// nothing (v8).
 String groupTitle(PartGroup g) => switch (g.kind) {
   GroupKind.part => S.partTitle.f({'p': g.partLabel}),
-  GroupKind.noPart => S.noPart.t,
+  GroupKind.noPart => g.cutsLabel.isEmpty ? S.noPart.t : g.cutsLabel,
   GroupKind.storyboard => g.storyboardLabel ?? S.storyboard.t,
 };
 
@@ -106,18 +114,25 @@ String groupTitle(PartGroup g) => switch (g.kind) {
 String groupCount(PartGroup g) =>
     g.kind == GroupKind.storyboard ? S.items.f({'n': 1}) : '${g.total} cut';
 
-/// An episode as the screens show it: a number gets a 「#」 (#07), the way
-/// a cut gets its C; a name (극장판, MV) stays as it is. Display only — the
-/// stored number has no 「#」.
+/// The document's episode style (#·2 by default), kept current by the
+/// shell; [episodeLabel] reads it.
+final episodeStyle = ValueNotifier<NumberStyle>(defaultEpisodeStyle);
+
+/// An episode as the screens show it. New episodes are stored in the
+/// document's style already (#07); an older bare number (07) is shown in
+/// it too. A name (극장판, MV) stays as it is.
 String episodeLabel(String number) {
   final n = number.trim();
-  return RegExp(r'^\d+$').hasMatch(n) ? '#$n' : n;
+  return RegExp(r'^\d+$').hasMatch(n)
+      ? formatEpisodeNumber(int.parse(n), episodeStyle.value)
+      : n;
 }
 
-/// What to store for an episode the user typed: 「#07」 is 07.
-String episodeNumberOf(String typed) {
-  final n = typed.trim();
-  return RegExp(r'^#\d+$').hasMatch(n) ? n.substring(1) : n;
+/// The number the user typed for a new episode, if they typed one
+/// (「7」, 「#7」): the store writes it in the document's style.
+int? typedEpisodeNumber(String typed) {
+  final m = RegExp(r'^#?(\d+)$').firstMatch(typed.trim());
+  return m == null ? null : int.parse(m[1]!);
 }
 
 /// A task's own name: its cut number or storyboard label.
@@ -157,4 +172,44 @@ String? planReason(PlanSignal s) => switch (s) {
   PlanLateStart() => S.planLateStart.t,
   PlanTight() => S.planTight.t,
   PlanNotStarted() || PlanNone() => null,
+};
+
+/// A stage as the screens show it, in the user's language — Anicel's own
+/// short names for the work and checker axes (原画/作監, KEY/AD, 원화/작감);
+/// a name the user typed stays as typed. The one place a stage is named.
+String stageText(String stored) {
+  final l = stageLabelOf(stored);
+  if (l == null) return stored;
+  final lang = appLang.value;
+  if (l.extra case final e?) {
+    return switch (e) {
+      StageExtra.retake => S.stRetake.t,
+      StageExtra.characterDesign => S.charDesign.t,
+    };
+  }
+  final work = _stageWords[l.work!]![lang.index];
+  final check = l.check;
+  return check == null ? work : '$work/${_checkWords[check]![lang.index]}';
+}
+
+// Anicel's `layerProcessAbbrev` / `layerReviseAbbrev`, in Lang order
+// (en, ja, ko, fr, zh-Hans).
+const _stageWords = {
+  StageWork.conte: ['SB', 'コンテ', '콘티', 'SB', '分镜'],
+  StageWork.layout: ['LO', 'LO', 'LO', 'LO', 'LO'],
+  StageWork.roughKey: ['RK', 'ラフ原', '러프원', 'RK', '粗原'],
+  StageWork.key: ['KEY', '原画', '원화', 'KEY', '原画'],
+  StageWork.inbetween: ['IB', '動画', '동화', 'IB', '中割'],
+  StageWork.finish: ['FIN', '仕上', '시아게', 'FIN', '上色'],
+};
+
+const _checkWords = {
+  StageCheck.direction: ['DIR', '演出', '연출', 'DIR', '演出'],
+  StageCheck.animationDirector: ['AD', '作監', '작감', 'AD', '作监'],
+  StageCheck.chiefAnimationDirector: ['CAD', '総作監', '총작감', 'CAD', '总作监'],
+  StageCheck.director: ['DR', '監督', '감독', 'DR', '导演'],
+  StageCheck.chiefDirector: ['CD', '総監督', '총감독', 'CD', '总导演'],
+  StageCheck.actionAnimationDirector: ['AAD', 'アク作', '액션', 'AAD', '动作'],
+  StageCheck.inbetweenCheck: ['IBC', '動検', '동검', 'IBC', '中检'],
+  StageCheck.cellCheck: ['CC', 'セル検', '셀검', 'CC', '赛检'],
 };
