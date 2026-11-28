@@ -4,7 +4,7 @@
 /// figure the tab shows, so the background reader can run it in one go.
 library;
 
-import 'catalogue.dart' show dayRange;
+import 'catalogue.dart' show TaskStatus, dayRange;
 import 'progress.dart' show StagePace;
 import 'work_interval.dart';
 
@@ -22,6 +22,13 @@ class StatsFact {
     required this.currency,
     required this.groupKey,
     String? unitKey,
+    this.episodeId,
+    this.episodeLabel,
+    this.partId,
+    this.partLabel,
+    String? cutKey,
+    this.cutLabel,
+    this.status,
     this.clientId,
     this.clientName,
     this.take = 1,
@@ -36,7 +43,8 @@ class StatsFact {
     this.planEndAt,
     this.pay,
     this.worked = Duration.zero,
-  }) : unitKey = unitKey ?? 't$taskId';
+  }) : unitKey = unitKey ?? 't$taskId',
+       cutKey = cutKey ?? 't$taskId';
 
   final int taskId;
   final String stageName;
@@ -46,6 +54,17 @@ class StatsFact {
 
   /// The unit the calendar lays out (TaskRow.groupKey).
   final String groupKey;
+
+  /// Where the task sits, for the drill-down ([StatsNode]): its episode
+  /// (shown number), part (null: the part-less cuts and storyboards), and
+  /// cut (`c<id>`, or `s<task id>` for a storyboard) with its label.
+  final int? episodeId;
+  final String? episodeLabel;
+  final int? partId;
+  final String? partLabel;
+  final String cutKey;
+  final String? cutLabel;
+  final TaskStatus? status;
 
   /// What counts as one cut (TaskRow.unitKey): a shared group's tasks of a
   /// stage count once in every cut figure; pay counts per task.
@@ -124,6 +143,17 @@ class StatsSlice {
   /// Of [handed]: retaken at least once.
   int retaken = 0;
 
+  /// Of [handed]: with a deadline, and handed by it.
+  int withDue = 0;
+  int onTime = 0;
+
+  /// [onTime] of [withDue], 0–1; null with none.
+  double? get onTimeRate => withDue == 0 ? null : onTime / withDue;
+
+  /// The first timer time in the range, and the last hand-in.
+  DateTime? firstWorkAt;
+  DateTime? lastHandedAt;
+
   /// Progress now, whatever the range: live cuts in the slice, and those
   /// handed in or done.
   int cuts = 0;
@@ -140,6 +170,62 @@ class StatsSlice {
 
   /// Share of handed cuts that were retaken, 0–1; null with none handed.
   double? get retakeRate => handed == 0 ? null : retaken / handed;
+
+  /// [earned] per hour of [worked], per currency; empty without time.
+  Map<String, double> get perHour {
+    final hours = worked.inMicroseconds / Duration.microsecondsPerHour;
+    if (hours <= 0) return const {};
+    return {for (final e in earned.entries) e.key: e.value / hours};
+  }
+}
+
+/// A level of the statistics drill-down.
+enum StatsNodeKind { all, client, work, episode, part, cut }
+
+/// One node of the statistics drill-down (유저 2026-11-28): every figure
+/// of a [StatsSlice] for the tasks under it — counted by the same rules
+/// as [Stats.total], so the root's figures are the total's — and its
+/// [children] in the catalogue's order. A [StatsNodeKind.cut] leaf (a
+/// cut, or a storyboard) has no children but its tasks by stage in
+/// [stages]; it counts each of its own tasks, shared group or not.
+class StatsNode extends StatsSlice {
+  StatsNode._(this.kind, Object? id, String? label) : super(id, label);
+
+  final StatsNodeKind kind;
+
+  /// The client / work / episode / part id (null for no client, the
+  /// part-less cuts of an episode, or the root); a cut leaf's key
+  /// (`c<cut id>` or `s<storyboard task id>`).
+  Object? get id => key;
+
+  final List<StatsNode> children = [];
+
+  /// A cut leaf's tasks by stage name.
+  final Map<String, StatsCutStage> stages = {};
+
+  void _stage(StatsFact f) {
+    final st = stages.putIfAbsent(f.stageName, StatsCutStage._);
+    st
+      ..take = f.take
+      ..pay = f.pay
+      ..status = f.status
+      ..handedOff = f.handedOffAt != null;
+  }
+}
+
+/// One stage of a cut leaf: timer time in the range and its stretches,
+/// the take, the pay (with paid retakes) and where the task stands.
+class StatsCutStage {
+  StatsCutStage._();
+
+  Duration worked = Duration.zero;
+
+  /// Timer stretches with time in the range.
+  int intervals = 0;
+  int take = 1;
+  int? pay;
+  TaskStatus? status;
+  bool handedOff = false;
 }
 
 /// One work day of the concurrency chart.
@@ -172,6 +258,9 @@ class Stats {
 
   /// Speed per stage name, so far and recent ([CatalogueStore.stagePaces]).
   List<StagePace> stagePaces = const [];
+
+  /// The drill-down, when asked for ([computeStats] `tree`).
+  StatsNode? tree;
 
   /// Hand-ins against the deadline in force when handed in: work days late
   /// (≥1 when past the due instant; 0 = on the due day in time; negative =
@@ -248,10 +337,16 @@ Stats computeStats({
   int dayStartMinutes = 0,
   int weekStart = DateTime.monday,
   int lanes = 2,
+  bool tree = false,
 }) {
   from = DateTime(from.year, from.month, from.day);
   to = DateTime(to.year, to.month, to.day);
-  final fold = _StatsFold(Stats._(from, to, lanes, bucket), dayStartMinutes);
+  final fold = _StatsFold(
+    Stats._(from, to, lanes, bucket),
+    dayStartMinutes,
+    tree ? StatsNode._(StatsNodeKind.all, null, null) : null,
+  );
+  fold.s.tree = fold.tree;
   for (var p = _bucketStart(from, bucket, weekStart); p.isBefore(to);) {
     final next = _nextBucket(p, bucket);
     fold.s.periods.add(StatsPeriod(p, next));
@@ -267,7 +362,7 @@ Stats computeStats({
 /// One run of [computeStats]: the stats being filled and what its steps
 /// share.
 class _StatsFold {
-  _StatsFold(this.s, this.dayStartMinutes);
+  _StatsFold(this.s, this.dayStartMinutes, this.tree);
 
   final Stats s;
   final int dayStartMinutes;
@@ -296,9 +391,11 @@ class _StatsFold {
     return null;
   }
 
-  /// Counts one task: handed over, done (and paid), deadlines kept.
+  /// Counts one task: handed over, done (and paid), deadlines kept — into
+  /// the total, its stage, work and client, and (with a tree) every node
+  /// on its path; its cut leaf counts it whatever its shared group.
   void fact(StatsFact f) {
-    final slices = [
+    final slices = <StatsSlice>[
       s.total,
       stages.putIfAbsent(
         f.stageName,
@@ -309,46 +406,45 @@ class _StatsFold {
         f.clientId,
         () => StatsSlice(f.clientId, f.clientName),
       ),
+      ..._pathOf(f),
     ];
+    final leaf = _leafOf(f);
+    leaf?._stage(f);
     // Handed off: the slices exist (its time is counted later), its
     // results are not.
     if (f.handedOffAt != null) {
       if (inRange(f.handedOffAt)) s.handedOff++;
       return;
     }
-    // A shared group's other tasks: their pay and time, not another cut.
-    if (!_units.add(f.unitKey)) {
+    if (_units.add(f.unitKey)) {
+      _count(f, slices, global: true);
+    } else {
+      // A shared group's other tasks: their pay and time, not another cut.
       if (inRange(f.submittedAt)) {
         for (final x in slices) {
           x.timedHandedWorked += f.worked;
         }
       }
       if (inRange(f.doneAt)) _paid(f, slices, periodOf(f.doneAt!));
-      return;
     }
-    for (final x in slices) {
-      x.cuts++;
-      if (f.submittedAt != null || f.doneAt != null) x.finished++;
-    }
-    if (inRange(f.submittedAt)) _handed(f, slices);
-    if (inRange(f.doneAt)) _done(f, slices);
+    if (leaf != null) _count(f, [leaf], global: false);
   }
 
   final _units = <String>{};
 
-  void _handed(StatsFact f, List<StatsSlice> slices) {
-    final timed = f.worked > Duration.zero;
+  /// One task's counts into [slices]; [global] also counts it in the
+  /// range's own figures (periods, takes, deadlines, hourly pay).
+  void _count(StatsFact f, List<StatsSlice> slices, {required bool global}) {
     for (final x in slices) {
-      x.handed++;
-      if (timed) {
-        x.timedHanded++;
-        x.timedHandedWorked += f.worked;
-      }
-      if (f.take > 1) x.retaken++;
+      x.cuts++;
+      if (f.submittedAt != null || f.doneAt != null) x.finished++;
     }
+    if (inRange(f.submittedAt)) _handed(f, slices, global: global);
+    if (inRange(f.doneAt)) _done(f, slices, global: global);
+  }
+
+  void _handed(StatsFact f, List<StatsSlice> slices, {required bool global}) {
     final handedAt = f.submittedAt!;
-    periodOf(handedAt)?.handed++;
-    s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
     int lateBy(DateTime due) {
       var days = (day(handedAt).difference(day(due)).inHours / 24).round();
       if (handedAt.isAfter(due) && days < 1) days = 1;
@@ -357,6 +453,23 @@ class _StatsFold {
     }
 
     final due = f.submittedDueAt ?? f.dueAt;
+    final kept = due != null && lateBy(due) <= 0;
+    final timed = f.worked > Duration.zero;
+    for (final x in slices) {
+      x.handed++;
+      if (timed) {
+        x.timedHanded++;
+        x.timedHandedWorked += f.worked;
+      }
+      if (f.take > 1) x.retaken++;
+      if (due != null) x.withDue++;
+      if (kept) x.onTime++;
+      final last = x.lastHandedAt;
+      if (last == null || handedAt.isAfter(last)) x.lastHandedAt = handedAt;
+    }
+    if (!global) return;
+    periodOf(handedAt)?.handed++;
+    s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
     if (due == null) {
       s.noDue++;
       return;
@@ -372,22 +485,33 @@ class _StatsFold {
     }
   }
 
-  void _done(StatsFact f, List<StatsSlice> slices) {
-    final period = periodOf(f.doneAt!);
-    period?.done++;
+  void _done(StatsFact f, List<StatsSlice> slices, {required bool global}) {
     for (final x in slices) {
       x.done++;
     }
+    if (!global) {
+      _earn(f, slices);
+      return;
+    }
+    final period = periodOf(f.doneAt!);
+    period?.done++;
     _paid(f, slices, period);
+  }
+
+  /// A done task's pay into [slices] only.
+  void _earn(StatsFact f, List<StatsSlice> slices) {
+    final pay = f.pay;
+    if (pay == null) return;
+    for (final x in slices) {
+      x.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
+    }
   }
 
   /// A done task's pay into the slices, its period and the hourly pay.
   void _paid(StatsFact f, List<StatsSlice> slices, StatsPeriod? period) {
     final pay = f.pay;
     if (pay == null) return;
-    for (final x in slices) {
-      x.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
-    }
+    _earn(f, slices);
     period?.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
     if (f.worked > Duration.zero) {
       _hourlyPay.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
@@ -397,6 +521,84 @@ class _StatsFold {
         ifAbsent: () => f.worked,
       );
     }
+  }
+
+  // ---- the drill-down tree (client → work → episode → part → cut) ----
+
+  final StatsNode? tree;
+  final _nodes = <String, StatsNode>{};
+
+  StatsNode _child(
+    StatsNode parent,
+    String key,
+    StatsNodeKind kind,
+    Object? id,
+    String? label,
+  ) => _nodes[key] ??= () {
+    final n = StatsNode._(kind, id, label);
+    parent.children.add(n);
+    return n;
+  }();
+
+  /// [f]'s nodes above its cut: the root, its client, work, episode and
+  /// part (the part-less cuts and storyboards of an episode share one).
+  List<StatsNode> _pathOf(StatsFact f) {
+    final root = tree;
+    if (root == null) return const [];
+    final client = _child(
+      root,
+      'c${f.clientId}',
+      StatsNodeKind.client,
+      f.clientId,
+      f.clientName,
+    );
+    final work = _child(
+      client,
+      'w${f.workId}',
+      StatsNodeKind.work,
+      f.workId,
+      f.workTitle,
+    );
+    final episode = _child(
+      work,
+      'e${f.episodeId}',
+      StatsNodeKind.episode,
+      f.episodeId,
+      f.episodeLabel,
+    );
+    final part = _child(
+      episode,
+      'p${f.episodeId}:${f.partId}',
+      StatsNodeKind.part,
+      f.partId,
+      f.partLabel,
+    );
+    return [root, client, work, episode, part];
+  }
+
+  StatsNode? _leafOf(StatsFact f) {
+    if (tree == null) return null;
+    final part = _nodes['p${f.episodeId}:${f.partId}']!;
+    return _child(
+      part,
+      'u${f.cutKey}',
+      StatsNodeKind.cut,
+      f.cutKey,
+      f.cutLabel,
+    );
+  }
+
+  /// [f]'s tree nodes for the timer: its path and its cut.
+  List<StatsNode> _timedNodes(StatsFact f) {
+    if (tree == null) return const [];
+    return [
+      tree!,
+      _nodes['c${f.clientId}']!,
+      _nodes['w${f.workId}']!,
+      _nodes['e${f.episodeId}']!,
+      _nodes['p${f.episodeId}:${f.partId}']!,
+      _nodes['u${f.cutKey}']!,
+    ];
   }
 
   /// Pay per hour of timed, finished work, per currency.
@@ -431,6 +633,17 @@ class _StatsFold {
         stages[fact.stageName]!.worked += length;
         works[fact.workId]!.worked += length;
         clients[fact.clientId]!.worked += length;
+        final nodes = _timedNodes(fact);
+        for (final n in nodes) {
+          n.worked += length;
+          final first = n.firstWorkAt;
+          if (first == null || a.isBefore(first)) n.firstWorkAt = a.toUtc();
+        }
+        if (nodes.isNotEmpty) {
+          nodes.last.stages[fact.stageName]!
+            ..worked += length
+            ..intervals += 1;
+        }
       }
       // Walk the stretch hour by hour (wall clock) for the heatmap, and by
       // work day for the periods and the concurrency chart.

@@ -43,12 +43,7 @@ class StatsView extends StatefulWidget {
     this.workId,
     this.filter,
     this.clients = const {},
-    this.loadTree,
   });
-
-  /// The detail table's rows for a period (and the filter); null until
-  /// the store gives them — the table is then empty.
-  final Future<List<StatsNode>> Function(DateTime from, DateTime to)? loadTree;
 
   /// The shared filter's client and work (null = all).
   final int? clientId;
@@ -79,15 +74,23 @@ class StatsView extends StatefulWidget {
 final statsAsTable = ValueNotifier<bool>(false);
 
 class _StatsViewState extends State<StatsView> {
-  List<StatsNode> _tree = const [];
+  /// The detail table's tree (its clients); null while it loads — a
+  /// big document takes a moment.
+  List<StatsNode>? _tree;
 
   Future<void> _loadTree() async {
-    final load = widget.loadTree;
-    if (load == null) return;
+    final r = widget.reader;
+    if (r == null) return;
     final to = widget.now;
     final from = DateTime(to.year, to.month, to.day - _range.days);
-    final rows = await load(from, to);
-    if (mounted) setState(() => _tree = rows);
+    setState(() => _tree = null);
+    final root = await r.statsTree(
+      from: from,
+      to: to,
+      clientId: widget.clientId,
+      workId: widget.workId,
+    );
+    if (mounted) setState(() => _tree = root.children);
   }
 
   StatsBucket _bucket = StatsBucket.week;
@@ -110,6 +113,7 @@ class _StatsViewState extends State<StatsView> {
     if (widget.visible &&
         (_loaded != widget.refresh || _stats == null || refilter)) {
       unawaited(_load());
+      if (statsAsTable.value) unawaited(_loadTree());
     }
   }
 
@@ -207,8 +211,18 @@ class _StatsViewState extends State<StatsView> {
           Expanded(
             child: ValueListenableBuilder<bool>(
               valueListenable: statsAsTable,
-              builder: (context, table, summary) =>
-                  table ? StatsTreeTable(roots: _tree) : summary!,
+              builder: (context, table, summary) => table
+                  ? switch (_tree) {
+                      null => const Center(
+                        key: Key('stats-tree-loading'),
+                        child: CircularProgressIndicator(),
+                      ),
+                      final roots => StatsTreeTable(
+                        roots: roots,
+                        clientOf: (id) => widget.clients[id],
+                      ),
+                    }
+                  : summary!,
               child: s == null
                   ? const SizedBox.shrink()
                   : OwnScroll(

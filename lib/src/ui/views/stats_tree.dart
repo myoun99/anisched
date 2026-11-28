@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/catalogue.dart';
+import '../../models/stats.dart';
 import '../client_chip.dart';
 import '../fit_text.dart';
 import '../format.dart';
@@ -8,64 +8,6 @@ import '../palette.dart';
 import '../text/strings.dart';
 import '../theme.dart';
 import '../widgets.dart';
-
-/// The statistics' detail table rows, client → work → episode → unit (a
-/// part × stage, or an episode's loose cuts × stage) → cut. The view's
-/// own shape; the store's tree maps onto it.
-enum StatsLevel { client, work, episode, unit, cut }
-
-class StatsNode {
-  const StatsNode({
-    required this.key,
-    required this.level,
-    required this.label,
-    this.clientColor,
-    this.stageName,
-    this.cuts = 0,
-    this.worked = Duration.zero,
-    this.pay = 0,
-    this.currency = 'JPY',
-    this.dueKept = 0,
-    this.dueTotal = 0,
-    this.retakes = 0,
-    this.children = const [],
-    this.workedByStage,
-    this.intervals,
-    this.retakeRound,
-    this.status,
-  });
-
-  final String key;
-  final StatsLevel level;
-  final String label;
-  final Color? clientColor;
-  final String? stageName;
-
-  /// Cuts, a shared group counting once.
-  final int cuts;
-  final Duration worked;
-  final int pay;
-  final String currency;
-
-  /// Deadlines kept of those due (handed in on time).
-  final int dueKept;
-  final int dueTotal;
-  final int retakes;
-  final List<StatsNode> children;
-
-  /// A cut's own: time per stage, timer runs, its take, its state.
-  final Map<String, Duration>? workedByStage;
-  final int? intervals;
-  final int? retakeRound;
-  final TaskStatus? status;
-
-  Duration? get perCut =>
-      cuts == 0 ? null : Duration(seconds: worked.inSeconds ~/ cuts);
-
-  /// Pay per hour worked; null with no time.
-  double? get hourly =>
-      worked.inMinutes == 0 ? null : pay / (worked.inMinutes / 60);
-}
 
 /// The table's columns, most telling first: a narrow screen shows the
 /// first ones on the row, the rest when the row opens.
@@ -88,28 +30,35 @@ enum StatsColumn {
     retakes => S.colRetakes.t,
   };
 
-  /// The value a sort goes by.
+  /// The value a sort goes by (several currencies: their sum, a rough
+  /// order only).
   num sortValue(StatsNode n) => switch (this) {
     cuts => n.cuts,
     worked => n.worked.inSeconds,
     perCut => n.perCut?.inSeconds ?? -1,
-    pay => n.pay,
-    hourly => n.hourly ?? -1,
-    dueKept => n.dueTotal == 0 ? -1 : n.dueKept / n.dueTotal,
-    retakes => n.retakes,
+    pay => n.earned.values.fold(0, (a, b) => a + b),
+    hourly => n.perHour.values.fold(0.0, (a, b) => a + b),
+    dueKept => n.onTimeRate ?? -1,
+    retakes => n.retaken,
   };
 
   String text(StatsNode n) => switch (this) {
     cuts => '${n.cuts}',
     worked => formatWorked(n.worked),
     perCut => n.perCut == null ? '—' : formatWorked(n.perCut!),
-    pay => formatMoney(n.currency, n.pay),
-    hourly =>
-      n.hourly == null ? '—' : formatMoney(n.currency, n.hourly!.round()),
-    dueKept => n.dueTotal == 0 ? '—' : '${n.dueKept}/${n.dueTotal}',
-    retakes => '${n.retakes}',
+    pay => moneyText(n.earned),
+    hourly => moneyText({
+      for (final e in n.perHour.entries) e.key: e.value.round(),
+    }),
+    dueKept => n.withDue == 0 ? '—' : '${n.onTime}/${n.withDue}',
+    retakes => '${n.retaken}',
   };
 }
+
+/// Amounts in several currencies side by side: 「¥12,000 · ₩30,000」.
+String moneyText(Money m) => m.isEmpty
+    ? '—'
+    : [for (final e in m.entries) formatMoney(e.key, e.value)].join(' · ');
 
 /// The statistics as a table that opens down the tree: only the rows in
 /// sight are built. A column's head sorts by it, within each level (a
@@ -117,9 +66,13 @@ enum StatsColumn {
 /// narrow screen it also shows, under it, the columns that did not fit;
 /// a cut shows its time per stage, timer runs, take and state.
 class StatsTreeTable extends StatefulWidget {
-  const StatsTreeTable({super.key, required this.roots});
+  const StatsTreeTable({super.key, required this.roots, this.clientOf});
 
+  /// The top rows (the tree's clients).
   final List<StatsNode> roots;
+
+  /// A client's chip by id; null: its name alone.
+  final ClientTag? Function(int id)? clientOf;
 
   @override
   State<StatsTreeTable> createState() => _StatsTreeTableState();
@@ -142,6 +95,8 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
     return _descending ? list.reversed.toList() : list;
   }
 
+  static String _key(StatsNode n) => '${n.kind.name}:${n.id}';
+
   /// The rows in sight order: each node, its opened line (when it has
   /// something to say), then its children when open.
   List<(StatsNode, int, bool)> _rows(int shown) {
@@ -149,9 +104,9 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
     void walk(List<StatsNode> nodes, int depth) {
       for (final n in _sorted(nodes)) {
         out.add((n, depth, false));
-        if (!_open.contains(n.key)) continue;
+        if (!_open.contains(_key(n))) continue;
         final hidden = shown < StatsColumn.values.length;
-        if (hidden || n.level == StatsLevel.cut) out.add((n, depth, true));
+        if (hidden || n.kind == StatsNodeKind.cut) out.add((n, depth, true));
         walk(n.children, depth + 1);
       }
     }
@@ -248,37 +203,46 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
     );
   }
 
-  Widget _name(BuildContext context, StatsNode n) => switch (n.level) {
-    StatsLevel.client => ClientChip((
-      name: n.label,
-      color: n.clientColor ?? clientSwatches.first,
-    )),
-    StatsLevel.unit => Row(
-      mainAxisSize: MainAxisSize.min,
-      spacing: 6,
-      children: [
-        Dot(stageColor(n.stageName ?? '')),
-        Flexible(child: FitText(n.label)),
-      ],
-    ),
-    StatsLevel.work || StatsLevel.episode => FitText(
-      n.label,
-      style: const TextStyle(fontWeight: FontWeight.w700),
-    ),
-    StatsLevel.cut => FitText(n.label),
-  };
+  Widget _name(BuildContext context, StatsNode n) {
+    final label = n.label;
+    return switch (n.kind) {
+      StatsNodeKind.client => switch (n.id) {
+        final int id when widget.clientOf?.call(id) != null => ClientChip(
+          widget.clientOf!(id)!,
+        ),
+        _ => FitText(label ?? '—'),
+      },
+      // A part's stages show on its cuts (their bars).
+      StatsNodeKind.part => FitText(
+        label == null ? S.noPart.t : S.partTitle.f({'p': label}),
+      ),
+      StatsNodeKind.work || StatsNodeKind.episode => FitText(
+        label ?? '—',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      StatsNodeKind.cut || StatsNodeKind.all => Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: [
+          for (final stage in n.stages.keys) Dot(stageColor(stage)),
+          Flexible(child: FitText(label ?? '')),
+        ],
+      ),
+    };
+  }
 
   Widget _row(BuildContext context, StatsNode n, int depth, int shown) {
     final c = AppColors.of(context);
-    final open = _open.contains(n.key);
+    final key = _key(n);
+    final open = _open.contains(key);
     final opens =
         n.children.isNotEmpty ||
-        n.level == StatsLevel.cut ||
+        n.kind == StatsNodeKind.cut ||
         shown < StatsColumn.values.length;
     return InkWell(
-      key: Key('stats-row-${n.key}'),
+      key: Key('stats-row-$key'),
       onTap: opens
-          ? () => setState(() => open ? _open.remove(n.key) : _open.add(n.key))
+          ? () => setState(() => open ? _open.remove(key) : _open.add(key))
           : null,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -332,10 +296,13 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
   Widget _openLine(BuildContext context, StatsNode n, int depth, int shown) {
     final c = AppColors.of(context);
     final hidden = StatsColumn.values.skip(shown);
-    final byStage = n.workedByStage ?? const {};
-    final most = byStage.values.fold(Duration.zero, (a, b) => a > b ? a : b);
+    final stages = n.stages;
+    final most = stages.values.fold(
+      Duration.zero,
+      (a, b) => a > b.worked ? a : b.worked,
+    );
     return Container(
-      key: Key('stats-open-${n.key}'),
+      key: Key('stats-open-${_key(n)}'),
       color: c.panelAlt,
       padding: EdgeInsets.fromLTRB(34.0 + depth * 14, 6, 12, 8),
       child: Column(
@@ -361,71 +328,70 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
                   ),
               ],
             ),
-          if (n.level == StatsLevel.cut) ...[
-            for (final MapEntry(key: stage, value: d) in byStage.entries)
-              Row(
-                spacing: 8,
-                children: [
-                  SizedBox(
-                    width: 52,
-                    child: FitText(
-                      stageText(stage),
-                      style: TextStyle(fontSize: 11, color: c.muted),
-                    ),
+          // A cut: each stage's time (a bar in its colour), timer runs,
+          // take and state.
+          for (final MapEntry(key: stage, value: st) in stages.entries)
+            Row(
+              spacing: 8,
+              children: [
+                SizedBox(
+                  width: 52,
+                  child: FitText(
+                    stageText(stage),
+                    style: TextStyle(fontSize: 11, color: c.muted),
                   ),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, box) => Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          key: Key('stats-stage-$stage'),
-                          height: 8,
-                          width: most == Duration.zero
-                              ? 0
-                              : box.maxWidth * d.inSeconds / most.inSeconds,
-                          decoration: BoxDecoration(
-                            color: stageColor(stage),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, box) => Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        key: Key('stats-stage-$stage'),
+                        height: 8,
+                        width: most == Duration.zero
+                            ? 0
+                            : box.maxWidth *
+                                  st.worked.inSeconds /
+                                  most.inSeconds,
+                        decoration: BoxDecoration(
+                          color: stageColor(stage),
+                          borderRadius: BorderRadius.circular(3),
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(
-                    width: 44,
-                    child: Text(
-                      formatWorked(d),
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 11),
-                    ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    formatWorked(st.worked),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 11),
                   ),
-                ],
-              ),
-            Wrap(
-              spacing: 14,
-              children: [
-                if (n.intervals case final k?)
-                  Text(
-                    S.timerRuns.f({'n': k}),
+                ),
+                SizedBox(
+                  width: 64,
+                  child: FitText(
+                    S.timerRuns.f({'n': st.intervals}),
                     style: TextStyle(fontSize: 11, color: c.muted),
                   ),
-                if (n.retakeRound case final r? when r > 1)
+                ),
+                if (st.take > 1)
                   Text(
-                    S.retakeRound.f({'n': r}),
+                    S.retakeRound.f({'n': st.take}),
                     style: TextStyle(fontSize: 11, color: c.retake),
                   ),
-                if (n.status case final st?)
+                if (st.status case final status?)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     spacing: 4,
                     children: [
-                      Dot(c.of(st)),
-                      Text(st.label, style: const TextStyle(fontSize: 11)),
+                      Dot(c.of(status)),
+                      Text(status.label, style: const TextStyle(fontSize: 11)),
                     ],
                   ),
               ],
             ),
-          ],
         ],
       ),
     );
