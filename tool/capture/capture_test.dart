@@ -140,6 +140,29 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 5: one cut pulled (引き上げ), shown through the filter, its
+  // line opened; then two lines picked to show the bar's 빠짐 button.
+  'dropped': (
+    AppView.list,
+    (t, size) async {
+      Folds.cutsInDetails.value = true;
+      await t.tap(find.byKey(const Key('filter-button')));
+      await t.pump();
+      await t.tap(find.text('빠진 것도 보기'));
+      await t.pump();
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      final lines = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('line-'),
+      );
+      await t.tap(lines.at(1));
+      await t.pump();
+      await t.longPress(lines.at(0));
+      await t.pump();
+    },
+  ),
   // Round 4: the statistics tab, loaded.
   'stats': (
     AppView.stats,
@@ -235,6 +258,10 @@ void main() {
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
+          if (base == 'dropped') {
+            final g = store.partGroups().where((g) => g.tasks.length > 2);
+            store.handOff([g.elementAt(1).tasks.first.id]);
+          }
           final shot = GlobalKey();
           await t.pumpWidget(
             RepaintBoundary(
