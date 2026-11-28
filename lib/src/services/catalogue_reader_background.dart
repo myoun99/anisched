@@ -6,6 +6,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/dashboard.dart';
 import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
@@ -174,6 +175,19 @@ class BackgroundCatalogueReader implements CatalogueReader {
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
       _ask((s) => s.today(horizonDays: horizonDays));
+
+  @override
+  Future<Dashboard> dashboard({
+    int horizonDays = 4,
+    int dueWithinDays = 7,
+    int dueLimit = 8,
+  }) => _ask(
+    (s) => s.dashboard(
+      horizonDays: horizonDays,
+      dueWithinDays: dueWithinDays,
+      dueLimit: dueLimit,
+    ),
+  );
 
   @override
   Future<MonthlyTotals> monthlyTotals(int year, int month) =>
