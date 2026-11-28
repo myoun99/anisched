@@ -283,70 +283,78 @@ void main() {
   setUpAll(loadFonts);
   final only = Platform.environment['CAPTURE']?.split(',').toSet();
 
-  // Round 8: bars of 1–6 days, drawn 4× — the label runs edge to edge
-  // (the end grips lie over it), condensing before it is cut.
-  for (final dark in [false, true]) {
-    final name = dark ? 'bar-zoom-dark' : 'bar-zoom';
-    if (only != null && !only.contains('bar-zoom')) continue;
-    testWidgets(name, (t) async {
-      const size = Size(420, 300);
-      t.view.physicalSize = size * 4;
-      t.view.devicePixelRatio = 4;
-      addTearDown(t.view.reset);
-      final shot = GlobalKey();
-      final window = ChartWindow(DateTime(2026, 11, 20), 7);
-      await t.pumpWidget(
-        RepaintBoundary(
-          key: shot,
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: dark ? AppTheme.dark() : AppTheme.light(),
-            home: Builder(
-              builder: (context) => Scaffold(
-                body: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    children: [
-                      for (final days in [1, 2, 3, 4, 6])
-                        SizedBox(
-                          height: ChartBoard.rowExtent,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: AppColors.of(context).line,
-                                ),
-                              ),
-                            ),
-                            child: ChartBar(
-                              window: window,
-                              start: DateTime(2026, 11, 20),
-                              end: DateTime(2026, 11, 19 + days),
-                              color: Theme.of(context).colorScheme.primary,
-                              textColor: Colors.white,
-                              label: '별빛 정류장 #07 · 원화 · 4 cut',
-                              onDates: (a, b) {},
-                            ),
-                          ),
-                        ),
+  // Round 8: bars drawn 4× on the chart (today's column included): grips
+  // 〈 〉 at the ends, the label between them; short bars by proposal.
+  for (final style in ShortBarGrips.values) {
+    for (final dark in [false, true]) {
+      final name = 'bar-zoom-${style.name}${dark ? '-dark' : ''}';
+      if (only != null && !only.contains('bar-zoom')) continue;
+      testWidgets(name, (t) async {
+        shortBarGrips = style;
+        addTearDown(() => shortBarGrips = ShortBarGrips.outside);
+        const size = Size(420, 300);
+        t.view.physicalSize = size * 4;
+        t.view.devicePixelRatio = 4;
+        addTearDown(t.view.reset);
+        final shot = GlobalKey();
+        final window = ChartWindow(DateTime(2026, 11, 20), 8);
+        // (days, opened)
+        const rows = [
+          (1, true),
+          (1, false),
+          (2, false),
+          (3, false),
+          (6, false),
+        ];
+        await t.pumpWidget(
+          RepaintBoundary(
+            key: shot,
+            child: MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: dark ? AppTheme.dark() : AppTheme.light(),
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: ChartBoard(
+                    window: window,
+                    today: DateTime(2026, 11, 21, 14),
+                    restWeekdays: const {DateTime.saturday, DateTime.sunday},
+                    labelWidth: 56,
+                    rowCount: rows.length,
+                    label: (context, r) => Center(
+                      child: Text(
+                        '${rows[r].$1}d${rows[r].$2 ? ' ●' : ''}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                    bars: (context, r) => [
+                      ChartBar(
+                        window: window,
+                        start: DateTime(2026, 11, 21),
+                        end: DateTime(2026, 11, 20 + rows[r].$1),
+                        color: Theme.of(context).colorScheme.primary,
+                        textColor: Colors.white,
+                        label: '별빛 정류장 #07 · 원화 · 4 cut',
+                        selected: rows[r].$2,
+                        onDates: (a, b) {},
+                      ),
                     ],
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await t.pump();
-      final boundary =
-          shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-      await t.runAsync(() async {
-        final image = await boundary.toImage(pixelRatio: 4);
-        final png = await image.toByteData(format: ui.ImageByteFormat.png);
-        File('${out.path}/$name.png')
-            .writeAsBytesSync(png!.buffer.asUint8List());
+        );
+        await t.pump();
+        final boundary =
+            shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+        await t.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 4);
+          final png = await image.toByteData(format: ui.ImageByteFormat.png);
+          File('${out.path}/$name.png')
+              .writeAsBytesSync(png!.buffer.asUint8List());
+        });
       });
-    });
+    }
   }
 
   for (final dark in [false, true]) {

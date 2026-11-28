@@ -18,6 +18,7 @@ class AnischedApp extends StatefulWidget {
     this.timer,
     this.session,
     this.remote,
+    this.onSample,
   });
 
   /// Reads the user's catalogue; null shows empty views (widget tests).
@@ -34,6 +35,9 @@ class AnischedApp extends StatefulWidget {
 
   /// The last resume check.
   final ValueListenable<RemoteCheck?>? remote;
+
+  /// Offered on an empty document (the web preview); see [AppShell].
+  final void Function(CatalogueStore store)? onSample;
 
   @override
   State<AnischedApp> createState() => _AnischedAppState();
@@ -99,6 +103,7 @@ class _AnischedAppState extends State<AnischedApp> with WidgetsBindingObserver {
           timer: widget.timer,
           session: widget.session,
           remote: widget.remote,
+          onSample: widget.onSample,
         ),
       ),
     );
