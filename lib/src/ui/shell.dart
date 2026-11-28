@@ -162,6 +162,7 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _timerTask = widget.timer?.running()?.taskId;
+    if (_timerTask == null) unawaited(_restoreTimerTarget());
     if (widget.store case final s?) {
       episodeStyle.value = s.settings.episodeStyle;
     }
@@ -304,6 +305,14 @@ class _AppShellState extends State<AppShell> {
     return id == null ? null : _clients[id];
   }
 
+  /// The cut last put on the time bar, back on it (paused).
+  Future<void> _restoreTimerTarget() async {
+    final id = await widget.reader?.timerTarget();
+    if (id != null && mounted && _timerTask == null) {
+      setState(() => _timerTask = id);
+    }
+  }
+
   /// The task the timer last ran on, for resume.
   int? _timerTask;
 
@@ -343,7 +352,7 @@ class _AppShellState extends State<AppShell> {
               timer.toggle(taskId: id);
               setState(() => _timerTask = id);
             },
-      onPickCut: target == null ? null : () => _pickTimerCut(target.$1),
+      onPickCut: timer == null ? null : () => _pickTimerCut(target?.$1),
       onPickWork: target == null ? null : () => _pickTimerWork(target.$2),
       onPickEpisode: target == null
           ? null
@@ -379,21 +388,30 @@ class _AppShellState extends State<AppShell> {
   }
 
   /// The time bar's cut: the others of its episode, in cut order, the
-  /// current one in the middle.
-  Future<void> _pickTimerCut(TaskRow now) async {
+  /// current one in the middle; with none on the bar yet, every cut with
+  /// work left.
+  Future<void> _pickTimerCut(TaskRow? now) async {
     final reader = widget.reader;
     if (reader == null) return;
-    final rows = [now, ...await reader.tasksBeside(now.id)]
-      ..sort((a, b) {
-        final k = naturalSortKey(taskLabel(a))
-            .compareTo(naturalSortKey(taskLabel(b)));
-        return k != 0 ? k : a.stageName.compareTo(b.stageName);
-      });
+    final rows =
+        [
+          if (now != null) ...[
+            now,
+            ...await reader.tasksBeside(now.id),
+          ] else
+            for (final g in _groups)
+              for (final t in g.tasks)
+                if (t.status.needsWork) t,
+        ]..sort((a, b) {
+          final k = naturalSortKey(taskLabel(a))
+              .compareTo(naturalSortKey(taskLabel(b)));
+          return k != 0 ? k : a.stageName.compareTo(b.stageName);
+        });
     if (!mounted) return;
     final picked = await showCenteredPicker<int>(
       context: context,
       title: S.cutName.t,
-      current: now.id,
+      current: now?.id,
       searchable: rows.length > 12,
       search: (q) async => [
         for (final t in rows)
@@ -474,6 +492,8 @@ class _AppShellState extends State<AppShell> {
       taskId,
       autoStart: widget.store?.settings.timerAutoStart ?? false,
     );
+    // Remembered for the next start (not started then, by itself).
+    widget.store?.setTimerTarget(taskId);
     setState(() => _timerTask = taskId);
   }
 
