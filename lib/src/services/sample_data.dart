@@ -65,7 +65,12 @@ void fillSample(CatalogueStore store, DateTime now) {
   const t = TaskStatus.retake;
   const d = TaskStatus.done;
 
-  final star = store.createWork('별빛 정류장');
+  // Each client its own colour, so the views show what colours do.
+  final sky = store.addClient('스튜디오 하늘', color: 0xFF5B8DEF);
+  final works = store.addClient('애니웍스', color: 0xFFF29A4B);
+  final motion = store.addClient('모션랩', color: 0xFF4CB782);
+
+  final star = store.createWork('별빛 정류장', clientId: sky);
   final star7 = store.addEpisode(star, '#07');
   part(star, star7, 'B', 'LO', -6, const Rate(RateUnit.fixed, 3000), [
     ('C030', d, 1, '2+06', null),
@@ -96,7 +101,7 @@ void fillSample(CatalogueStore store, DateTime now) {
     plan: (-1, 6),
   );
 
-  final riko = store.createWork('마법소녀 리코');
+  final riko = store.createWork('마법소녀 리코', clientId: works);
   final riko11 = store.addEpisode(riko, '#11');
   part(riko, riko11, 'B', '원화/작감', 1, const Rate(RateUnit.fixed, 2000), [
     ('C108', s, 1, '3+18', null),
@@ -105,7 +110,7 @@ void fillSample(CatalogueStore store, DateTime now) {
     ('C115', w, 1, '2+06', null),
   ]);
 
-  final wolf = store.createWork('푸른 늑대의 숲');
+  final wolf = store.createWork('푸른 늑대의 숲', clientId: sky);
   final movie = store.addEpisode(wolf, '극장판');
   part(wolf, movie, 'A', '원화', 3, const Rate(RateUnit.perSecond, 10000), [
     ('C0290', d, 2, '4+00', null),
@@ -113,10 +118,21 @@ void fillSample(CatalogueStore store, DateTime now) {
     ('C0295', w, 1, '2+12', null),
   ]);
 
-  final mv = store.createWork('여름 끝에서', currency: 'KRW');
+  final mv = store.createWork('여름 끝에서', currency: 'KRW', clientId: motion);
   final mvEp = store.addEpisode(mv, 'MV');
   final conte = stage(mv, '콘티');
   store.setEpisodeRate(mvEp, conte, const Rate(RateUnit.fixed, 900000));
   final sb = store.addStoryboard(mvEp, '콘티');
   store.setStatus(store.addTask(conte, storyboardId: sb, dueAt: at(6)), w);
+
+  // Events: one at a time of day, two all day.
+  store
+    ..addEvent(
+      episodeId: star7,
+      date: at(2),
+      timeMinutes: 14 * 60,
+      title: '아후레코',
+    )
+    ..addEvent(episodeId: riko11, date: at(5), title: '납품')
+    ..addEvent(episodeId: movie, date: at(1), title: '작화 회의');
 }
