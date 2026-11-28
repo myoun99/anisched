@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
 import '../hold.dart';
