@@ -16,7 +16,14 @@ class CountStepper extends StatelessWidget {
     required this.controller,
     required this.fieldKey,
     required this.onChanged,
+    this.focusNode,
+    this.onSubmitted,
   });
+
+  final FocusNode? focusNode;
+
+  /// Enter in the field.
+  final VoidCallback? onSubmitted;
 
   final String label;
   final String preview;
@@ -75,6 +82,10 @@ class CountStepper extends StatelessWidget {
                   onTapOutside: unfocusOutside,
                   key: fieldKey,
                   controller: controller,
+                  focusNode: focusNode,
+                  onSubmitted: onSubmitted == null
+                      ? null
+                      : (_) => onSubmitted!(),
                   textAlign: TextAlign.center,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],

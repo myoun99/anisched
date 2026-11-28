@@ -73,6 +73,10 @@ class PathPromptPicker implements DocumentPicker {
   }
 }
 
+/// A name typed for Save As, as the file is to be called (before its
+/// extension): trimmed, a typed 「.anisched」 taken off.
+String saveAsName(String typed) => documentDisplayName(typed.trim()).trim();
+
 /// The document's name in the top bar (「무제」 before it is saved
 /// somewhere), a small save-state icon in a fixed slot, and the file
 /// menu: 새로 · 열기 · 다른 이름으로 저장 · recent files.
@@ -99,11 +103,8 @@ class DocumentMenu extends StatelessWidget {
   /// The last [DocumentSession.resume] answer, for the state icon.
   final RemoteCheck? remote;
 
-  static String displayName(DocumentRef? ref) {
-    if (ref == null) return S.untitled.t;
-    final n = ref.name;
-    return n.endsWith('.anisched') ? n.substring(0, n.length - 9) : n;
-  }
+  static String displayName(DocumentRef? ref) =>
+      ref == null ? S.untitled.t : documentDisplayName(ref.name);
 
   /// Runs [job]; a failure shows its dialog, which can try again or put
   /// [ref] back from this device's last save.
@@ -128,14 +129,24 @@ class DocumentMenu extends StatelessWidget {
     }
   }
 
-  Future<void> _saveAs(BuildContext context) => _run(
-    context,
-    () => picker.saveAs(
+  /// 「다른 이름으로 저장」: the name first, in the app's own small window
+  /// (the name alone; 「.anisched」 shown faint, never typed), then the
+  /// platform's place.
+  Future<void> _saveAs(BuildContext context) async {
+    final typed = await askName(
       context,
-      session,
-      '${displayName(session.document)}.anisched',
-    ),
-  );
+      title: S.fileSave.t,
+      initial: displayName(session.document),
+      suffix: '.$documentExtension',
+      icon: Icons.save_as_outlined,
+    );
+    final name = typed == null ? '' : saveAsName(typed);
+    if (name.isEmpty || !context.mounted) return;
+    await _run(
+      context,
+      () => picker.saveAs(context, session, withDocumentExtension(name)),
+    );
+  }
 
   Future<void> _open(BuildContext context, DocumentRef? known) async {
     final ref = known ?? await picker.pickOpen(context);
