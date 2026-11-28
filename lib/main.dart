@@ -14,6 +14,7 @@ import 'src/ui/text/strings.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/undo.dart';
 import 'src/ui/views/chart.dart';
+import 'src/ui/views/stats_view.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +51,9 @@ Future<Widget> _start() async {
   // The charts' month view, as this device last left it.
   chartMonthView.value = device.monthView;
   chartMonthView.addListener(() => device.monthView = chartMonthView.value);
+  // The statistics as summary or table, as this device last left them.
+  statsAsTable.value = device.statsDetail;
+  statsAsTable.addListener(() => device.statsDetail = statsAsTable.value);
   themeModeSetting.value = switch (device.themeMode) {
     ThemeChoice.system => ThemeMode.system,
     ThemeChoice.light => ThemeMode.light,

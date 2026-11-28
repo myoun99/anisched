@@ -55,17 +55,14 @@ void main() {
     expect(find.text('애니웍스 2'), findsWidgets);
   });
 
-  testWidgets('a used client cannot be deleted; an unused one can', (
-    t,
-  ) async {
+  testWidgets('a used client cannot be deleted; an unused one can', (t) async {
     final store = sampleCatalogue(now);
     final spare = store.addClient('빈 회사');
     await pumpShell(t, store);
     final used = clientId(store, '애니웍스');
     await openClients(t);
-    IconButton delete(int id) => t.widget<IconButton>(
-      find.byKey(Key('preset-delete-$id')),
-    );
+    IconButton delete(int id) =>
+        t.widget<IconButton>(find.byKey(Key('preset-delete-$id')));
     expect(delete(used).onPressed, isNull, reason: 'in use: greyed');
     expect(find.byTooltip('사용 중'), findsWidgets);
     expect(delete(spare).onPressed, isNotNull);
