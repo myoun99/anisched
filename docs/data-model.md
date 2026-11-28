@@ -399,3 +399,4 @@
   `addEvent` · `updateEvent`(전부 다시 씀) · `deleteEvent` · `events(from:, to:)`(리더에도) = 화별로 묶은 목록(null 키 = 화 없는 이벤트),
   날짜 → 하루 종일 먼저 → 시각 순. 보관된 화·작품의 이벤트는 빠짐. 화 없는 이벤트를 둘지는 유저 확인 전(둘 다 받음).
 - 남은 컷: `PartStageRow.toSubmit` = 아직 제출 안 한 컷(완료 포함) — 타임라인 행 오른쪽 숫자.
+- 예시 데이터: `fillSample(store, now)`(services/sample_data.dart) — 웹 첫 화면 「예시 데이터 넣기」와 테스트(`test/support/sample_catalogue.dart` 는 이걸 부르기만)가 같은 하나를 씀.
