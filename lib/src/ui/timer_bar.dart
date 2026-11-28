@@ -214,7 +214,7 @@ class _TimerBarState extends State<TimerBar> {
                         Flexible(
                           flex: 2,
                           child: FitText(
-                            g.stageName,
+                            stageText(g.stageName),
                             style: TextStyle(color: c.faint, fontSize: 12),
                           ),
                         ),

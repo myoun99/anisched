@@ -259,7 +259,7 @@ class _TimelineLabel extends StatelessWidget {
                   style: const TextStyle(fontSize: 13),
                 ),
                 FitText(
-                  '${g.stageName} · ${groupTitle(g)}',
+                  '${stageText(g.stageName)} · ${groupTitle(g)}',
                   tooltip: false,
                   style: TextStyle(fontSize: 11, color: c.muted),
                 ),

@@ -417,7 +417,7 @@ class _StatsViewState extends State<StatsView> {
       child: _rowsOrEmpty(context, [
         for (final p in paces)
           _BarRow(
-            label: p.stageName,
+            label: stageText(p.stageName),
             value: '${one(p.overall.perDay)} · ${one(p.recent.perDay)}',
             bar: Column(
               mainAxisSize: MainAxisSize.min,

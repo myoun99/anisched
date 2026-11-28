@@ -270,7 +270,7 @@ class _SettingsViewState extends State<SettingsView> {
                     children: [
                       Expanded(
                         child: FitText(
-                          p.stageName,
+                          stageText(p.stageName),
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),

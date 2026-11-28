@@ -559,7 +559,7 @@ class _RegisterViewState extends State<RegisterView> {
                         () => v == true ? _stages.add(s) : _stages.remove(s),
                       ),
                     ),
-                    Text(s, style: const TextStyle(fontSize: 13)),
+                    Text(stageText(s), style: const TextStyle(fontSize: 13)),
                   ],
                 ),
               ),

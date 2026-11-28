@@ -1,6 +1,7 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/ui/format.dart';
+import 'package:anisched/src/ui/text/strings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/sample_catalogue.dart';
@@ -92,5 +93,18 @@ void main() {
     expect(episodeNumberOf('#07'), '07');
     expect(episodeNumberOf(' 12 '), '12');
     expect(episodeNumberOf('#SP'), '#SP');
+  });
+
+  test('stages read in the user language; typed names stay', () {
+    addTearDown(() => appLang.value = Lang.ko);
+    appLang.value = Lang.ja;
+    expect(stageText('원화/작감'), '原画/作監');
+    expect(stageText('LO'), 'LO');
+    expect(stageText('리테이크'), 'リテイク');
+    appLang.value = Lang.en;
+    expect(stageText('동화/동검'), 'IB/IBC');
+    expect(stageText('내 공정'), '내 공정');
+    appLang.value = Lang.ko;
+    expect(stageText('원화/작감'), '원화/작감');
   });
 }

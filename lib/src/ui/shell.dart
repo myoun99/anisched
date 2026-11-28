@@ -275,7 +275,7 @@ class _AppShellState extends State<AppShell> {
               value: t.id,
               title: taskLabel(t),
               note: [
-                t.stageName,
+                stageText(t.stageName),
                 if (t.partLabel case final p?) S.partTitle.f({'p': p}),
               ].join(' · '),
             ),

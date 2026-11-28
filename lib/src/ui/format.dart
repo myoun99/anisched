@@ -4,6 +4,7 @@ library;
 
 import '../models/catalogue.dart';
 import '../models/progress.dart';
+import '../models/stage_names.dart';
 import 'text/strings.dart';
 
 extension TaskStatusLabel on TaskStatus {
@@ -161,4 +162,44 @@ String? planReason(PlanSignal s) => switch (s) {
   PlanLateStart() => S.planLateStart.t,
   PlanTight() => S.planTight.t,
   PlanNotStarted() || PlanNone() => null,
+};
+
+/// A stage as the screens show it, in the user's language — Anicel's own
+/// short names for the work and checker axes (原画/作監, KEY/AD, 원화/작감);
+/// a name the user typed stays as typed. The one place a stage is named.
+String stageText(String stored) {
+  final l = stageLabelOf(stored);
+  if (l == null) return stored;
+  final lang = appLang.value;
+  if (l.extra case final e?) {
+    return switch (e) {
+      StageExtra.retake => S.stRetake.t,
+      StageExtra.characterDesign => S.charDesign.t,
+    };
+  }
+  final work = _stageWords[l.work!]![lang.index];
+  final check = l.check;
+  return check == null ? work : '$work/${_checkWords[check]![lang.index]}';
+}
+
+// Anicel's `layerProcessAbbrev` / `layerReviseAbbrev`, in Lang order
+// (en, ja, ko, fr, zh-Hans).
+const _stageWords = {
+  StageWork.conte: ['SB', 'コンテ', '콘티', 'SB', '分镜'],
+  StageWork.layout: ['LO', 'LO', 'LO', 'LO', 'LO'],
+  StageWork.roughKey: ['RK', 'ラフ原', '러프원', 'RK', '粗原'],
+  StageWork.key: ['KEY', '原画', '원화', 'KEY', '原画'],
+  StageWork.inbetween: ['IB', '動画', '동화', 'IB', '中割'],
+  StageWork.finish: ['FIN', '仕上', '시아게', 'FIN', '上色'],
+};
+
+const _checkWords = {
+  StageCheck.direction: ['DIR', '演出', '연출', 'DIR', '演出'],
+  StageCheck.animationDirector: ['AD', '作監', '작감', 'AD', '作监'],
+  StageCheck.chiefAnimationDirector: ['CAD', '総作監', '총작감', 'CAD', '总作监'],
+  StageCheck.director: ['DR', '監督', '감독', 'DR', '导演'],
+  StageCheck.chiefDirector: ['CD', '総監督', '총감독', 'CD', '总导演'],
+  StageCheck.actionAnimationDirector: ['AAD', 'アク作', '액션', 'AAD', '动作'],
+  StageCheck.inbetweenCheck: ['IBC', '動検', '동검', 'IBC', '中检'],
+  StageCheck.cellCheck: ['CC', 'セル検', '셀검', 'CC', '赛检'],
 };

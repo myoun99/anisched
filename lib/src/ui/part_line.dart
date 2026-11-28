@@ -150,7 +150,7 @@ class PartLine extends StatelessWidget {
                                 ),
                               ),
                               TextSpan(
-                                text: '  ${g.stageName}',
+                                text: '  ${stageText(g.stageName)}',
                                 style: TextStyle(color: c.muted),
                               ),
                             ],
