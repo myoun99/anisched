@@ -199,7 +199,16 @@ void main() {
   });
 
   test('roles: picking one creates its stages\' tasks', () {
-    expect(store.roles().map((r) => r.name), ['원화', '연출', '작감', '총작감', '콘티']);
+    expect(store.roles().map((r) => r.name), [
+      '원화',
+      '연출',
+      '작감',
+      '총작감',
+      '콘티',
+      '동화',
+      '시아게',
+      '캐릭터디자인',
+    ]);
     expect(store.roles()[1].stages, ['LO 연출 수정', '원화 연출 수정']);
     expect(store.roles().first.stages, ['LO', '원화']);
     final w = store.createWork('W');
@@ -223,7 +232,7 @@ void main() {
     expect((edited.id, edited.name), (niwon, '제2원화'));
     expect(edited.stages, ['2원', '동화']);
     store.deleteRole(niwon);
-    expect(store.roles(), hasLength(5));
+    expect(store.roles(), hasLength(8));
   });
 
   test('checkboxes: tasks from a list of stages; a role ticks its boxes', () {

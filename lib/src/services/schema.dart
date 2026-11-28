@@ -47,7 +47,68 @@ CREATE TABLE work_intervals (
   const Migration(11, _v11SubmittedDue),
   const Migration(12, _v12DueRevisionsAndWaits),
   const Migration(13, _v13HandedOff),
+  const Migration(14, _v14DoneBeforeSubmitted),
 ];
+
+/// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
+/// finished, still in hand; **submitted** = handed to production, out of
+/// hand. Under the old meaning both 'submitted' and 'done' (checked OK)
+/// had left the user's hands, so both become 'submitted'; the work was
+/// finished by the hand-in at the latest, so `done_at` becomes the first
+/// hand-in. Four stages join the default preset (named as Anicel's labels)
+/// and three single-stage roles.
+void _v14DoneBeforeSubmitted(Database db) {
+  db
+    ..execute('''
+UPDATE tasks SET status = 'submitted',
+  submitted_at = COALESCE(submitted_at, done_at),
+  done_at = COALESCE(submitted_at, done_at)
+WHERE status IN ('submitted', 'done');''')
+    ..execute('''
+UPDATE tasks SET done_at = COALESCE(submitted_at, done_at)
+WHERE status = 'retake' AND submitted_at IS NOT NULL;''');
+  // A literal copy so this step never changes once shipped.
+  final preset = db.select(
+    "SELECT id FROM stage_presets WHERE name = '기본' ORDER BY id LIMIT 1;",
+  );
+  if (preset.isNotEmpty) {
+    final id = preset.first['id'] as int;
+    // Appended, so the stages works already copied keep their places;
+    // the user reorders the preset as they like.
+    final last =
+        db.select(
+              'SELECT MAX(position) AS p FROM stage_preset_items '
+              'WHERE preset_id = ?;',
+              [id],
+            ).first['p']
+            as int;
+    const tail = ['동화', '시아게', '리테이크', '캐릭터디자인'];
+    for (var i = 0; i < tail.length; i++) {
+      db.execute(
+        'INSERT INTO stage_preset_items (preset_id, name, position) '
+        'VALUES (?, ?, ?);',
+        [id, tail[i], last + 1 + i],
+      );
+    }
+  }
+  final start =
+      db
+              .select('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roles;')
+              .first['p']
+          as int;
+  const roles = ['동화', '시아게', '캐릭터디자인'];
+  for (var i = 0; i < roles.length; i++) {
+    db.execute('INSERT INTO roles (name, position) VALUES (?, ?);', [
+      roles[i],
+      start + i,
+    ]);
+    db.execute(
+      'INSERT INTO role_stages (role_id, stage_name, position) '
+      'VALUES (?, ?, 0);',
+      [db.lastInsertRowId, roles[i]],
+    );
+  }
+}
 
 /// A task taken off the user's hands (someone else does it now, 유저
 /// 2026-11-28): out of the lists and the pace, still in the time

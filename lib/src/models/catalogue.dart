@@ -2,12 +2,16 @@
 library;
 
 /// Where a task stands. Stored as [dbName].
+/// In flow order (유저 2026-11-28): received → in progress → **done** (the
+/// work is finished, still in the user's hands) → **submitted** (handed to
+/// production, out of the user's hands); a retake comes back after a
+/// submission. Submitting work not yet done marks it done too.
 enum TaskStatus {
   received('received'),
   inProgress('in_progress'),
+  done('done'),
   submitted('submitted'),
-  retake('retake'),
-  done('done');
+  retake('retake');
 
   const TaskStatus(this.dbName);
 
@@ -97,6 +101,10 @@ const List<String> defaultStageNames = [
   '원화 연출 수정',
   '원화 작감 수정',
   '원화 총작감 수정',
+  '동화',
+  '시아게',
+  '리테이크',
+  '캐릭터디자인',
 ];
 
 /// A key that sorts cut and episode numbers naturally: digit runs are

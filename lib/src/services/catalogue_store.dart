@@ -1566,13 +1566,14 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
       );
   }
 
-  /// Sets [status]. The task's `submitted_at` is its FIRST hand-in (pace
-  /// and statistics count a cut once); handing in a retake stamps that
-  /// take's row instead.
+  /// Sets [status]. `done_at` is when the work was FIRST finished and
+  /// `submitted_at` when it was FIRST handed in (pace, totals and
+  /// statistics count a cut once); handing in a retake stamps that take's
+  /// row instead. Submitting work not marked done marks it done too.
   void setStatus(int taskId, TaskStatus status) {
     final now = _now();
     final submitted = status == TaskStatus.submitted ? 1 : 0;
-    final done = status == TaskStatus.done ? 1 : 0;
+    final done = submitted == 1 || status == TaskStatus.done ? 1 : 0;
     _transaction(() {
       if (submitted == 1) {
         db.execute(
@@ -1596,7 +1597,8 @@ WHERE id = ? AND submitted_at IS NULL;''',
         'UPDATE tasks SET status = ?, '
         'submitted_at = CASE WHEN ? THEN COALESCE(submitted_at, ?) '
         'ELSE submitted_at END, '
-        'done_at = CASE WHEN ? THEN ? ELSE done_at END WHERE id = ?;',
+        'done_at = CASE WHEN ? THEN COALESCE(done_at, ?) ELSE done_at END '
+        'WHERE id = ?;',
         [status.dbName, submitted, now, done, now, taskId],
       );
     });
@@ -1797,9 +1799,9 @@ WHERE (?2 IS NULL OR w.id = ?2)
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
   AND (p.id IS NULL OR p.archived_at IS NULL)
-  AND (?3 = 1 OR t.status <> 'done' OR (t.storyboard_id IS NULL AND EXISTS (
+  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND EXISTS (
     SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
-    WHERE t2.stage_id = t.stage_id AND t2.status <> 'done'
+    WHERE t2.stage_id = t.stage_id AND t2.status <> 'submitted'
       AND (c2.part_id = c.part_id
         OR (c.part_id IS NULL AND c2.part_id IS NULL
             AND c2.episode_id = c.episode_id)))))
@@ -1993,8 +1995,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
 SELECT s.name AS stage_name, COUNT(*) AS cuts
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.submitted_at, t.done_at) >= ?
-  AND COALESCE(t.submitted_at, t.done_at) < ?
+  AND COALESCE(t.done_at, t.submitted_at) >= ?
+  AND COALESCE(t.done_at, t.submitted_at) < ?
 GROUP BY s.name ORDER BY s.name;''',
         [_ms(from), _ms(today.end)],
       ))
@@ -2019,11 +2021,11 @@ GROUP BY s.name ORDER BY s.name;''',
     for (final r in db.select(
       '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts,
-       MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
+       MIN(COALESCE(t.done_at, t.submitted_at)) AS first_at
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
 WHERE t.handed_off_at IS NULL
-  AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
-  AND COALESCE(t.submitted_at, t.done_at) < ?
+  AND COALESCE(t.done_at, t.submitted_at) IS NOT NULL
+  AND COALESCE(t.done_at, t.submitted_at) < ?
 GROUP BY s.name;''',
       [_ms(today.end)],
     )) {

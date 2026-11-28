@@ -150,16 +150,16 @@ void main() {
     final before = reader.generation;
     final pending = reader.partGroups(); // in flight…
     final id = store.partGroups().single.tasks.first.id;
-    store.setStatus(id, TaskStatus.done); // …when this lands
+    store.setStatus(id, TaskStatus.submitted); // …when this lands
     expect(reader.generation, greaterThan(before));
     expect((await pending).single.handed, 1);
   });
 
-  test('done units are hidden unless asked for', () async {
+  test('submitted units are hidden unless asked for', () async {
     final reader = await openReader();
     store.setStatusMany(
       store.partGroups().single.tasks.map((t) => t.id),
-      TaskStatus.done,
+      TaskStatus.submitted,
     );
     expect(await reader.partGroups(), isEmpty);
     expect(await reader.partGroups(includeDone: true), hasLength(1));
