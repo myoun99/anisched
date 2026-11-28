@@ -5,6 +5,7 @@ import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/views/chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -148,5 +149,43 @@ void main() {
     expect(bundleKeyOf(board), board.key);
     final part = groups.firstWhere((g) => g.kind == GroupKind.part);
     expect(bundleKeyOf(part), 'part:${part.partId}');
+  });
+
+  // The timeline bundles as the list does: one row, every stage's bar on
+  // it named by its stage; opened, the stages' own rows under it.
+  testWidgets('the timeline shows a bundle as one row of stage bars', (
+    t,
+  ) async {
+    chartView.value = const ChartView();
+    final s = sampleCatalogue(now);
+    final lo = addGenga(s);
+    // LO's deadline is before its kickoff in the sample: give it a bar.
+    s.setPartKickoff(lo.partId!, lo.stageId, DateTime(2026, 11, 15));
+    await pumpShell(t, s, AppView.timeline);
+    final key = 'bundle:part:${lo.partId}';
+    final genga = s.partGroups().firstWhere(
+      (g) => g.partId == lo.partId && g.stageName == '원화',
+    );
+    expect(find.byKey(Key('tl-label-$key')), findsOneWidget);
+    expect(find.byKey(Key('tl-bar-${lo.key}')), findsNothing);
+    final bars = [
+      for (final g in [lo, genga]) find.byKey(Key('tl-stage-bar-${g.key}')),
+    ];
+    for (final b in bars) {
+      expect(b, findsOneWidget);
+    }
+    // One row: the same height on screen; each named by its stage.
+    expect(
+      t.getRect(bars[0]).center.dy,
+      moreOrLessEquals(t.getRect(bars[1]).center.dy),
+    );
+    expect(t.widget<ChartBar>(bars[0]).label, 'LO');
+    expect(t.widget<ChartBar>(bars[1]).label, '원화');
+
+    // Opened, the stages get rows of their own, as in the list.
+    await t.tap(find.byKey(Key('tl-label-$key')));
+    await t.pump();
+    expect(find.byKey(Key('tl-bar-${lo.key}')), findsOneWidget);
+    expect(find.byKey(Key('tl-bar-${genga.key}')), findsOneWidget);
   });
 }

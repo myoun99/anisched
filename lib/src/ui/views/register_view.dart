@@ -88,6 +88,7 @@ class _RegisterViewState extends State<RegisterView> {
   List<CutRow> _saved = const [];
   final _pickedSaved = <int>{};
   final _picked = <String>{};
+
   /// The first stage's start until set: the day of registering.
   late final DateTime _kickoff = DateTime(
     widget.now.year,

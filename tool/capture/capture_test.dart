@@ -103,6 +103,17 @@ final scenarios = <String, (AppView, Scenario)>{
     },
   ),
 
+  // A bundle's row (LO and 原画 of one part): both bars on it, named.
+  'bundle-timeline': (AppView.timeline, (t, size) async {}),
+  // Zoomed all the way out: the grips stay 16 px, outside short bars.
+  'bundle-timeline-zoomout': (
+    AppView.timeline,
+    (t, size) async {
+      chartView.value = const ChartView(days: ChartView.maxDays);
+      await t.pump();
+    },
+  ),
+
   // Round 3: the date area zoomed out two steps and scrolled a week on.
   'timeline-zoom': (
     AppView.timeline,
@@ -597,6 +608,12 @@ void prepareBundles(CatalogueStore store) {
       if (g.workTitle == '별빛 정류장' && g.stageName == 'LO') g,
   ];
   for (final (i, g) in lo.indexed) {
+    // LO from a week back, so its bar shows beside 原画's.
+    store.setPartKickoff(
+      g.partId!,
+      g.stageId,
+      DateTime(now.year, now.month, now.day - 8),
+    );
     final genga = store.stages(g.workId).firstWhere((s) => s.name == '원화').id;
     store.addTasksForPart(g.partId!, genga);
     store.setPartDue(
