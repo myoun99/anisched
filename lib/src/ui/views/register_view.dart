@@ -470,14 +470,21 @@ class _RegisterViewState extends State<RegisterView> {
                   : [
                       if (_work != null)
                         for (final x in await r.searchEpisodes(_work!.value, q))
-                          (value: x.id, title: x.number, note: x.title),
+                          (
+                            value: x.id,
+                            title: episodeLabel(x.number),
+                            note: x.title,
+                          ),
                     ],
               onPicked: _pickEpisode,
               onCreate: widget.onCreateEpisode == null
                   ? null
                   : (name) async => (
-                      value: widget.onCreateEpisode!(_work!.value, name),
-                      title: name,
+                      value: widget.onCreateEpisode!(
+                        _work!.value,
+                        episodeNumberOf(name),
+                      ),
+                      title: episodeLabel(episodeNumberOf(name)),
                       note: null,
                     ),
             ),

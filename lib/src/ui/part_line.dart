@@ -156,7 +156,7 @@ class PartLine extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          '${g.workTitle} ${g.episodeNumber}',
+                          '${g.workTitle} ${episodeLabel(g.episodeNumber)}',
                           style: TextStyle(fontSize: 12, color: c.muted),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -186,37 +186,48 @@ class PartLine extends StatelessWidget {
                       ],
                     ),
                   ),
-                  DueButton(
-                    key: Key('due-${g.key}'),
-                    due: g.dueAt,
-                    onPicked: onDue,
-                    child: SizedBox(
-                      width: _signalW,
-                      height: 40,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child:
-                                  signal ??
-                                  (signals == null
-                                      ? null
-                                      : SignalLabel(
-                                          due: signals!.due,
-                                          plan: signals!.plan,
-                                        )) ??
-                                  DueText(
-                                    g.dueAt,
-                                    g.status,
-                                    now,
-                                    dayStartMinutes: dayStartMinutes,
-                                  ),
-                            ),
+                  // Only the D label opens the date picker; the rest of the
+                  // slot belongs to the line (open / pick).
+                  SizedBox(
+                    width: _signalW,
+                    height: 40,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: DueButton(
+                        key: Key('due-${g.key}'),
+                        due: g.dueAt,
+                        onPicked: onDue,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 6,
                           ),
-                          RoundBadge(g.dueRevision),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child:
+                                      signal ??
+                                      (signals == null
+                                          ? null
+                                          : SignalLabel(
+                                              due: signals!.due,
+                                              plan: signals!.plan,
+                                            )) ??
+                                      DueText(
+                                        g.dueAt,
+                                        g.status,
+                                        now,
+                                        dayStartMinutes: dayStartMinutes,
+                                      ),
+                                ),
+                              ),
+                              RoundBadge(g.dueRevision),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),

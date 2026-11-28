@@ -70,4 +70,13 @@ void main() {
     final part = groups.firstWhere((g) => g.kind == GroupKind.part);
     expect(groupTitle(part), endsWith('파트'));
   });
+
+  test('an episode number reads with #; a name stays; # is not stored', () {
+    expect(episodeLabel('07'), '#07');
+    expect(episodeLabel('#07'), '#07');
+    expect(episodeLabel('극장판'), '극장판');
+    expect(episodeNumberOf('#07'), '07');
+    expect(episodeNumberOf(' 12 '), '12');
+    expect(episodeNumberOf('#SP'), '#SP');
+  });
 }

@@ -84,4 +84,16 @@ void main() {
       (30, 23, 59),
     );
   });
+
+  testWidgets('only the D label opens the picker, not the space beside it', (
+    t,
+  ) async {
+    final store = await pumpShell(t, AppView.list);
+    final g = store.partGroups().firstWhere((g) => g.partId != null);
+    final d = t.getRect(find.byKey(Key('due-${g.key}')));
+    await t.tapAt(Offset(d.left - 12, d.center.dy));
+    await t.pump();
+    expect(find.byType(DatePickerDialog), findsNothing);
+    expect(find.byKey(Key('details-${g.key}')), findsOneWidget);
+  });
 }
