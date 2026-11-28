@@ -323,37 +323,48 @@ void main() {
     );
   });
 
-  test('a shared pair is two cuts everywhere: count, progress, pace, pay', () {
+  test('a shared pair is one cut in progress and pace, two in pay '
+      '(유저 2026-11-28)', () {
     final w = store.createWork('W');
-    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C2', partLabel: 'B');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C1~C3', partLabel: 'B');
     final lo = stage(w, 'LO');
     store
       ..settings.restWeekdays = {}
       ..setEpisodeRate(r.episodeId, lo, const Rate(RateUnit.fixed, 2500))
       ..addTasksForPart(r.partId!, lo)
       ..setPartDue(r.partId!, lo, DateTime(2026, 11, 28))
-      ..linkSharedCuts(r.cutIds);
+      ..linkSharedCuts([r.cutIds[1], r.cutIds[2]]);
 
-    // Registration does not shrink the count.
-    expect(store.cuts(r.episodeId), hasLength(2));
-    expect(store.parts(r.episodeId).single.cutCount, 2);
+    // Registration keeps every cut's own row.
+    expect(store.cuts(r.episodeId), hasLength(3));
     var g = store.partGroups().single;
-    expect(g.total, 2);
-    expect(g.tasks.map((t) => t.sharedLabel), ['C001-002', 'C001-002']);
-    // Per-cut rate twice.
-    expect(g.pay, 5000);
-    // Two cuts over today and tomorrow.
+    expect(g.tasks, hasLength(3));
+    expect(g.tasks.map((t) => t.sharedLabel), [null, 'C002-003', 'C002-003']);
+    // The card: two cuts. The pay: three.
+    expect((g.total, g.toSubmit), (2, 2));
+    expect(g.pay, 7500);
+    // Pace: two cuts over today and tomorrow.
     expect(store.paceOf(g)!.remaining, 2);
     expect(store.paceOf(g)!.perDay, 1);
 
-    // Progress counts each: one handed is 1/2.
-    store.setStatus(g.tasks.first.id, TaskStatus.submitted);
-    g = store.partGroups().single;
+    // One cut of the pair handed in hands in the pair: 1 of 2.
+    store.setStatus(g.tasks[1].id, TaskStatus.submitted);
+    g = store.partGroups(includeDone: true).single;
+    expect(g.tasks.map((t) => t.status), [
+      TaskStatus.received,
+      TaskStatus.submitted,
+      TaskStatus.submitted,
+    ]);
     expect((g.handed, g.total), (1, 2));
+    expect(store.paceOf(g)!.remaining, 1);
 
-    // Monthly totals pay both.
+    // The recent pace counts the pair once; money counts each cut.
+    expect(store.usualPaces().singleWhere((u) => u.stageName == 'LO').cuts, 1);
     store.setStatusMany(g.tasks.map((t) => t.id), TaskStatus.done);
-    expect(store.monthlyTotals(2026, 11)['JPY']!.total, 5000);
+    expect(store.monthlyTotals(2026, 11)['JPY']!.total, 7500);
+    final stats = store.stats(from: DateTime(2026, 11), to: DateTime(2026, 12));
+    expect(stats.total.done, 2);
+    expect(stats.total.earned['JPY'], 7500);
   });
 
   test('the cut list shows shared groups and, on request, archived cuts', () {

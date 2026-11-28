@@ -67,7 +67,9 @@ void main() {
     expect(numbers, isNot(contains('C002')));
     final groups = store.partGroups();
     expect(groups.map((g) => g.stageName).toSet(), {'LO', '원화'});
-    expect(groups.every((g) => g.total == 7), isTrue);
+    // Seven cuts, the shared pair C005-006 counting once (유저 2026-11-28).
+    expect(groups.every((g) => g.total == 6), isTrue);
+    expect(groups.every((g) => g.tasks.length == 7), isTrue);
     expect(groups.every((g) => g.dueAt!.isAtSameMomentAs(due)), isTrue);
   });
 

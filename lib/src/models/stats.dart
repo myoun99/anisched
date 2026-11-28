@@ -21,6 +21,7 @@ class StatsFact {
     required this.workTitle,
     required this.currency,
     required this.groupKey,
+    String? unitKey,
     this.clientId,
     this.clientName,
     this.take = 1,
@@ -35,7 +36,7 @@ class StatsFact {
     this.planEndAt,
     this.pay,
     this.worked = Duration.zero,
-  });
+  }) : unitKey = unitKey ?? 't$taskId';
 
   final int taskId;
   final String stageName;
@@ -45,6 +46,10 @@ class StatsFact {
 
   /// The unit the calendar lays out (TaskRow.groupKey).
   final String groupKey;
+
+  /// What counts as one cut (TaskRow.unitKey): a shared group's tasks of a
+  /// stage count once in every cut figure; pay counts per task.
+  final String unitKey;
   final int? clientId;
   final String? clientName;
 
@@ -311,6 +316,16 @@ class _StatsFold {
       if (inRange(f.handedOffAt)) s.handedOff++;
       return;
     }
+    // A shared group's other tasks: their pay and time, not another cut.
+    if (!_units.add(f.unitKey)) {
+      if (inRange(f.submittedAt)) {
+        for (final x in slices) {
+          x.timedHandedWorked += f.worked;
+        }
+      }
+      if (inRange(f.doneAt)) _paid(f, slices, periodOf(f.doneAt!));
+      return;
+    }
     for (final x in slices) {
       x.cuts++;
       if (f.submittedAt != null || f.doneAt != null) x.finished++;
@@ -318,6 +333,8 @@ class _StatsFold {
     if (inRange(f.submittedAt)) _handed(f, slices);
     if (inRange(f.doneAt)) _done(f, slices);
   }
+
+  final _units = <String>{};
 
   void _handed(StatsFact f, List<StatsSlice> slices) {
     final timed = f.worked > Duration.zero;
@@ -361,6 +378,11 @@ class _StatsFold {
     for (final x in slices) {
       x.done++;
     }
+    _paid(f, slices, period);
+  }
+
+  /// A done task's pay into the slices, its period and the hourly pay.
+  void _paid(StatsFact f, List<StatsSlice> slices, StatsPeriod? period) {
     final pay = f.pay;
     if (pay == null) return;
     for (final x in slices) {
