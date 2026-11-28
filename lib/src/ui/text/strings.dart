@@ -395,7 +395,7 @@ enum S {
   unhold('Resume', '待ち解除', '대기 해제', 'Reprendre', '解除等待'),
   holdReason('Reason', '理由', '사유', 'Motif', '原因'),
   holdExpected('Expected', '見込み', '예상일', 'Prévu', '预计'),
-  inHand('{n} in hand', '手元 {n}', '보유 {n}', '{n} en main', '在手 {n}'),
+  inHand('{n} in hand', '手持ち {n}', '보유 {n}', '{n} en main', '在手 {n}'),
   onHold('{n} on hold', '待ち {n}', '대기 {n}', '{n} en attente', '等待 {n}'),
 
   // Taken off the user (work moved to someone else, 引き上げ).

@@ -231,7 +231,7 @@ class _TimelineLabel extends StatelessWidget {
                   style: const TextStyle(fontSize: 13),
                 ),
                 Text(
-                  '${g.stageName} · ${g.kind == GroupKind.noPart ? g.cutsLabel : groupTitle(g)}',
+                  '${g.stageName} · ${groupTitle(g)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: c.muted),

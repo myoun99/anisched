@@ -71,6 +71,20 @@ void main() {
     expect(groupTitle(part), endsWith('파트'));
   });
 
+  test('a part-less unit reads as its cut range, gaps and all', () {
+    final store = sampleCatalogue(DateTime(2026, 11, 27));
+    final work = store.works().first.id;
+    final ep = store.addEpisode(work, '30');
+    final stage = store.stages(work).first.id;
+    for (final n in ['C001', 'C002', 'C003', 'C007', 'C008']) {
+      store.addTask(stage, cutId: store.addCut(ep, n));
+    }
+    final loose = store.partGroups().firstWhere(
+      (g) => g.kind == GroupKind.noPart,
+    );
+    expect(groupTitle(loose), 'C001~C003, C007, C008');
+  });
+
   test('an episode number reads with #; a name stays; # is not stored', () {
     expect(episodeLabel('07'), '#07');
     expect(episodeLabel('#07'), '#07');

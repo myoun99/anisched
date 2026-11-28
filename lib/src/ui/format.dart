@@ -96,9 +96,13 @@ Map<String, int> totalsByCurrency(Iterable<PartGroup> groups) {
 }
 
 /// 「B파트」, 「파트 없음」 for an episode's loose cuts, or a storyboard's label.
+///
+/// Every screen names a unit through this one function. A part-less unit
+/// reads as its cut range (C001~C050, C060~C102) — 「파트 없음」 told
+/// nothing (v8).
 String groupTitle(PartGroup g) => switch (g.kind) {
   GroupKind.part => S.partTitle.f({'p': g.partLabel}),
-  GroupKind.noPart => S.noPart.t,
+  GroupKind.noPart => g.cutsLabel.isEmpty ? S.noPart.t : g.cutsLabel,
   GroupKind.storyboard => g.storyboardLabel ?? S.storyboard.t,
 };
 
