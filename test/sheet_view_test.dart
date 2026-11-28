@@ -150,7 +150,7 @@ void main() {
     await t.tap(find.byKey(Key('line-${g.key}')));
     await t.pump();
     final d = find.byKey(Key('details-${g.key}'));
-    for (final k in ['제작', '실 작업']) {
+    for (final k in ['스케줄', '작업 예상']) {
       expect(
         find.descendant(
           of: d,

@@ -1033,7 +1033,7 @@ class _RegisterViewState extends State<RegisterView> {
         ),
         Flexible(
           child: DateSpanPill(
-            label: S.production.t,
+            label: S.plannedDates.t,
             start: date('reg-kickoff', d.kickoff, d.ownKickoff, false),
             end: date('reg-due', d.due, d.ownDue, true),
           ),

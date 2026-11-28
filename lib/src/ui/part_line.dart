@@ -382,13 +382,7 @@ class PartDetails extends StatelessWidget {
     this.onEditRevision,
     this.client,
     this.onAddCuts,
-    this.now,
-    this.dayStartMinutes = 0,
   });
-
-  /// Now, for the deadline's D-n in the production pill; null hides it.
-  final DateTime? now;
-  final int dayStartMinutes;
 
   /// Adds cuts to the unit (the 「+」 at the end of its cuts); null hides
   /// it.
@@ -437,8 +431,8 @@ class PartDetails extends StatelessWidget {
   /// Long press on a cut: picks it for the bar's actions.
   final ValueChanged<List<TaskRow>>? onTaskLongPress;
 
-  /// The work's client, first among the facts (views whose rows do not
-  /// show it themselves).
+  /// The work's client, at the right end of the top row (views whose rows
+  /// do not show it themselves).
   final ClientTag? client;
 
   @override
@@ -469,40 +463,24 @@ class PartDetails extends StatelessWidget {
               ),
       ),
     );
-    Widget fact(String label, List<Widget> value) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('$label  ', style: TextStyle(fontSize: 12, color: c.muted)),
-        ...value,
-      ],
-    );
-    final due = now == null
-        ? null
-        : dueLabel(g.dueAt, now!, g.status, dayStartMinutes: dayStartMinutes);
-    // Production (start → deadline, its D-n and round), then the user's
-    // own work (start → end): one pill each, the start on the left.
+    // The schedule (start → deadline, its round), then the user's own
+    // estimate (start → end): one pill a row, the start on the left, their
+    // heads one width so the pills line up.
+    final heads = [S.plannedDates.t, S.myEstimate.t];
+    final headWidth = DateSpanPill.headWidth(context, heads);
     final dates = [
       DateSpanPill(
         key: Key('span-production-${g.key}'),
-        label: S.production.t,
+        label: heads[0],
+        labelWidth: headWidth,
         start: date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
         end: date('details-due', g.dueAt, onDue, S.pickDue.t),
-        trailing: [
-          if (due != null && due.tone != DueTone.none)
-            Text(
-              due.text,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: due.tone == DueTone.late ? c.retake : c.muted,
-              ),
-            ),
-          RoundBadge(g.dueRevision),
-        ],
+        trailing: [RoundBadge(g.dueRevision)],
       ),
       DateSpanPill(
         key: Key('span-work-${g.key}'),
-        label: S.ownWork.t,
+        label: heads[1],
+        labelWidth: headWidth,
         start: date(
           'details-plan-start',
           g.planStartAt,
@@ -547,17 +525,17 @@ class PartDetails extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 10,
             children: [
-              _holdRow(context),
+              _topRow(context),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 6,
+                children: dates,
+              ),
               Wrap(
                 spacing: 20,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (client != null)
-                    fact(S.client.t, [
-                      ClientChip(client!, key: Key('details-client-${g.key}')),
-                    ]),
-                  ...dates,
                   for (final (k, v) in facts)
                     Text.rich(
                       TextSpan(
@@ -788,7 +766,10 @@ class _CutChip extends StatelessWidget {
 extension on PartDetails {
   /// 「보유 n · 대기 m」, the hold's reason and expected day, and the
   /// hold button.
-  Widget _holdRow(BuildContext context) {
+  /// From the left: the unit's status, the cuts in hand (and on hold, with
+  /// why and until when), all its cuts; the hold button, then its client
+  /// at the right end.
+  Widget _topRow(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
     final waitingTask = g.tasks.where((t) => t.waiting && t.status.isOpen);
@@ -797,12 +778,19 @@ extension on PartDetails {
     return Row(
       spacing: 10,
       children: [
-        Flexible(
+        Expanded(
           child: Text.rich(
             TextSpan(
               children: [
                 TextSpan(
-                  text: S.inHand.f({'n': g.inHand}),
+                  text: g.status.label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: c.ink(g.status),
+                  ),
+                ),
+                TextSpan(
+                  text: '  ·  ${S.inHand.f({'n': g.inHand})}',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 if (g.waiting > 0)
@@ -820,6 +808,10 @@ extension on PartDetails {
                     text: '  → ${formatDate(u)}',
                     style: TextStyle(color: c.muted),
                   ),
+                TextSpan(
+                  text: '  ·  ${g.total} cut',
+                  style: TextStyle(color: c.muted),
+                ),
               ],
             ),
             key: Key('holding-${g.key}'),
@@ -844,6 +836,8 @@ extension on PartDetails {
             ),
             label: Text(allWaiting ? S.unhold.t : S.hold.t),
           ),
+        if (client case final tag?)
+          ClientChip(tag, key: Key('details-client-${g.key}')),
       ],
     );
   }
@@ -872,13 +866,7 @@ class UnitWiring {
     this.revisionsOf,
     this.onEditRevision,
     this.onAddCuts,
-    this.now,
-    this.dayStartMinutes = 0,
   });
-
-  /// Now and the day's start, for the deadline's D-n in the details.
-  final DateTime? now;
-  final int dayStartMinutes;
 
   /// Adds cuts to a unit (not a storyboard).
   final void Function(PartGroup group)? onAddCuts;
@@ -938,8 +926,6 @@ class UnitWiring {
       onEditRevision: onEditRevision == null
           ? null
           : (n, d) => onEditRevision!(p, n, d),
-      now: now,
-      dayStartMinutes: dayStartMinutes,
       onAddCuts: onAddCuts == null || p.kind == GroupKind.storyboard
           ? null
           : () => onAddCuts!(p),

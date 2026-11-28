@@ -287,7 +287,13 @@ final scenarios = <String, (AppView, Scenario)>{
   'work-open': (
     AppView.work,
     (t, size) async {
-      await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
+      await t.tap(
+        find.descendant(
+          of: byKeyPrefix('work-bar-').at(1),
+          matching: find.byKey(const Key('bar-tap')),
+        ),
+        warnIfMissed: false,
+      );
       await t.pump();
       await t.pump();
       await t.pump();
@@ -307,7 +313,13 @@ final scenarios = <String, (AppView, Scenario)>{
   'r9-work-open': (
     AppView.work,
     (t, size) async {
-      await t.tap(byKeyPrefix('work-open-').at(0), warnIfMissed: false);
+      await t.tap(
+        find.descendant(
+          of: byKeyPrefix('work-bar-').at(0),
+          matching: find.byKey(const Key('bar-tap')),
+        ),
+        warnIfMissed: false,
+      );
       await t.pump();
       await t.pump();
     },

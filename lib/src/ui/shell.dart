@@ -935,8 +935,6 @@ class _AppShellState extends State<AppShell> {
     final toolbar = _toolbar();
     // One wiring for every view that opens a unit's details.
     final wiring = UnitWiring(
-      now: now,
-      dayStartMinutes: widget.store?.settings.dayStartMinutes ?? 0,
       signals: _signals,
       paces: _paces,
       selection: _selection,

@@ -276,15 +276,6 @@ enum S {
     'Document restauré',
     '文档已恢复',
   ),
-  // What a chart is drawn by (its toolbar's left).
-  basisProduction(
-    'Production schedule',
-    '制作スケジュール',
-    '제작 일정',
-    'Planning de production',
-    '制作日程',
-  ),
-  basisMine('My work plan', '自分の作業予定', '내 작업 일정', 'Mon planning', '我的工作计划'),
   troubleDetails('Details', '詳細', '자세히', 'Détails', '详情'),
   troubleCopy('Copy', 'コピー', '복사', 'Copier', '复制'),
   troubleCopied('Copied', 'コピーしました', '복사함', 'Copié', '已复制'),
@@ -302,8 +293,11 @@ enum S {
   part('Part', 'パート', '파트', 'Partie', '部分'),
   progress('Progress', '進捗', '진행', 'Avancement', '进度'),
   due('Due', '締切', '마감', 'Échéance', '截止'),
-  production('Production', '制作', '제작', 'Production', '制作'),
-  ownWork('My work', '作業', '작업', 'Mon travail', '我的工作'),
+  // The production's dates and the user's own guess at their work: the
+  // details' two date pills, the register's per-stage dates and what a
+  // chart is drawn by (its toolbar's left).
+  plannedDates('Schedule', 'スケジュール', '스케줄', 'Planning', '日程'),
+  myEstimate('My estimate', '作業予定', '작업 예상', 'Mon estimation', '作业预计'),
   slack('Slack', '余裕', '여유', 'Marge', '余量'),
   perDay('Per day', '1日', '하루', 'Par jour', '每天'),
   rate('Rate', '単価', '단가', 'Tarif', '单价'),
