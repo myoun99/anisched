@@ -371,9 +371,12 @@ class ToolbarButton extends StatelessWidget {
 /// The row of controls above a view's list, at its right end (tools sit
 /// on the right, 유저 2026-11-28).
 class ViewToolbar extends StatelessWidget {
-  const ViewToolbar({super.key, required this.children});
+  const ViewToolbar({super.key, required this.children, this.basis});
 
   final List<Widget> children;
+
+  /// On the left: what the view is drawn by (a small muted label).
+  final ToolbarBasis? basis;
 
   @override
   Widget build(BuildContext context) {
@@ -384,17 +387,56 @@ class ViewToolbar extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            key: const Key('view-toolbar'),
-            alignment: WrapAlignment.end,
-            spacing: 8,
-            runSpacing: 8,
-            children: children,
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              // The label never takes the tools' room.
+              if (basis case final b?) ...[
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: box.maxWidth * 0.3),
+                  child: b,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Wrap(
+                  key: const Key('view-toolbar'),
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: children,
+                ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// What a chart view is drawn by, on its toolbar's left: an icon and a
+/// few muted words (the timeline: the production schedule; the work tab:
+/// my own work plan).
+class ToolbarBasis extends StatelessWidget {
+  const ToolbarBasis(this.icon, this.text, {super.key});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Row(
+      key: const Key('toolbar-basis'),
+      mainAxisSize: MainAxisSize.min,
+      spacing: 5,
+      children: [
+        Icon(icon, size: 15, color: c.muted),
+        Flexible(
+          child: FitText(text, style: TextStyle(fontSize: 12, color: c.muted)),
+        ),
+      ],
     );
   }
 }

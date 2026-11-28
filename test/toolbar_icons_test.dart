@@ -41,7 +41,10 @@ void main() {
             ),
           );
           await t.pump();
-          final bar = find.byType(ViewToolbar);
+          expect(find.byType(ViewToolbar), findsOneWidget);
+          // The tools themselves (the chart's basis label on the left is
+          // words by design, 유저 2026-11-28).
+          final bar = find.byKey(const Key('view-toolbar'));
           expect(bar, findsOneWidget);
           expect(
             find.descendant(of: bar, matching: find.byType(Text)),

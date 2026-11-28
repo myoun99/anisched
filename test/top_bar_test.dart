@@ -89,6 +89,22 @@ void main() {
       // Its side padding is 12: the last control ends against it.
       expect(right, closeTo(size.width - 12, 0.5));
       expect(left, greaterThan(size.width / 2), reason: 'not on the left');
+      // The charts say what they are drawn by, on the left.
+      final basis = switch (view) {
+        AppView.timeline => '제작 일정',
+        AppView.work => '내 작업 일정',
+        _ => null,
+      };
+      final label = find.byKey(const Key('toolbar-basis'));
+      if (basis == null) {
+        expect(label, findsNothing);
+      } else {
+        expect(
+          find.descendant(of: label, matching: find.text(basis)),
+          findsOneWidget,
+        );
+        expect(t.getTopLeft(label).dx, lessThan(size.width / 4));
+      }
     });
   }
 }

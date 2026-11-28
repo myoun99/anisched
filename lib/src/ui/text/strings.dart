@@ -254,6 +254,15 @@ enum S {
     'Document restauré',
     '文档已恢复',
   ),
+  // What a chart is drawn by (its toolbar's left).
+  basisProduction(
+    'Production schedule',
+    '制作スケジュール',
+    '제작 일정',
+    'Planning de production',
+    '制作日程',
+  ),
+  basisMine('My work plan', '自分の作業予定', '내 작업 일정', 'Mon planning', '我的工作计划'),
   troubleDetails('Details', '詳細', '자세히', 'Détails', '详情'),
   troubleCopy('Copy', 'コピー', '복사', 'Copier', '复制'),
   troubleCopied('Copied', 'コピーしました', '복사함', 'Copié', '已复制'),
