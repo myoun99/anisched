@@ -7,6 +7,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../models/document.dart';
 import 'document_rows.dart';
 import 'schema.dart';
+import 'undo_history.dart';
 
 export 'document_rows.dart' show NotADocumentException;
 
@@ -88,8 +89,12 @@ void prepareImportSync(String path) {
 ///
 /// The working file is never swapped: connections (the background reader)
 /// stay valid and simply see the new rows. Deletes carry a WHERE so SQLite
-/// reports each row to update hooks (the reader's staleness guard).
-void importDocumentInto(CommonDatabase writer, String path) {
+/// reports each row to update hooks (the reader's staleness guard). Not a
+/// step of the undo history, which it empties.
+void importDocumentInto(CommonDatabase writer, String path) =>
+    withoutHistory(writer, () => _importDocumentInto(writer, path));
+
+void _importDocumentInto(CommonDatabase writer, String path) {
   writer.execute('ATTACH DATABASE ? AS doc', [path]);
   try {
     final mine = _tables(writer, 'main');

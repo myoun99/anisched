@@ -12,6 +12,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/document_codec.dart';
+import 'package:anisched/src/services/undo_history.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const runs = 5;
@@ -95,6 +96,43 @@ void main() {
       'date write, places held',
       () => store.setPartDue(part, stage, now.add(Duration(days: day++))),
     );
+
+    // ---- the same writes with the undo history recording ----
+    final history = UndoHistory.attach(db);
+    bench(
+      'date write, places held, with undo history',
+      () => store.setPartDue(part, stage, now.add(Duration(days: day++))),
+    );
+    final undoTask =
+        db.select('SELECT id FROM tasks LIMIT 1').first['id'] as int;
+    bench('status write, with undo history', () {
+      store.setStatus(undoTask, TaskStatus.inProgress);
+      store.setStatus(undoTask, TaskStatus.received);
+    });
+    await history.detach();
+    bench('status write, no history', () {
+      store.setStatus(undoTask, TaskStatus.inProgress);
+      store.setStatus(undoTask, TaskStatus.received);
+    });
+    UndoHistory.attach(db);
+    // One step of many rows: a whole part's tasks deleted, then undone.
+    final bigPart =
+        db.select('SELECT id FROM parts LIMIT 1 OFFSET 7').first['id'] as int;
+    final partTasks = [
+      for (final r in db.select(
+        'SELECT t.id FROM tasks t JOIN cuts c ON c.id = t.cut_id '
+        'WHERE c.part_id = ?',
+        [bigPart],
+      ))
+        r['id'] as int,
+    ];
+    rows.add((
+      'delete a part (${partTasks.length} tasks), with undo history',
+      time(() => store.deleteTasks(partTasks)),
+    ));
+    await Future<void>.value();
+    rows.add(('undo that delete', time(() => UndoHistory.of(db)!.undo())));
+    await UndoHistory.of(db)!.detach();
 
     // ---- document out and in ----
     final out = '${dir.path}/out.anisched';

@@ -448,3 +448,18 @@
   - 다른 카드는 자리를 지킨다(바꾸기 전 `holdPlaces`).
 - **확인창 요약** `deletionSummary(ids)` → `(tasks, cuts, episodes, works, timerMinutes)`. 삭제와 같은 계획(`_DeletionPlan`)을 읽으므로
   확인창 숫자 = 실제로 지워지는 것.
+
+## 실행 취소 · 다시 실행 (유저 2026-11-28, `services/undo_history.dart`, 스키마 변경 없음)
+
+- **방식**: sqlite.org 「Automatic Undo/Redo」. 사용자 테이블마다 TEMP 트리거(INSERT/UPDATE/DELETE)가 그 행을 되돌리는 SQL 을
+  `temp.undo_log` 에 적는다. 순수 SQL 이라 기기 SQLite 와 웹 WASM 이 같다(session 확장은 WASM 빌드에 없음).
+  temp 라서 문서 파일 · 저장(VACUUM INTO) · 리더 연결에 안 들어간다.
+- **한 단계** = 앱의 동기 한 턴에 쓴 것 전부(UI `_write` 한 번, 그 안의 `holdPlaces` 포함). 다음 마이크로태스크에서 닫는다.
+  값이 그대로인 UPDATE 는 적지 않는다. 상한 200단계(오래된 것부터 버림). 새 단계 → redo 비움.
+- **undo**: 그 단계의 로그를 거꾸로 실행(외래키 지연), 트리거가 적은 것이 redo 단계. redo 도 같은 방식.
+- **제외**: `settings.timer_target`(선택만 바뀐 것). 타이머는 진행 중에 쓰는 것이 없다 — 시작 · 멈춤 · 구간 편집만 단계.
+- **문서 통째 교체**(열기 · 새 문서 · 스냅샷 · 다시 읽기, `copyAllRows` / `importDocumentInto`)는 기록하지 않고 스택을 비운다.
+- **연결**: 부팅 때 `UndoHistory.attach(db)`, UI 는 `UndoHistory.of(db)` 로 `canUndo` · `canRedo` · `undo()` · `redo()` ·
+  `changes`(스트림). 되돌린 쓰기도 쓰기라 리더 generation 이 오르고 문서가 dirty 가 된다.
+- **단축키**: `DeviceSettings.shortcuts(apple:)` — 동작 id(`ShortcutAction`) → 키 조합 목록. 기본 undo `Ctrl+Z`/`Cmd+Z`,
+  redo `Ctrl+Shift+Z`·`Ctrl+Y` / `Cmd+Shift+Z`. 이 기기의 선택만 저장(`setShortcut`, null = 기본으로).

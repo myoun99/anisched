@@ -5,6 +5,7 @@ import 'src/services/catalogue_store.dart';
 import 'src/services/database.dart';
 import 'src/services/device_settings_web.dart';
 import 'src/services/document_session_web.dart';
+import 'src/services/undo_history.dart';
 
 /// The web build (previews and feedback): SQLite in WebAssembly with the
 /// working database in this browser's IndexedDB; reads on the one thread
@@ -12,6 +13,8 @@ import 'src/services/document_session_web.dart';
 Future<Booted> boot() async {
   await initSqlite();
   final db = openAppDatabase('/anisched.db');
+  // Every write from here on can be undone (UndoHistory.of(db)).
+  UndoHistory.attach(db);
   return (
     db: db,
     reader: SyncCatalogueReader(CatalogueStore(db)),
