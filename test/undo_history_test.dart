@@ -1,3 +1,4 @@
+import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
@@ -105,6 +106,21 @@ void main() {
     expect(db.select('PRAGMA foreign_key_check;'), isEmpty);
     history.redo();
     expect(db.select('SELECT * FROM works;'), isEmpty);
+  });
+
+  test('two changes of one row in a turn undo to where it began; a write '
+      'that changes nothing is no step', () async {
+    await turn(() {
+      store
+        ..setPartDue(part, lo, DateTime(2026, 12, 9))
+        ..setPartDue(part, lo, DateTime(2026, 12, 12));
+    });
+    history.undo();
+    expect(partDue(), DateTime(2026, 12, 5).toUtc());
+    expect(history.canUndo, isFalse);
+
+    await turn(() => store.setStatus(tasks.first, TaskStatus.received));
+    expect(history.canUndo, isFalse);
   });
 
   test('a new write empties the redo stack', () async {
