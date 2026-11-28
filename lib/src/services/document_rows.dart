@@ -2,6 +2,7 @@ import 'package:sqlite3/common.dart';
 
 import '../models/document.dart';
 import 'schema.dart';
+import 'undo_history.dart';
 
 /// The file is not an Anisched document (not SQLite, damaged, or another
 /// app's database).
@@ -39,7 +40,11 @@ void checkAndMigrateDocument(CommonDatabase db, String label) {
 /// schema), in one transaction on [to] — for two connections that cannot
 /// ATTACH each other (the web build's IndexedDB and in-memory files).
 /// Deletes carry a WHERE so update hooks see each row.
-void copyAllRows(CommonDatabase from, CommonDatabase to) {
+/// Not a step of [to]'s undo history, which it empties.
+void copyAllRows(CommonDatabase from, CommonDatabase to) =>
+    withoutHistory(to, () => _copyAllRows(from, to));
+
+void _copyAllRows(CommonDatabase from, CommonDatabase to) {
   final mine = tableNames(to);
   final theirs = tableNames(from);
   if (mine.length != theirs.length || !mine.every(theirs.contains)) {
