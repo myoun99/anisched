@@ -9,25 +9,25 @@ void main() {
   tearDown(() => tmp.deleteSync(recursive: true));
 
   test('defaults, then kept across a reload', () {
-    final s = DeviceSettings.load(tmp.path);
+    final s = loadDeviceSettings(tmp.path);
     expect(s.themeMode, ThemeChoice.system);
     expect(s.language, LanguageChoice.device);
 
     s
       ..themeMode = ThemeChoice.dark
       ..language = LanguageChoice.zhHans;
-    final again = DeviceSettings.load(tmp.path);
+    final again = loadDeviceSettings(tmp.path);
     expect(again.themeMode, ThemeChoice.dark);
     expect(again.language, LanguageChoice.zhHans);
     expect(again.language.tag, 'zh-Hans');
 
     again.language = LanguageChoice.device;
-    expect(DeviceSettings.load(tmp.path).language, LanguageChoice.device);
+    expect(loadDeviceSettings(tmp.path).language, LanguageChoice.device);
   });
 
   test('a damaged file gives the defaults', () {
     File('${tmp.path}/device.json').writeAsStringSync('{nope');
-    final s = DeviceSettings.load(tmp.path);
+    final s = loadDeviceSettings(tmp.path);
     expect(s.themeMode, ThemeChoice.system);
     expect(s.language, LanguageChoice.device);
   });

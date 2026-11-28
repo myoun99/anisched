@@ -1,4 +1,4 @@
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
@@ -16,7 +16,7 @@ class CatalogueStore {
   CatalogueStore(this.db, {this.clock = systemClock})
     : settings = SettingsStore(db);
 
-  final Database db;
+  final CommonDatabase db;
 
   final SettingsStore settings;
 
@@ -87,27 +87,40 @@ class CatalogueStore {
       (id: r['id'] as int, name: r['name'] as String),
   ];
 
+  // Cut and episode numbers are stored as values and shown in the
+  // document's styles (models/number_style.dart): `C012A` is stored as
+  // `12A` and reads `C012A` — or `0012A` once the style changes.
+
+  /// The stored value of a cut number the user typed.
+  String cutKey(String typed) => storedNumber(typed, settings.cutStyle);
+
+  /// The stored value of an episode number the user typed.
+  String episodeKey(String typed) => storedNumber(typed, settings.episodeStyle);
+
   int addEpisode(int workId, String number, {String? title}) {
+    final v = episodeKey(number);
     db.execute(
       'INSERT INTO episodes (work_id, number, sort_key, title) '
       'VALUES (?, ?, ?, ?);',
-      [workId, number, naturalSortKey(number), title],
+      [workId, v, naturalSortKey(v), title],
     );
     return db.lastInsertRowId;
   }
 
   int addCut(int episodeId, String number, {int? lengthMs, int? partId}) {
+    final v = cutKey(number);
     db.execute(
       'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
       'VALUES (?, ?, ?, ?, ?);',
-      [episodeId, number, naturalSortKey(number), lengthMs, partId],
+      [episodeId, v, naturalSortKey(v), lengthMs, partId],
     );
     return db.lastInsertRowId;
   }
 
   /// Adds many cuts to an episode in one transaction — for example the
   /// numbers from [parseCutNumbers]. Numbers already live in the episode
-  /// are skipped and reported, not duplicated.
+  /// (by value: `C012` and `12` are one) are skipped and reported as
+  /// typed, not duplicated.
   ({List<int> added, List<String> skipped}) addCuts(
     int episodeId,
     Iterable<String> numbers, {
@@ -127,10 +140,12 @@ class CatalogueStore {
       'INSERT INTO cuts (episode_id, number, sort_key, length_ms, part_id) '
       'VALUES (?, ?, ?, ?, ?);',
     );
+    final style = settings.cutStyle;
     try {
-      for (final n in numbers) {
+      for (final typed in numbers) {
+        final n = storedNumber(typed, style);
         if (!existing.add(n)) {
-          skipped.add(n);
+          skipped.add(typed);
           continue;
         }
         insert.execute([episodeId, n, naturalSortKey(n), lengthMs, partId]);
@@ -367,7 +382,7 @@ class CatalogueStore {
           db.execute(
             'UPDATE cuts SET archived_at = ? WHERE episode_id = ? '
             'AND number = ? AND archived_at IS NULL;',
-            [_now(), episodeId, n],
+            [_now(), episodeId, cutKey(n)],
           );
           if (db.updatedRows == 0) missing.add(n);
         }
@@ -451,10 +466,14 @@ WHERE archived_at IS NULL AND (shared_with IS NOT NULL
 ORDER BY sort_key, id;''')) {
       (byGroup[r['g'] as int] ??= []).add(r['number'] as String);
     }
+    final style = settings.cutStyle;
     return {
       for (final e in byGroup.entries)
         if (e.value.length > 1)
-          e.key: sharedCutNumber(e.value.first, e.value.last),
+          e.key: sharedCutNumber(
+            shownNumber(e.value.first, style),
+            shownNumber(e.value.last, style),
+          ),
     };
   }
 
@@ -509,10 +528,14 @@ ORDER BY sort_key, id;''')) {
     }
   });
 
-  void _rename(int cutId, String number) => db.execute(
-    'UPDATE cuts SET number = ?, sort_key = ? WHERE id = ?;',
-    [number, naturalSortKey(number), cutId],
-  );
+  void _rename(int cutId, String number) {
+    final v = cutKey(number);
+    db.execute('UPDATE cuts SET number = ?, sort_key = ? WHERE id = ?;', [
+      v,
+      naturalSortKey(v),
+      cutId,
+    ]);
+  }
 
   void renameClient(int clientId, String name) =>
       db.execute('UPDATE clients SET name = ? WHERE id = ?;', [name, clientId]);
@@ -538,11 +561,13 @@ ORDER BY sort_key, id;''')) {
 
   /// Renames an episode (its number keeps sorting naturally) and sets or
   /// clears its title.
-  void renameEpisode(int episodeId, String number, {String? title}) =>
-      db.execute(
-        'UPDATE episodes SET number = ?, sort_key = ?, title = ? WHERE id = ?;',
-        [number, naturalSortKey(number), title, episodeId],
-      );
+  void renameEpisode(int episodeId, String number, {String? title}) {
+    final v = episodeKey(number);
+    db.execute(
+      'UPDATE episodes SET number = ?, sort_key = ?, title = ? WHERE id = ?;',
+      [v, naturalSortKey(v), title, episodeId],
+    );
+  }
 
   /// Puts cuts in a part (or takes them out with null). The part must be
   /// in the cuts' episode.
@@ -954,21 +979,15 @@ LIMIT ?;''',
   List<({int id, String number, String? title})> searchEpisodes(
     int workId,
     String query,
-  ) => [
-    for (final r in db.select(
-      '''
-SELECT id, number, title FROM episodes
-WHERE work_id = ? AND archived_at IS NULL
-  AND (number LIKE ?2 ESCAPE '\\' OR COALESCE(title, '') LIKE ?2 ESCAPE '\\')
-ORDER BY sort_key, id;''',
-      [workId, _like(query)],
-    ))
-      (
-        id: r['id'] as int,
-        number: r['number'] as String,
-        title: r['title'] as String?,
-      ),
-  ];
+  ) {
+    final q = query.trim().toLowerCase();
+    return [
+      for (final e in episodes(workId))
+        if (e.number.toLowerCase().contains(q) ||
+            (e.title ?? '').toLowerCase().contains(q))
+          e,
+    ];
+  }
 
   /// A LIKE pattern matching [query] anywhere, with `%`, `_` and `\`
   /// taken literally.
@@ -989,19 +1008,22 @@ ORDER BY sort_key, id;''',
       ),
   ];
 
-  /// A work's live episodes in number order.
-  List<({int id, String number, String? title})> episodes(int workId) => [
-    for (final r in db.select(
-      'SELECT id, number, title FROM episodes '
-      'WHERE work_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
-      [workId],
-    ))
-      (
-        id: r['id'] as int,
-        number: r['number'] as String,
-        title: r['title'] as String?,
-      ),
-  ];
+  /// A work's live episodes in number order, numbers in the episode style.
+  List<({int id, String number, String? title})> episodes(int workId) {
+    final style = settings.episodeStyle;
+    return [
+      for (final r in db.select(
+        'SELECT id, number, title FROM episodes '
+        'WHERE work_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
+        [workId],
+      ))
+        (
+          id: r['id'] as int,
+          number: shownNumber(r['number'] as String, style),
+          title: r['title'] as String?,
+        ),
+    ];
+  }
 
   /// An episode's live parts in label order, with their live cut counts.
   List<({int id, String label, int? plannedCutCount, int cutCount})> parts(
@@ -1028,6 +1050,7 @@ ORDER BY sort_key, id;''',
   /// Cuts of an archived part are left out.
   List<CutRow> cuts(int episodeId, {bool includeArchived = false}) {
     final labels = _sharedLabels();
+    final style = settings.cutStyle;
     return [
       for (final r in db.select(
         'SELECT c.id, c.number, c.length_ms, c.part_id, c.shared_with, '
@@ -1037,11 +1060,11 @@ ORDER BY sort_key, id;''',
         'AND (p.id IS NULL OR p.archived_at IS NULL) ORDER BY c.sort_key, c.id;',
         [episodeId, if (includeArchived) 1 else 0],
       ))
-        _cutRow(r, labels),
+        _cutRow(r, labels, style),
     ];
   }
 
-  static CutRow _cutRow(Row r, Map<int, String> labels) {
+  static CutRow _cutRow(Row r, Map<int, String> labels, NumberStyle style) {
     final id = r['id'] as int;
     final archived = r['archived'] == 1;
     final head = archived
@@ -1049,7 +1072,7 @@ ORDER BY sort_key, id;''',
         : (r['shared_with'] as int?) ?? (labels.containsKey(id) ? id : null);
     return (
       id: id,
-      number: r['number'] as String,
+      number: shownNumber(r['number'] as String, style),
       lengthMs: r['length_ms'] as int?,
       partId: r['part_id'] as int?,
       sharedHeadCutId: head,
@@ -1358,38 +1381,56 @@ ORDER BY i.started_at;''',
   /// label, tasks by "cut or storyboard · stage", stages by name.
   List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>
   archived() {
+    // Each label is [pre] [episode] [cut] + post; numbers are shown in
+    // the current styles here, not in SQL.
     final rows = db.select('''
-SELECT 'work' AS kind, id, title AS label, archived_at FROM works
+SELECT 'work' AS kind, id, title AS pre, NULL AS ep, NULL AS cut, '' AS post,
+    archived_at FROM works
   WHERE archived_at IS NOT NULL
-UNION ALL SELECT 'episode', e.id, w.title || ' ' || e.number, e.archived_at
+UNION ALL SELECT 'episode', e.id, w.title, e.number, NULL, '', e.archived_at
   FROM episodes e JOIN works w ON w.id = e.work_id
   WHERE e.archived_at IS NOT NULL
-UNION ALL SELECT 'part', p.id, e.number || ' ' || p.label, p.archived_at
+UNION ALL SELECT 'part', p.id, NULL, e.number, NULL, ' ' || p.label,
+    p.archived_at
   FROM parts p JOIN episodes e ON e.id = p.episode_id
   WHERE p.archived_at IS NOT NULL
-UNION ALL SELECT 'cut', c.id, e.number || ' ' || c.number, c.archived_at
+UNION ALL SELECT 'cut', c.id, NULL, e.number, c.number, '', c.archived_at
   FROM cuts c JOIN episodes e ON e.id = c.episode_id
   WHERE c.archived_at IS NOT NULL
-UNION ALL SELECT 'storyboard', sb.id, e.number || ' ' || sb.label,
+UNION ALL SELECT 'storyboard', sb.id, NULL, e.number, NULL, ' ' || sb.label,
     sb.archived_at
   FROM storyboards sb JOIN episodes e ON e.id = sb.episode_id
   WHERE sb.archived_at IS NOT NULL
-UNION ALL SELECT 'task', t.id,
-    COALESCE(c.number, sb.label) || ' · ' || s.name, t.archived_at
+UNION ALL SELECT 'task', t.id, sb.label, NULL, c.number, ' · ' || s.name,
+    t.archived_at
   FROM tasks t JOIN work_stages s ON s.id = t.stage_id
   LEFT JOIN cuts c ON c.id = t.cut_id
   LEFT JOIN storyboards sb ON sb.id = t.storyboard_id
   WHERE t.archived_at IS NOT NULL
-UNION ALL SELECT 'stage', s.id, w.title || ' · ' || s.name, s.archived_at
+UNION ALL SELECT 'stage', s.id, w.title || ' · ' || s.name, NULL, NULL, '',
+    s.archived_at
   FROM work_stages s JOIN works w ON w.id = s.work_id
   WHERE s.archived_at IS NOT NULL
-ORDER BY 4 DESC, 1, 2;''');
+ORDER BY 7 DESC, 1, 2;''');
+    final cutStyle = settings.cutStyle;
+    final episodeStyle = settings.episodeStyle;
+    String label(Row r) {
+      final ep = r['ep'] as String?;
+      final cut = r['cut'] as String?;
+      return [
+            r['pre'] as String?,
+            if (ep != null) shownNumber(ep, episodeStyle),
+            if (cut != null) shownNumber(cut, cutStyle),
+          ].nonNulls.join(' ') +
+          (r['post'] as String);
+    }
+
     return [
       for (final r in rows)
         (
           kind: ArchiveKind.values.byName(r['kind'] as String),
           id: r['id'] as int,
-          label: r['label'] as String,
+          label: label(r),
           archivedAt: _utc(r['archived_at'] as int),
         ),
     ];
@@ -1819,6 +1860,10 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
       [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
     );
     final sharedLabels = _sharedLabels();
+    final cutStyle = settings.cutStyle;
+    final episodeStyle = settings.episodeStyle;
+    String? cut(Object? v) =>
+        v == null ? null : shownNumber(v as String, cutStyle);
     return [
       for (final r in rows)
         TaskRow(
@@ -1829,11 +1874,14 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           workTitle: r['title'] as String,
           currency: r['currency'] as String,
           episodeId: r['episode_id'] as int,
-          episodeNumber: r['episode_number'] as String,
+          episodeNumber: shownNumber(
+            r['episode_number'] as String,
+            episodeStyle,
+          ),
           stageId: r['stage_id'] as int,
           stageName: r['stage_name'] as String,
           cutId: r['cut_id'] as int?,
-          cutNumber: r['cut_number'] as String?,
+          cutNumber: cut(r['cut_number']),
           lengthMs: r['length_ms'] as int?,
           storyboardId: r['storyboard_id'] as int?,
           storyboardLabel: r['storyboard_label'] as String?,

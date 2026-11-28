@@ -28,3 +28,36 @@ String formatEpisodeNumber(int number, NumberStyle style) =>
 
 String _format(int number, NumberStyle style) =>
     '${style.prefix}${number.toString().padLeft(style.digits, '0')}';
+
+// ---- stored values (유저 2026-11-28: 표기 = 표시만) ----
+//
+// A cut or episode number is stored as its value — the number without
+// prefix or padding, plus any letters after it (`12A` for a split cut) —
+// and shown in the current style. A name that is not a number in that
+// sense (`BANK1`, `SP`) is stored and shown as typed.
+
+final _typedValue = RegExp(r'^0*(\d{1,9})([A-Za-z]*)$');
+final _storedValue = RegExp(r'^(0|[1-9]\d{0,8})([A-Z]*)$');
+
+/// What to store for [typed]: `C012A`, `c12a` → `12A`, `012` → `12` (the
+/// style's prefix in any case, or none; letters after the number in
+/// capitals); anything else as typed, trimmed.
+String storedNumber(String typed, NumberStyle style) {
+  final t = typed.trim();
+  final p = style.prefix;
+  final body =
+      p.isNotEmpty &&
+          t.length > p.length &&
+          t.substring(0, p.length).toLowerCase() == p.toLowerCase()
+      ? t.substring(p.length)
+      : t;
+  final m = _typedValue.firstMatch(body);
+  return m == null ? t : '${int.parse(m[1]!)}${m[2]!.toUpperCase()}';
+}
+
+/// How a [stored] number reads in [style]: `12A` → `C012A`; a typed name
+/// stays as it is.
+String shownNumber(String stored, NumberStyle style) {
+  final m = _storedValue.firstMatch(stored);
+  return m == null ? stored : '${_format(int.parse(m[1]!), style)}${m[2]}';
+}

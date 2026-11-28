@@ -1,14 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
-import 'src/services/catalogue_reader.dart';
+import 'boot.dart';
 import 'src/services/catalogue_store.dart';
-import 'src/services/database.dart';
 import 'src/services/device_settings.dart';
-import 'src/platform/documents.dart';
 import 'src/services/document_session.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
@@ -17,12 +13,8 @@ import 'src/ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final dir = await getApplicationSupportDirectory();
-  await dir.create(recursive: true);
-  final path = '${dir.path}${Platform.pathSeparator}anisched.db';
-  final db = openAppDatabase(path);
+  final (:db, :reader, :session, :device) = await boot();
   // This device's own look (not in the document): theme and language.
-  final device = DeviceSettings.load(dir.path);
   languageSetting.value = device.language;
   appLang.value = resolveLang(
     device.language,
@@ -40,14 +32,6 @@ Future<void> main() async {
       ThemeMode.light => ThemeChoice.light,
       ThemeMode.dark => ThemeChoice.dark,
     },
-  );
-  // Views read on a background isolate; writes stay on this one.
-  final reader = await BackgroundCatalogueReader.open(path, writer: db);
-  final session = await DocumentSession.open(
-    writer: db,
-    workingPath: path,
-    folder: dir.path,
-    files: platformDocumentFiles(),
   );
   final remote = ValueNotifier<RemoteCheck?>(null);
   // Save when the app leaves the screen; on return, take another device's

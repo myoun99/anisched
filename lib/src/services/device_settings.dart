@@ -1,5 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
+
+export 'device_settings_io.dart'
+    if (dart.library.js_interop) 'device_settings_web.dart';
 
 /// Light or dark, or whatever the system says.
 enum ThemeChoice {
@@ -29,37 +31,35 @@ enum LanguageChoice {
       values.where((e) => e.tag != null && e.tag == v).firstOrNull ?? device;
 }
 
-/// Preferences of THIS device — kept in the app container, never in the
+/// Preferences of THIS device — kept on the device, never in the
 /// document, so opening the document elsewhere does not change how that
 /// device looks (docs/storage.md). Work rules (rounding, day start, rest
 /// days, lanes, week start) stay in the document's `settings` table.
 ///
-/// A small JSON file, read once and rewritten whole (temp + rename) on
-/// every change.
+/// A small JSON text, read once and written whole on every change: a file
+/// in the app container on devices ([loadDeviceSettings] in
+/// `device_settings_io.dart`), the browser's localStorage on the web.
 class DeviceSettings {
-  DeviceSettings._(this.path, this._theme, this._language);
+  DeviceSettings._(this._write, this._theme, this._language);
 
-  /// Reads `<folder>/device.json`; a missing or unreadable file gives the
-  /// defaults.
-  factory DeviceSettings.load(String folder) {
-    final path = '$folder${Platform.pathSeparator}device.json';
-    Object? json;
+  /// Settings read from [json] (null, unreadable or partial gives the
+  /// defaults) that hand their JSON to [write] on every change.
+  factory DeviceSettings.fromJson(String? json, void Function(String) write) {
+    Object? map;
     try {
-      json = jsonDecode(File(path).readAsStringSync());
-    } on FileSystemException {
-      json = null;
+      map = json == null ? null : jsonDecode(json);
     } on FormatException {
-      json = null;
+      map = null;
     }
-    final map = json is Map ? json : const {};
+    final m = map is Map ? map : const {};
     return DeviceSettings._(
-      path,
-      ThemeChoice.parse(map['themeMode']),
-      LanguageChoice.parse(map['language']),
+      write,
+      ThemeChoice.parse(m['themeMode']),
+      LanguageChoice.parse(m['language']),
     );
   }
 
-  final String path;
+  final void Function(String json) _write;
   ThemeChoice _theme;
   LanguageChoice _language;
 
@@ -79,16 +79,10 @@ class DeviceSettings {
     _save();
   }
 
-  void _save() {
-    final temp = File('$path.tmp')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(
-        jsonEncode({
-          'themeMode': _theme.name,
-          if (_language.tag != null) 'language': _language.tag,
-        }),
-        flush: true,
-      );
-    temp.renameSync(path);
-  }
+  void _save() => _write(
+    jsonEncode({
+      'themeMode': _theme.name,
+      if (_language.tag != null) 'language': _language.tag,
+    }),
+  );
 }

@@ -92,3 +92,21 @@ Dart 쪽은 `lib/src/platform/documents.dart` (`platform` 층: services 위, ui 
   `lastSaveError` 표시; 열기 = `pickDocument()` → `openDocument`, 다른 이름으로 저장 = `saveAsPlaced(placeNewDocument, name: …)`;
   최근 파일 · 스냅샷 목록 화면. 작업 DB 경로와 같은 폴더에 `DocumentSession.open(files: platformDocumentFiles())`.
 - 나중에: OS 가 건네는 `.anisched`(파일 앱/Finder 에서 열기 · 파일 연결) — Anicel `handed_files.dart` 참고.
+
+## 웹 빌드 (미리보기 · 피드백용, 유저 2026-11-28)
+
+- **갈래는 파일 이름으로**: 기기만의 것(`dart:io` · `dart:ffi` · `dart:isolate` · 네이티브 sqlite3 · path_provider)은 `*_io.dart` 에만.
+  같은 이름의 파일이 `export '…_io.dart' if (dart.library.js_interop) '…_web.dart'` 로 고른다.
+  `test/architecture/web_imports_test.dart` 가 `lib/main.dart` 에서 웹 갈래를 따라가며 위 라이브러리에 닿는 파일이 0개인지 확인(래칫).
+- 시작: `lib/boot.dart` → 기기 `boot_io.dart`(앱 폴더 · 백그라운드 리더 · 파일 세션) / 웹 `boot_web.dart`. `main.dart` 는 공통.
+- DB: `services/sqlite_backend.dart` 한 곳. 기기 = FFI + WAL, 웹 = `web/sqlite3.wasm`(sqlite3 3.9.2, `tool/fetch_sqlite_wasm.sh` 가 해시 확인)
+  + **IndexedDB** VFS(이름 `anisched`, 파일 `/anisched.db`). OPFS 가 아니라 IndexedDB 인 이유: 워커 없이 한 스레드에서 동기 API 로
+  되고 모든 브라우저(사파리 포함)에 있음 — 미리보기용으로 충분. 나머지 코드는 `CommonDatabase`(`package:sqlite3/common.dart`).
+- 리더: 웹은 isolate 가 없어 `SyncCatalogueReader`(같은 스레드). 기기는 그대로 백그라운드.
+- 문서: 웹 = `BrowserDocumentSession`. 작업 DB 가 브라우저에 남아 그 자체가 자동 저장(`flush` = IndexedDB 에 다 썼는지 기다림).
+  「다른 이름으로 저장」 = `.anisched` **다운로드**, 「열기」 = **업로드**(file_selector), 「새로」 = 빈 문서. 다른 기기 비교 · 스냅샷 없음.
+  파일 사이 이동은 메모리 VFS + `copyAllRows`(ATTACH 불가) — 같은 SQL 을 기기 테스트가 확인. 보낸 뒤 고친 것이 있으면 `dirty`.
+  File System Access API(받은 파일에 바로 쓰기)는 크롬 계열만이라 **나중에**.
+- 기기 설정(테마 · 언어): 웹은 localStorage `anisched.device`.
+- 빌드: `flutter build web --release --no-web-resources-cdn` (CanvasKit 을 빌드에 넣음 — CDN 이 막힌 곳 · 오프라인에서도 뜸).
+  GitHub Pages 는 `--base-href /anisched/`. 64비트 정수 리터럴은 웹에서 컴파일 안 됨(FNV 시드는 실행 시 파싱 — 해시는 기기에서만).
