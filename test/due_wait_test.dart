@@ -81,6 +81,15 @@ void main() {
         (1, DateTime(2026, 11, 10).toUtc()),
         (2, DateTime(2026, 11, 14).toUtc()),
       ]);
+      // Removing the first moves every later one down.
+      store
+        ..extendDue(target, DateTime(2026, 11, 16))
+        ..removeDueRevision(target, 1);
+      expect(store.dueRevisions(target).map((r) => r.revision), [1, 2]);
+      expect(
+        store.dueRevisions(target).first.dueAt,
+        DateTime(2026, 11, 14).toUtc(),
+      );
     });
 
     test("a cut's own deadline continues its part's revisions", () {

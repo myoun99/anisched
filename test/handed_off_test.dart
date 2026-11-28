@@ -29,7 +29,13 @@ void main() {
       ..addTasksForPart(r.partId!, genga)
       ..addTasksForPart(r.partId!, lo)
       ..setPartDue(r.partId!, genga, DateTime(2026, 11, 13))
-      ..setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 1000));
+      ..setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 1000))
+      ..setPartPlan(
+        r.partId!,
+        genga,
+        start: DateTime(2026, 11, 2),
+        end: DateTime(2026, 11, 6),
+      );
     final gengaTasks = [
       for (final t in store.taskRows())
         if (t.stageId == genga) t.id,
@@ -66,6 +72,7 @@ void main() {
     expect(s.total.done, 0);
     expect(s.total.earned, isEmpty);
     expect(s.handedOff, 4);
+    expect(s.days.first.planned, 0); // its plan no longer occupies a lane
     expect(s.works.single.cuts, 4); // the LO tasks only
 
     store.undoHandOff(ids);

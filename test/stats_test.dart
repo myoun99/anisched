@@ -159,4 +159,25 @@ void main() {
     );
     expect(m.periods.single.start, DateTime(2026, 11));
   });
+
+  test('the hourly rate leaves out paid work with no time on it', () {
+    final w = store.createWork('W');
+    final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
+    final genga = stage(w, '원화');
+    store.setEpisodeRate(r.episodeId, genga, const Rate(RateUnit.fixed, 3000));
+    final timed = store.addTask(genga, cutId: r.cutIds[0]);
+    final untimed = store.addTask(genga, cutId: r.cutIds[1]);
+    timer.start(taskId: timed);
+    now = DateTime(2026, 11, 2, 11);
+    timer.stop();
+    store
+      ..setStatus(timed, TaskStatus.done)
+      ..setStatus(untimed, TaskStatus.done);
+    final s = store.stats(
+      from: DateTime(2026, 11, 2),
+      to: DateTime(2026, 11, 3),
+    );
+    expect(s.total.earned, {'JPY': 6000});
+    expect(s.hourly['JPY'], 3000);
+  });
 }

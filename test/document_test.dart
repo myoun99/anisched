@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:anisched/src/models/document.dart';
@@ -46,6 +47,21 @@ class Device {
   Future<void> stop() async {
     await session.close();
     db.close();
+  }
+}
+
+/// Real files, but the replace waits for [gate] — a save held open.
+class _GatedFiles extends PathDocumentFiles {
+  _GatedFiles(this.gate);
+
+  final Future<void> gate;
+  static bool waiting = false;
+
+  @override
+  Future<void> replaceFrom(String localPath, DocumentRef ref) async {
+    waiting = true;
+    await gate;
+    await super.replaceFrom(localPath, ref);
   }
 }
 
@@ -339,6 +355,33 @@ void main() {
       await other.stop();
     });
 
+    test('an edit made while a save runs keeps the session dirty', () async {
+      final gate = Completer<void>();
+      final folder = '${tmp.path}/g';
+      Directory(folder).createSync(recursive: true);
+      final db = openAppDatabase('$folder/anisched.db');
+      addTearDown(db.close);
+      final session = await DocumentSession.open(
+        writer: db,
+        workingPath: '$folder/anisched.db',
+        folder: folder,
+        files: _GatedFiles(gate.future),
+        autosaveDelay: const Duration(hours: 1),
+      );
+      addTearDown(session.close);
+      final ref = refAt('g.anisched');
+      CatalogueStore(db).addClient('Before');
+      final saving = session.saveAs(ref);
+      await pumpEventQueue();
+      while (!_GatedFiles.waiting) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      CatalogueStore(db).addClient('During');
+      gate.complete();
+      await saving;
+      expect(session.dirty, isTrue);
+    });
+
     test('snapshots older than 30 days are removed at start', () async {
       var now = DateTime.utc(2026, 11, 1);
       final folder = '${tmp.path}/d1';
@@ -347,7 +390,7 @@ void main() {
         '$folder/anisched.db',
         SnapshotReason.beforeReplace,
       );
-      now = DateTime.utc(2026, 11, 20);
+      now = DateTime.utc(2026, 11, 5, 12); // 29½ days before the restart
       await d.session.snapshots.takeOf(
         '$folder/anisched.db',
         SnapshotReason.beforeReplace,
@@ -358,7 +401,7 @@ void main() {
       now = DateTime.utc(2026, 12, 5);
       final again = await Device.start(folder, clock: () => now);
       final left = again.session.snapshots.list();
-      expect(left.single.takenAt, DateTime.utc(2026, 11, 20));
+      expect(left.single.takenAt, DateTime.utc(2026, 11, 5, 12));
       await again.stop();
     });
   });
