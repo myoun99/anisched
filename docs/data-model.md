@@ -491,3 +491,11 @@
 - 이행 v20: 기존 컷 · 화 이름을 같은 규칙으로. 같은 화(화는 같은 작품) 안의 살아 있는 두 행이 같은 값이 되면 **둘 다 원래 이름 유지**(조용히 합치지 않음),
   충돌 목록은 설정 `number_clashes` → `SettingsStore.numberClashes`.
 - 중복 검사: `CutDraft.clashes` 는 이미 있는 이름(화면 표기)과 칸 이름을 둘 다 값으로 바꿔 비교(기본 = 기본 표기 규칙, store 는 문서 표기 `cutKey`).
+
+## 통계 드릴다운 (유저 2026-11-28)
+
+- `statsTree(from, to, clientId?, workId?)` → `StatsNode` 루트(리더 isolate 에서 계산). 계층: 전체 → 회사 → 작품 → 화 → 파트(파트 없는 컷 · 콘티는 화마다 한 노드, id null) → 컷(잎, 콘티는 `s<task id>`).
+- 노드 = `StatsSlice` 그대로(컷 수 · 완료 · 제출 · 기간 안 작업시간 · 컷당 평균 · 금액 · 리테이크 수/율 · 진행) + `withDue`/`onTime`/`onTimeRate`(마감 지킴) · `perHour`(금액 ÷ 작업시간, 시간 0 이면 빈 표) · `firstWorkAt` · `lastHandedAt`.
+- **정의 한 벌**: `computeStats(tree: true)` 가 통계 탭과 같은 fact · 구간 목록을 같은 한 번의 접기에서 노드에도 넣는다 ⇒ 루트 = 통계 total. 겸용 묶음은 잎 위에서 1컷(금액은 각 컷), 잎은 자기 task 를 그대로 센다.
+- 잎 `stages[공정]` = 작업시간 · 구간 수 · 리테이크 회차 · 금액 · 상태.
+- 크기(벤치, 컷 1만 · 작업 2만 · 1년): 스토어 588ms(대부분 taskRows), 리더 왕복 709ms ⇒ 트리를 한 번에 준다(레벨별 lazy 는 펼칠 때마다 같은 계산을 다시 해야 해서 더 느림).
