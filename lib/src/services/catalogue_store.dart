@@ -916,17 +916,21 @@ ORDER BY sort_key, id;''')) {
 
   List<ClientRow> clients() => [
     for (final r in db.select(
-      'SELECT id, name, closing_day, color FROM clients '
+      'SELECT id, name, closing_day, color, '
+      '${_inUseSql(CatalogueKind.client, 'clients.id')} AS used FROM clients '
       'WHERE archived_at IS NULL '
       'ORDER BY name, id;',
     ))
-      (
-        id: r['id'] as int,
-        name: r['name'] as String,
-        closingDay: r['closing_day'] as int?,
-        color: r['color'] as int?,
-      ),
+      _clientRow(r),
   ];
+
+  static ClientRow _clientRow(Row r, {String inUse = 'used'}) => (
+    id: r['id'] as int,
+    name: r['name'] as String,
+    closingDay: r['closing_day'] as int?,
+    color: r['color'] as int?,
+    inUse: r[inUse] == 1,
+  );
 
   /// Clients whose name contains [query] (any case; empty = all), most
   /// recently used first — by the latest activity on their works.
@@ -939,29 +943,21 @@ SELECT cl.id, cl.name, cl.closing_day, cl.color,
                      COALESCE(t.received_at, 0)))
       FROM work_stages s JOIN tasks t ON t.stage_id = s.id
       WHERE s.work_id = w.id), w.created_at))
-   FROM works w WHERE w.client_id = cl.id AND w.archived_at IS NULL) AS used
+   FROM works w WHERE w.client_id = cl.id AND w.archived_at IS NULL) AS used,
+  ${_inUseSql(CatalogueKind.client, 'cl.id')} AS in_use
 FROM clients cl
 WHERE cl.archived_at IS NULL AND cl.name LIKE ? ESCAPE '\\'
 ORDER BY used IS NULL, used DESC, cl.name, cl.id
 LIMIT ?;''',
       [_like(query), limit],
     ))
-      (
-        id: r['id'] as int,
-        name: r['name'] as String,
-        closingDay: r['closing_day'] as int?,
-        color: r['color'] as int?,
-      ),
+      _clientRow(r, inUse: 'in_use'),
   ];
 
   /// Live works whose title contains [query] (any case; empty = all),
   /// optionally of one client, most recently used first — by the latest
   /// task activity, else when the work was made.
-  List<({int id, String title, String currency, int? clientId})> searchWorks(
-    String query, {
-    int? clientId,
-    int limit = 50,
-  }) => [
+  List<WorkRow> searchWorks(String query, {int? clientId, int limit = 50}) => [
     for (final r in db.select(
       '''
 SELECT w.id, w.title, w.currency, w.client_id,
@@ -969,7 +965,8 @@ SELECT w.id, w.title, w.currency, w.client_id,
                            COALESCE(t.submitted_at, 0),
                            COALESCE(t.received_at, 0)))
             FROM work_stages s JOIN tasks t ON t.stage_id = s.id
-            WHERE s.work_id = w.id), w.created_at) AS used
+            WHERE s.work_id = w.id), w.created_at) AS used,
+  ${_inUseSql(CatalogueKind.work, 'w.id')} AS in_use
 FROM works w
 WHERE w.archived_at IS NULL AND w.title LIKE ? ESCAPE '\\'
   AND (? IS NULL OR w.client_id = ?)
@@ -977,20 +974,20 @@ ORDER BY used DESC, w.id DESC
 LIMIT ?;''',
       [_like(query), clientId, clientId, limit],
     ))
-      (
-        id: r['id'] as int,
-        title: r['title'] as String,
-        currency: r['currency'] as String,
-        clientId: r['client_id'] as int?,
-      ),
+      _workRow(r),
   ];
+
+  static WorkRow _workRow(Row r) => (
+    id: r['id'] as int,
+    title: r['title'] as String,
+    currency: r['currency'] as String,
+    clientId: r['client_id'] as int?,
+    inUse: r['in_use'] == 1,
+  );
 
   /// A work's episodes whose number or title contains [query], in number
   /// order.
-  List<({int id, String number, String? title})> searchEpisodes(
-    int workId,
-    String query,
-  ) {
+  List<EpisodeRow> searchEpisodes(int workId, String query) {
     final q = query.trim().toLowerCase();
     return [
       for (final e in episodes(workId))
@@ -1006,25 +1003,23 @@ LIMIT ?;''',
       '%${query.trim().replaceAllMapped(RegExp(r'[\\%_]'), (m) => '\\${m[0]}')}%';
 
   /// Live works, newest first.
-  List<({int id, String title, String currency, int? clientId})> works() => [
+  List<WorkRow> works() => [
     for (final r in db.select(
-      'SELECT id, title, currency, client_id FROM works '
+      'SELECT id, title, currency, client_id, '
+      '${_inUseSql(CatalogueKind.work, 'works.id')} AS in_use FROM works '
       'WHERE archived_at IS NULL ORDER BY created_at DESC, id DESC;',
     ))
-      (
-        id: r['id'] as int,
-        title: r['title'] as String,
-        currency: r['currency'] as String,
-        clientId: r['client_id'] as int?,
-      ),
+      _workRow(r),
   ];
 
   /// A work's live episodes in number order, numbers in the episode style.
-  List<({int id, String number, String? title})> episodes(int workId) {
+  List<EpisodeRow> episodes(int workId) {
     final style = settings.episodeStyle;
     return [
       for (final r in db.select(
-        'SELECT id, number, title FROM episodes '
+        'SELECT id, number, title, '
+        '${_inUseSql(CatalogueKind.episode, 'episodes.id')} AS in_use '
+        'FROM episodes '
         'WHERE work_id = ? AND archived_at IS NULL ORDER BY sort_key, id;',
         [workId],
       ))
@@ -1032,18 +1027,18 @@ LIMIT ?;''',
           id: r['id'] as int,
           number: shownNumber(r['number'] as String, style),
           title: r['title'] as String?,
+          inUse: r['in_use'] == 1,
         ),
     ];
   }
 
   /// An episode's live parts in label order, with their live cut counts.
-  List<({int id, String label, int? plannedCutCount, int cutCount})> parts(
-    int episodeId,
-  ) => [
+  List<PartRow> parts(int episodeId) => [
     for (final r in db.select(
       'SELECT p.id, p.label, p.planned_cut_count, '
       '(SELECT COUNT(*) FROM cuts c WHERE c.part_id = p.id '
-      'AND c.archived_at IS NULL) AS cut_count '
+      'AND c.archived_at IS NULL) AS cut_count, '
+      '${_inUseSql(CatalogueKind.part, 'p.id')} AS in_use '
       'FROM parts p WHERE p.episode_id = ? AND p.archived_at IS NULL '
       'ORDER BY p.sort_key, p.id;',
       [episodeId],
@@ -1053,6 +1048,7 @@ LIMIT ?;''',
         label: r['label'] as String,
         plannedCutCount: r['planned_cut_count'] as int?,
         cutCount: r['cut_count'] as int,
+        inUse: r['in_use'] == 1,
       ),
   ];
 
@@ -1060,39 +1056,104 @@ LIMIT ?;''',
 
   /// Puts an event on [date] (its local day), at [timeMinutes] past
   /// midnight or all day (null), on [episodeId]'s rows or on none.
+  ///
+  /// With [card] (a `PartGroup.key`), the event belongs to that card only
+  /// (its episode comes from the card; [episodeId] is not needed).
   int addEvent({
     int? episodeId,
+    String? card,
     required DateTime date,
     int? timeMinutes,
     required String title,
     String? note,
     bool rest = false,
   }) {
-    _checkEvent(timeMinutes, episodeId, rest);
+    final place = _eventPlace(episodeId, card);
+    _checkEvent(timeMinutes, place.episode, rest);
     db.execute(
-      'INSERT INTO events (episode_id, day, time_min, title, note, rest) '
-      'VALUES (?, ?, ?, ?, ?, ?);',
-      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0],
+      'INSERT INTO events (episode_id, part_id, stage_id, day, time_min, '
+      'title, note, rest) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
+      [
+        place.episode,
+        place.part,
+        place.stage,
+        _day(date),
+        timeMinutes,
+        title,
+        note,
+        if (rest) 1 else 0,
+      ],
     );
     return db.lastInsertRowId;
   }
 
-  /// Rewrites every field of event [id].
+  /// Rewrites every field of event [id]. Its card stays unless [card]
+  /// names another or [episodeId] moves it to another episode (then it is
+  /// that episode's event).
   void updateEvent(
     int id, {
     int? episodeId,
+    String? card,
     required DateTime date,
     int? timeMinutes,
     required String title,
     String? note,
     bool rest = false,
   }) {
-    _checkEvent(timeMinutes, episodeId, rest);
+    final place = _eventPlace(episodeId, card);
+    _checkEvent(timeMinutes, place.episode, rest);
     db.execute(
-      'UPDATE events SET episode_id = ?, day = ?, time_min = ?, title = ?, '
-      'note = ?, rest = ? WHERE id = ?;',
-      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0, id],
+      '''
+UPDATE events SET
+  part_id = CASE WHEN ?2 THEN ?3 WHEN episode_id IS ?1 THEN part_id END,
+  stage_id = CASE WHEN ?2 THEN ?4 WHEN episode_id IS ?1 THEN stage_id END,
+  episode_id = ?1, day = ?5, time_min = ?6, title = ?7, note = ?8, rest = ?9
+WHERE id = ?10;''',
+      [
+        place.episode,
+        if (card != null) 1 else 0,
+        place.part,
+        place.stage,
+        _day(date),
+        timeMinutes,
+        title,
+        note,
+        if (rest) 1 else 0,
+        id,
+      ],
     );
+  }
+
+  /// Where an event goes: the card's episode, part and stage, or just
+  /// [episodeId]. Only part × stage and part-less cards take events.
+  ({int? episode, int? part, int? stage}) _eventPlace(
+    int? episodeId,
+    String? card,
+  ) {
+    if (card == null) return (episode: episodeId, part: null, stage: null);
+    final k = card.split(':');
+    final ({int? episode, int? part, int? stage}) place;
+    switch (k) {
+      case ['part', final p, final st]:
+        final part = int.parse(p);
+        final row = db.select('SELECT episode_id FROM parts WHERE id = ?;', [
+          part,
+        ]);
+        if (row.isEmpty) throw ArgumentError.value(card, 'card', 'no part');
+        place = (
+          episode: row.first['episode_id'] as int,
+          part: part,
+          stage: int.parse(st),
+        );
+      case ['nopart', final e, final st]:
+        place = (episode: int.parse(e), part: null, stage: int.parse(st));
+      default:
+        throw ArgumentError.value(card, 'card', 'not a part or episode card');
+    }
+    if (episodeId != null && episodeId != place.episode) {
+      throw ArgumentError('Card $card is not on episode $episodeId.');
+    }
+    return place;
   }
 
   void deleteEvent(int id) =>
@@ -1102,35 +1163,72 @@ LIMIT ?;''',
   /// grouped by episode (null: events on no episode); each list by day,
   /// all-day ones first, then by time. Events of archived episodes are
   /// left out.
+  ///
+  /// Card events are not here but in [cardEvents].
   Map<int?, List<EventRow>> events({
     required DateTime from,
     required DateTime to,
   }) {
     final out = <int?, List<EventRow>>{};
-    for (final r in db.select(
-      '''
-SELECT ev.id, ev.episode_id, ev.day, ev.time_min, ev.title, ev.note, ev.rest
-FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
-LEFT JOIN works w ON w.id = e.work_id
-WHERE ev.day >= ? AND ev.day < ?
-  AND (ev.episode_id IS NULL
-       OR (e.archived_at IS NULL AND w.archived_at IS NULL))
-ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
-      [_day(from), _day(to)],
-    )) {
-      final day = (r['day'] as String).split('-').map(int.parse).toList();
-      final episode = r['episode_id'] as int?;
-      (out[episode] ??= []).add((
-        id: r['id'] as int,
-        episodeId: episode,
-        date: DateTime(day[0], day[1], day[2]),
-        timeMinutes: r['time_min'] as int?,
-        title: r['title'] as String,
-        note: r['note'] as String?,
-        rest: r['rest'] == 1,
-      ));
+    for (final e in _events(from, to, cards: false)) {
+      (out[e.episodeId] ??= []).add(e);
     }
     return out;
+  }
+
+  /// Card events (유저 2026-11-28 정정) on the local days from [from] up
+  /// to [to], by card (`PartGroup.key`), ordered as [events]. A collapsed
+  /// row finds its cards' events by their keys. Events of archived
+  /// episodes, works and parts are left out.
+  Map<String, List<EventRow>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    final out = <String, List<EventRow>>{};
+    for (final e in _events(from, to, cards: true)) {
+      (out[e.card!] ??= []).add(e);
+    }
+    return out;
+  }
+
+  List<EventRow> _events(DateTime from, DateTime to, {required bool cards}) {
+    final rows = db.select(
+      '''
+SELECT ev.id, ev.episode_id, ev.part_id, ev.stage_id, ev.day, ev.time_min,
+       ev.title, ev.note, ev.rest
+FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
+LEFT JOIN works w ON w.id = e.work_id
+LEFT JOIN parts p ON p.id = ev.part_id
+WHERE ev.day >= ?1 AND ev.day < ?2
+  AND (ev.stage_id IS NOT NULL) = ?3
+  AND (ev.episode_id IS NULL
+       OR (e.archived_at IS NULL AND w.archived_at IS NULL))
+  AND (p.id IS NULL OR p.archived_at IS NULL)
+ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
+      [_day(from), _day(to), if (cards) 1 else 0],
+    );
+    return [
+      for (final r in rows)
+        (
+          id: r['id'] as int,
+          episodeId: r['episode_id'] as int?,
+          card: switch ((r['stage_id'], r['part_id'])) {
+            (null, _) => null,
+            (final s, null) => 'nopart:${r['episode_id']}:$s',
+            (final s, final p) => 'part:$p:$s',
+          },
+          date: _dayOf(r['day'] as String),
+          timeMinutes: r['time_min'] as int?,
+          title: r['title'] as String,
+          note: r['note'] as String?,
+          rest: r['rest'] == 1,
+        ),
+    ];
+  }
+
+  static DateTime _dayOf(String day) {
+    final d = day.split('-').map(int.parse).toList();
+    return DateTime(d[0], d[1], d[2]);
   }
 
   static String _day(DateTime d) {
@@ -1592,6 +1690,11 @@ ORDER BY i.started_at;''',
         stage,
       )) {
         _forgetPlace('nopart:$episode:$stage');
+        db.execute(
+          'DELETE FROM events WHERE episode_id = ? AND part_id IS NULL '
+          'AND stage_id = ?;',
+          [episode, stage],
+        );
       }
     }
     db
@@ -1604,24 +1707,87 @@ ORDER BY i.started_at;''',
         plan.storyboards,
       ]);
     plan.partIds.forEach(_deletePart);
-    for (final episode in plan.episodeIds) {
-      for (final r in db.select('SELECT id FROM parts WHERE episode_id = ?;', [
-        episode,
-      ])) {
-        _deletePart(r['id'] as int);
-      }
-      _forgetPlaces('nopart:$episode:%');
-      db
-        ..execute('DELETE FROM episode_rates WHERE episode_id = ?;', [episode])
-        // Its events go by ON DELETE CASCADE.
-        ..execute('DELETE FROM episodes WHERE id = ?;', [episode]);
-    }
+    plan.episodeIds.forEach(_deleteEmptyEpisode);
     for (final work in plan.workIds) {
       db
         ..execute('DELETE FROM work_stages WHERE work_id = ?;', [work])
         ..execute('DELETE FROM works WHERE id = ?;', [work]);
     }
   });
+
+  /// Runs [body] — several writes of one user action — as one: all of it
+  /// or, when it throws, none; and one step of the undo history. Nested
+  /// batches join the outermost.
+  T batch<T>(T Function() body) => _transaction(body);
+
+  /// Whether [id] of [kind] is in use — then it cannot be deleted, only
+  /// archived: a client with a work, a work with an episode, an episode
+  /// with a cut or storyboard, a part with a cut. Archived ones count.
+  bool inUse(CatalogueKind kind, int id) =>
+      db.select('SELECT ${_inUseSql(kind, '?1')} AS used;', [
+        id,
+      ]).first['used'] ==
+      1;
+
+  /// SQL for "[kind] [id] is in use" ([id] an SQL expression).
+  static String _inUseSql(CatalogueKind kind, String id) => switch (kind) {
+    CatalogueKind.work => 'EXISTS (SELECT 1 FROM episodes WHERE work_id = $id)',
+    CatalogueKind.episode =>
+      'EXISTS (SELECT 1 FROM cuts WHERE episode_id = $id) '
+          'OR EXISTS (SELECT 1 FROM storyboards WHERE episode_id = $id)',
+    CatalogueKind.part => 'EXISTS (SELECT 1 FROM cuts WHERE part_id = $id)',
+    CatalogueKind.client =>
+      'EXISTS (SELECT 1 FROM works WHERE client_id = $id)',
+  };
+
+  void _checkUnused(CatalogueKind kind, int id) {
+    if (inUse(kind, id)) {
+      throw StateError('${kind.name} $id is in use; archive it instead.');
+    }
+  }
+
+  /// Deletes a client no work uses. Throws [StateError] when one does.
+  void deleteClient(int id) => _transaction(() {
+    _checkUnused(CatalogueKind.client, id);
+    db.execute('DELETE FROM clients WHERE id = ?;', [id]);
+  });
+
+  /// Deletes a work with no episode, and its stages. Throws [StateError]
+  /// when it has one.
+  void deleteWork(int id) => _transaction(() {
+    _checkUnused(CatalogueKind.work, id);
+    db
+      ..execute('DELETE FROM work_stages WHERE work_id = ?;', [id])
+      ..execute('DELETE FROM works WHERE id = ?;', [id]);
+  });
+
+  /// Deletes an episode with no cut or storyboard, with its (empty)
+  /// parts, rates and events. Throws [StateError] when it has one.
+  void deleteEpisode(int id) => _transaction(() {
+    _checkUnused(CatalogueKind.episode, id);
+    _deleteEmptyEpisode(id);
+  });
+
+  /// Deletes a part with no cut, and its per-stage rows. Throws
+  /// [StateError] when it has one.
+  void deletePart(int id) => _transaction(() {
+    _checkUnused(CatalogueKind.part, id);
+    _holdBeforeDates();
+    _deletePart(id);
+  });
+
+  void _deleteEmptyEpisode(int episode) {
+    for (final r in db.select('SELECT id FROM parts WHERE episode_id = ?;', [
+      episode,
+    ])) {
+      _deletePart(r['id'] as int);
+    }
+    _forgetPlaces('nopart:$episode:%');
+    db
+      ..execute('DELETE FROM episode_rates WHERE episode_id = ?;', [episode])
+      // Its events go by ON DELETE CASCADE.
+      ..execute('DELETE FROM episodes WHERE id = ?;', [episode]);
+  }
 
   /// Whether the cuts matching [where] (one `?`, [id]) still have a task
   /// of [stage], archived ones included.
@@ -1653,6 +1819,7 @@ ORDER BY i.started_at;''',
   }
 
   static const _partStageTables = [
+    'events', // the card's events
     'part_stage_dues',
     'part_stage_plans',
     'part_stage_kickoffs',
@@ -2642,6 +2809,7 @@ GROUP BY s.name;''',
       (
         id: r['id'] as int,
         episodeId: null,
+        card: null,
         date: DateTime.parse(r['day'] as String),
         timeMinutes: null,
         title: r['title'] as String,

@@ -33,6 +33,28 @@ void main() {
     expect(loadDeviceSettings(tmp.path).themeMode, ThemeChoice.system);
   });
 
+  test('shortcuts: platform defaults, a choice kept, back to default', () {
+    final s = loadDeviceSettings(tmp.path);
+    expect(s.shortcuts(apple: false)[ShortcutAction.redo], [
+      'Ctrl+Shift+Z',
+      'Ctrl+Y',
+    ]);
+    expect(s.shortcuts(apple: true)[ShortcutAction.undo], ['Cmd+Z']);
+
+    s.setShortcut(ShortcutAction.undo, ['Alt+Backspace']);
+    final again = loadDeviceSettings(tmp.path);
+    expect(again.shortcuts(apple: true)[ShortcutAction.undo], [
+      'Alt+Backspace',
+    ]);
+    expect(again.shortcuts(apple: true)[ShortcutAction.redo], ['Cmd+Shift+Z']);
+
+    again.setShortcut(ShortcutAction.undo, null);
+    expect(loadDeviceSettings(tmp.path).shortcuts(apple: false), {
+      ShortcutAction.undo: ['Ctrl+Z'],
+      ShortcutAction.redo: ['Ctrl+Shift+Z', 'Ctrl+Y'],
+    });
+  });
+
   test('a damaged file gives the defaults', () {
     File('${tmp.path}/device.json').writeAsStringSync('{nope');
     final s = loadDeviceSettings(tmp.path);

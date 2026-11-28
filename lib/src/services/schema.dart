@@ -54,6 +54,7 @@ CREATE TABLE work_intervals (
   const Migration(16, _v16NumbersAsValues),
   const Migration(17, _v17ColorsAndEvents),
   const Migration(18, _v18DaysOffAreEvents),
+  const Migration(19, _v19CardEvents),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -198,6 +199,24 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
         [role, roles[i].$2[j], j],
       );
     }
+  }
+}
+
+/// 유저 2026-11-28 (정정): an event belongs to one card — a part × stage,
+/// or the part-less cuts of an episode × stage — not to the whole episode.
+/// `stage_id` set = a card event (with `part_id`, NULL for the part-less
+/// card); NULL = an episode event as before (or global, no episode).
+/// Existing rows stay as they are.
+void _v19CardEvents(CommonDatabase db) {
+  for (final sql in const [
+    'ALTER TABLE events ADD COLUMN part_id INTEGER '
+        'REFERENCES parts(id) ON DELETE CASCADE;',
+    'ALTER TABLE events ADD COLUMN stage_id INTEGER '
+        'REFERENCES work_stages(id) ON DELETE CASCADE;',
+    'CREATE INDEX events_card ON events(stage_id, part_id) '
+        'WHERE stage_id IS NOT NULL;',
+  ]) {
+    db.execute(sql);
   }
 }
 

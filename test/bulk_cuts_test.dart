@@ -118,6 +118,7 @@ void main() {
       name: 'A스튜디오',
       closingDay: 25,
       color: null,
+      inUse: false,
     ));
     final w = store.createWork('가제');
     store
@@ -129,10 +130,16 @@ void main() {
       title: '본제',
       currency: 'KRW',
       clientId: c,
+      inUse: false,
     ));
     final ep = store.addEpisode(w, '#1');
     store.renameEpisode(ep, '#01', title: '시작');
-    expect(store.episodes(w).single, (id: ep, number: '#01', title: '시작'));
+    expect(store.episodes(w).single, (
+      id: ep,
+      number: '#01',
+      title: '시작',
+      inUse: false,
+    ));
   });
 
   test('1500 cuts: create, assign a stage, list', () {

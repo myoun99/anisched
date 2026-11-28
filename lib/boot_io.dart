@@ -8,6 +8,7 @@ import 'src/services/catalogue_reader.dart';
 import 'src/services/database.dart';
 import 'src/services/device_settings.dart';
 import 'src/services/document_session.dart';
+import 'src/services/undo_history.dart';
 
 /// Devices: the working file and state in the app support folder; views
 /// read on a background isolate while writes stay on this one.
@@ -23,6 +24,8 @@ Future<Booted> boot() async {
     folder: dir.path,
     files: platformDocumentFiles(),
   );
+  // Every write from here on can be undone (UndoHistory.of(db)).
+  UndoHistory.attach(db);
   return (
     db: db,
     reader: reader,

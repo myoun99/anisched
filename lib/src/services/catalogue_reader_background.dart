@@ -238,16 +238,14 @@ class BackgroundCatalogueReader implements CatalogueReader {
   );
 
   @override
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  works() => _ask((s) => s.works());
+  Future<List<WorkRow>> works() => _ask((s) => s.works());
 
   @override
-  Future<List<({int id, String number, String? title})>> episodes(int workId) =>
+  Future<List<EpisodeRow>> episodes(int workId) =>
       _ask((s) => s.episodes(workId));
 
   @override
-  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
-  parts(int episodeId) => _ask((s) => s.parts(episodeId));
+  Future<List<PartRow>> parts(int episodeId) => _ask((s) => s.parts(episodeId));
 
   @override
   Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false}) =>
@@ -272,15 +270,12 @@ class BackgroundCatalogueReader implements CatalogueReader {
       _ask((s) => s.searchClients(query));
 
   @override
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  searchWorks(String query, {int? clientId}) =>
+  Future<List<WorkRow>> searchWorks(String query, {int? clientId}) =>
       _ask((s) => s.searchWorks(query, clientId: clientId));
 
   @override
-  Future<List<({int id, String number, String? title})>> searchEpisodes(
-    int workId,
-    String query,
-  ) => _ask((s) => s.searchEpisodes(workId, query));
+  Future<List<EpisodeRow>> searchEpisodes(int workId, String query) =>
+      _ask((s) => s.searchEpisodes(workId, query));
 
   @override
   Future<int?> timerTarget() => _ask((s) => s.timerTarget());
@@ -296,6 +291,12 @@ class BackgroundCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
   }) => _ask((s) => s.events(from: from, to: to));
+
+  @override
+  Future<Map<String, List<EventRow>>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  }) => _ask((s) => s.cardEvents(from: from, to: to));
 
   @override
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>

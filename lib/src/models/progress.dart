@@ -10,16 +10,50 @@ import 'cut_numbers.dart';
 /// archived cut (a missing number taken out) is [archived].
 /// A client (회사) as the pickers and settings show it. [color] is an ARGB
 /// value the user picked (유저 2026-11-28); null shows the default grey.
-typedef ClientRow = ({int id, String name, int? closingDay, int? color});
+/// What the registration lists can rename and, when not [CatalogueKind]
+/// in use, delete (유저 2026-11-28).
+enum CatalogueKind { client, work, episode, part }
+
+/// A client; [inUse]: a work has it (archived ones too) — it cannot be
+/// deleted. Likewise for [WorkRow], [EpisodeRow] and [PartRow].
+typedef ClientRow = ({
+  int id,
+  String name,
+  int? closingDay,
+  int? color,
+  bool inUse,
+});
+
+typedef WorkRow = ({
+  int id,
+  String title,
+  String currency,
+  int? clientId,
+  bool inUse,
+});
+
+typedef EpisodeRow = ({int id, String number, String? title, bool inUse});
+
+typedef PartRow = ({
+  int id,
+  String label,
+  int? plannedCutCount,
+  int cutCount,
+  bool inUse,
+});
 
 /// Something on the calendar that is not work (유저 2026-11-28 — 아후레코,
 /// a meeting): a day, an optional time of day in minutes, a title and a
 /// note. [episodeId] ties it to an episode's timeline rows; null is a
 /// global event. A global event with [rest] is a day off (유저
 /// 2026-11-28) — the pace skips it like a rest weekday.
+///
+/// [card] (유저 2026-11-28 정정): the card (`PartGroup.key`) the event
+/// belongs to, or null for an episode or global event.
 typedef EventRow = ({
   int id,
   int? episodeId,
+  String? card,
   DateTime date,
   int? timeMinutes,
   String title,

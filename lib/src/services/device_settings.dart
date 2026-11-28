@@ -31,6 +31,25 @@ enum LanguageChoice {
       values.where((e) => e.tag != null && e.tag == v).firstOrNull ?? device;
 }
 
+/// Actions a key combination can run, by id — the keys of
+/// [DeviceSettings.shortcuts]. More join this list as they get shortcuts.
+abstract final class ShortcutAction {
+  static const undo = 'undo';
+  static const redo = 'redo';
+}
+
+/// The default key combinations: `Ctrl`/`Cmd`, `Shift`, `Alt` and a key,
+/// joined by `+`. Apple devices ([apple]) use `Cmd`.
+Map<String, List<String>> defaultShortcuts({required bool apple}) => apple
+    ? const {
+        ShortcutAction.undo: ['Cmd+Z'],
+        ShortcutAction.redo: ['Cmd+Shift+Z'],
+      }
+    : const {
+        ShortcutAction.undo: ['Ctrl+Z'],
+        ShortcutAction.redo: ['Ctrl+Shift+Z', 'Ctrl+Y'],
+      };
+
 /// Preferences of THIS device — kept on the device, never in the
 /// document, so opening the document elsewhere does not change how that
 /// device looks (docs/storage.md). Work rules (rounding, day start, rest
@@ -40,7 +59,13 @@ enum LanguageChoice {
 /// in the app container on devices ([loadDeviceSettings] in
 /// `device_settings_io.dart`), the browser's localStorage on the web.
 class DeviceSettings {
-  DeviceSettings._(this._write, this._theme, this._language, this._monthView);
+  DeviceSettings._(
+    this._write,
+    this._theme,
+    this._language,
+    this._monthView,
+    this._shortcuts,
+  );
 
   /// Settings read from [json] (null, unreadable or partial gives the
   /// defaults) that hand their JSON to [write] on every change.
@@ -57,6 +82,15 @@ class DeviceSettings {
       ThemeChoice.parse(m['themeMode']),
       LanguageChoice.parse(m['language']),
       m['monthView'] == true,
+      {
+        if (m['shortcuts'] case final Map<Object?, Object?> keys)
+          for (final MapEntry(:key, :value) in keys.entries)
+            if (key is String && value is List)
+              key: [
+                for (final v in value)
+                  if (v is String) v,
+              ],
+      },
     );
   }
 
@@ -64,6 +98,7 @@ class DeviceSettings {
   ThemeChoice _theme;
   LanguageChoice _language;
   bool _monthView;
+  final Map<String, List<String>> _shortcuts;
 
   /// Default: [ThemeChoice.system].
   ThemeChoice get themeMode => _theme;
@@ -89,11 +124,30 @@ class DeviceSettings {
     _save();
   }
 
+  /// Key combinations per action ([ShortcutAction]): this device's
+  /// choices over [defaultShortcuts]. An empty list turns an action's
+  /// keys off.
+  Map<String, List<String>> shortcuts({required bool apple}) => {
+    ...defaultShortcuts(apple: apple),
+    ..._shortcuts,
+  };
+
+  /// Sets [action]'s key combinations; null goes back to the default.
+  void setShortcut(String action, List<String>? keys) {
+    if (keys == null) {
+      _shortcuts.remove(action);
+    } else {
+      _shortcuts[action] = List.unmodifiable(keys);
+    }
+    _save();
+  }
+
   void _save() => _write(
     jsonEncode({
       'themeMode': _theme.name,
       if (_language.tag != null) 'language': _language.tag,
       if (_monthView) 'monthView': true,
+      if (_shortcuts.isNotEmpty) 'shortcuts': _shortcuts,
     }),
   );
 }

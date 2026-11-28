@@ -89,11 +89,9 @@ abstract interface class CatalogueReader {
   /// Pickers for the input screens: see [CatalogueStore.works],
   /// [CatalogueStore.episodes], [CatalogueStore.parts],
   /// [CatalogueStore.cuts] and [CatalogueStore.clients].
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  works();
-  Future<List<({int id, String number, String? title})>> episodes(int workId);
-  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
-  parts(int episodeId);
+  Future<List<WorkRow>> works();
+  Future<List<EpisodeRow>> episodes(int workId);
+  Future<List<PartRow>> parts(int episodeId);
   Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false});
   Future<List<ClientRow>> clients();
 
@@ -111,12 +109,8 @@ abstract interface class CatalogueReader {
   /// Search for the registration screen: see [CatalogueStore.searchClients],
   /// [CatalogueStore.searchWorks] and [CatalogueStore.searchEpisodes].
   Future<List<ClientRow>> searchClients(String query);
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  searchWorks(String query, {int? clientId});
-  Future<List<({int id, String number, String? title})>> searchEpisodes(
-    int workId,
-    String query,
-  );
+  Future<List<WorkRow>> searchWorks(String query, {int? clientId});
+  Future<List<EpisodeRow>> searchEpisodes(int workId, String query);
 
   /// See [CatalogueStore.timerTarget].
   Future<int?> timerTarget();
@@ -129,6 +123,12 @@ abstract interface class CatalogueReader {
 
   /// See [CatalogueStore.events].
   Future<Map<int?, List<EventRow>>> events({
+    required DateTime from,
+    required DateTime to,
+  });
+
+  /// See [CatalogueStore.cardEvents].
+  Future<Map<String, List<EventRow>>> cardEvents({
     required DateTime from,
     required DateTime to,
   });
@@ -252,16 +252,15 @@ class SyncCatalogueReader implements CatalogueReader {
   );
 
   @override
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  works() => _run(store.works);
+  Future<List<WorkRow>> works() => _run(store.works);
 
   @override
-  Future<List<({int id, String number, String? title})>> episodes(int workId) =>
+  Future<List<EpisodeRow>> episodes(int workId) =>
       _run(() => store.episodes(workId));
 
   @override
-  Future<List<({int id, String label, int? plannedCutCount, int cutCount})>>
-  parts(int episodeId) => _run(() => store.parts(episodeId));
+  Future<List<PartRow>> parts(int episodeId) =>
+      _run(() => store.parts(episodeId));
 
   @override
   Future<List<CutRow>> cuts(int episodeId, {bool includeArchived = false}) =>
@@ -286,15 +285,12 @@ class SyncCatalogueReader implements CatalogueReader {
       _run(() => store.searchClients(query));
 
   @override
-  Future<List<({int id, String title, String currency, int? clientId})>>
-  searchWorks(String query, {int? clientId}) =>
+  Future<List<WorkRow>> searchWorks(String query, {int? clientId}) =>
       _run(() => store.searchWorks(query, clientId: clientId));
 
   @override
-  Future<List<({int id, String number, String? title})>> searchEpisodes(
-    int workId,
-    String query,
-  ) => _run(() => store.searchEpisodes(workId, query));
+  Future<List<EpisodeRow>> searchEpisodes(int workId, String query) =>
+      _run(() => store.searchEpisodes(workId, query));
 
   @override
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>
@@ -314,6 +310,12 @@ class SyncCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
   }) => _run(() => store.events(from: from, to: to));
+
+  @override
+  Future<Map<String, List<EventRow>>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  }) => _run(() => store.cardEvents(from: from, to: to));
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({

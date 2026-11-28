@@ -448,3 +448,28 @@
   - 다른 카드는 자리를 지킨다(바꾸기 전 `holdPlaces`).
 - **확인창 요약** `deletionSummary(ids)` → `(tasks, cuts, episodes, works, timerMinutes)`. 삭제와 같은 계획(`_DeletionPlan`)을 읽으므로
   확인창 숫자 = 실제로 지워지는 것.
+
+## 실행 취소 · 다시 실행 (유저 2026-11-28, `services/undo_history.dart`, 스키마 변경 없음)
+
+- **방식**: sqlite.org 「Automatic Undo/Redo」. 사용자 테이블마다 TEMP 트리거(INSERT/UPDATE/DELETE)가 그 행을 되돌리는 SQL 을
+  `temp.undo_log` 에 적는다. 순수 SQL 이라 기기 SQLite 와 웹 WASM 이 같다(session 확장은 WASM 빌드에 없음).
+  temp 라서 문서 파일 · 저장(VACUUM INTO) · 리더 연결에 안 들어간다.
+- **한 단계** = 앱의 동기 한 턴에 쓴 것 전부(UI `_write` 한 번, 그 안의 `holdPlaces` 포함). 다음 마이크로태스크에서 닫는다.
+  값이 그대로인 UPDATE 는 적지 않는다. 상한 200단계(오래된 것부터 버림). 새 단계 → redo 비움.
+- **undo**: 그 단계의 로그를 거꾸로 실행(외래키 지연), 트리거가 적은 것이 redo 단계. redo 도 같은 방식.
+- **제외**: `settings.timer_target`(선택만 바뀐 것). 타이머는 진행 중에 쓰는 것이 없다 — 시작 · 멈춤 · 구간 편집만 단계.
+- **문서 통째 교체**(열기 · 새 문서 · 스냅샷 · 다시 읽기, `copyAllRows` / `importDocumentInto`)는 기록하지 않고 스택을 비운다.
+- **연결**: 부팅 때 `UndoHistory.attach(db)`, UI 는 `UndoHistory.of(db)` 로 `canUndo` · `canRedo` · `undo()` · `redo()` ·
+  `changes`(스트림). 되돌린 쓰기도 쓰기라 리더 generation 이 오르고 문서가 dirty 가 된다.
+- **단축키**: `DeviceSettings.shortcuts(apple:)` — 동작 id(`ShortcutAction`) → 키 조합 목록. 기본 undo `Ctrl+Z`/`Cmd+Z`,
+  redo `Ctrl+Shift+Z`·`Ctrl+Y` / `Cmd+Shift+Z`. 이 기기의 선택만 저장(`setShortcut`, null = 기본으로).
+
+## 카드 이벤트 (v19, 유저 2026-11-28 정정)
+
+- 이벤트는 **카드 하나**(PartGroup = 화 × 파트? × 공정)에 붙는다. `events.part_id` · `events.stage_id` 추가(둘 다 CASCADE).
+  카드 이벤트 = (episode_id, part_id 또는 NULL(파트 없는 묶음), stage_id). stage_id NULL = 기존 화 이벤트 · 전역(episode NULL) — 이행은 기존 행 그대로.
+- 쓰기: `addEvent(card: PartGroup.key, …)` — 키 → 화 · 파트 · 공정 풀이는 store 한 곳(`_eventPlace`). `part:` · `nopart:` 키만(콘티 키는 ArgumentError).
+  `updateEvent` 는 `card:` 를 안 주면 같은 화 안에서 카드를 그대로 둔다.
+- 읽기: `cardEvents(from, to)` → `Map<groupKey, List<EventRow>>`(묶은 행은 안쪽 카드 키로 찾음). `events()` 는 화 · 전역만(카드 이벤트 빠짐).
+  `EventRow.card` = 그 카드 키 또는 null.
+- 완전 삭제: 카드의 task 가 다 지워지면 그 카드 이벤트도(파트×공정 행 표에 `events` 포함). undo 로그 대상(트리거는 모든 테이블).
