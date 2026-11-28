@@ -95,6 +95,7 @@ class DocumentSession implements DocumentSessionBase {
   Object? _lastSaveError;
 
   int _edits = 0;
+  int _mismatches = 0;
   bool _importing = false;
   int _staged = 0;
   Timer? _timer;
@@ -162,11 +163,20 @@ class DocumentSession implements DocumentSessionBase {
     });
   }
 
-  /// Saves now if there is anything to save — leaving the app, closing it.
+  /// The app is leaving the screen or closing. Where the document is
+  /// replaced atomically, saves now. Elsewhere (Android) it does not touch
+  /// the document — a kill while the provider holds it open cuts it to
+  /// nothing — the work is safe in the local database (its unsaved state
+  /// kept on disk) and saved when the app is back ([resume]) or next
+  /// started.
   @override
   Future<void> flush() {
     _timer?.cancel();
     _timer = null;
+    if (!_files.replacesAtomically) {
+      _persist();
+      return _tail;
+    }
     return save();
   }
 
@@ -211,27 +221,50 @@ class DocumentSession implements DocumentSessionBase {
 
   /// Writes the working database and hands it to [place]; null when
   /// [place] declined (nothing changed).
-  Future<DocumentRef?> _writeTo(DocumentPlacer place, {String? name}) async {
+  ///
+  /// The bytes are first kept as the document's copy of the last write
+  /// (before an in-place write to [pinTo]; after a Save As placed them),
+  /// and the written size is checked: a document of another size stays
+  /// unsaved and is written again ([DocumentWriteMismatchException]).
+  Future<DocumentRef?> _writeTo(
+    DocumentPlacer place, {
+    String? name,
+    String? pinTo,
+  }) async {
     final editsAtStart = _edits;
     final folder = Directory(_stagingPath('out'))..createSync();
     final out = _join(folder.path, documentFileName(name ?? 'Untitled'));
     final DocumentRef? ref;
     try {
       final content = await exportDocument(workingPath, out);
+      if (pinTo != null) _pin(out, pinTo, content);
+      // Placing may move the staged file: keep the copy first.
+      final copy = pinTo == null ? '$out.keep' : null;
+      if (copy != null) File(out).copySync(copy);
       ref = await place(out, documentFileName(name ?? 'Untitled'));
       if (ref == null) return null;
-      final stat = await _files.stat(ref);
+      if (copy != null) _pin(copy, ref.location, content);
+      var stat = await _files.stat(ref);
+      if (stat != null && stat.size != content.size) {
+        // A provider may report the old size for a moment.
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        stat = await _files.stat(ref);
+      }
+      if (stat != null && stat.size != content.size) {
+        throw DocumentWriteMismatchException(ref, content.size, stat.size);
+      }
+      _writePinNotes(ref.location, content, false);
+      _mismatches = 0;
       _fingerprint = DocumentFingerprint(
         size: content.size,
         hash: content.hash,
-        // A provider that reports another size has not settled: never trust
-        // its time as ours.
-        modifiedMs: stat != null && stat.size == content.size
-            ? stat.modifiedMs
-            : null,
+        modifiedMs: stat?.modifiedMs,
       );
     } catch (e) {
       _lastSaveError = e;
+      if (e is DocumentWriteMismatchException && _mismatches++ < 2) {
+        _scheduleAutosave();
+      }
       _emit(DocumentChange.state);
       rethrow;
     } finally {
@@ -253,10 +286,133 @@ class DocumentSession implements DocumentSessionBase {
   }
 
   /// Writes to the bound [ref] in place.
-  Future<void> _writeInPlace(DocumentRef ref) => _writeTo((staged, _) async {
-    await _files.replaceFrom(staged, ref);
-    return ref;
-  }, name: ref.name);
+  Future<void> _writeInPlace(DocumentRef ref) => _writeTo(
+    (staged, _) async {
+      await _files.replaceFrom(staged, ref);
+      return ref;
+    },
+    name: ref.name,
+    pinTo: ref.location,
+  );
+
+  // ---- the copy of the last write (유저 2026-11-28: a document at 0 bytes) ----
+  //
+  // Before the document is replaced, the bytes about to go out are kept in
+  // the app container with what they are (size, hash) and whether the
+  // write finished. A write cut short — the app killed while the provider
+  // had the file open, cut to nothing — is then put right from this copy
+  // at the next start or return ([resume]), or on request
+  // ([restoreLastWritten]). Only this device's own last write is ever put
+  // back, and only over an empty file or one this device was writing.
+
+  String get _pinFolder => _join(folder, 'last-written');
+
+  /// Where [location]'s copy lives: an FNV-1a hash of the location names
+  /// it (the location itself is kept in the copy's notes).
+  String _pinPath(String location) {
+    var h = 0x811c9dc5;
+    for (final b in utf8.encode(location)) {
+      h = ((h ^ b) * 0x01000193) & 0xffffffff;
+    }
+    return _join(_pinFolder, h.toRadixString(16).padLeft(8, '0'));
+  }
+
+  /// The notes of [location]'s copy, when one is kept.
+  ({int size, int hash, bool pending})? _pinOf(String location) {
+    final base = _pinPath(location);
+    final notes = File('$base.json');
+    if (!notes.existsSync() || !File('$base.$documentExtension').existsSync()) {
+      return null;
+    }
+    try {
+      final json = jsonDecode(notes.readAsStringSync());
+      if (json
+          case {
+            'location': final String at,
+            'size': final int size,
+            'hash': final int hash,
+            'pending': final bool pending,
+          }
+          when at == location) {
+        return (size: size, hash: hash, pending: pending);
+      }
+    } on FormatException {
+      // Unreadable notes: no copy.
+    }
+    return null;
+  }
+
+  void _writePinNotes(String location, DocumentContent content, bool pending) {
+    final notes = File('${_pinPath(location)}.json.tmp');
+    notes.writeAsStringSync(
+      jsonEncode({
+        'location': location,
+        'size': content.size,
+        'hash': content.hash,
+        'pending': pending,
+      }),
+      flush: true,
+    );
+    notes.renameSync('${_pinPath(location)}.json');
+  }
+
+  /// Keeps [staged] as [location]'s copy, marked as being written.
+  void _pin(String staged, String location, DocumentContent content) {
+    Directory(_pinFolder).createSync(recursive: true);
+    final base = _pinPath(location);
+    final temp = '$base.$documentExtension.tmp';
+    File(staged).copySync(temp);
+    File(temp).renameSync('$base.$documentExtension');
+    _writePinNotes(location, content, true);
+  }
+
+  /// When [ref] is empty, or cut short while this device was writing it,
+  /// writes the kept copy back. Answers whether it did.
+  Future<bool> _repair(DocumentRef ref, DocumentStat? stat) async {
+    final pin = _pinOf(ref.location);
+    if (pin == null || stat == null) return false;
+    if (stat.size != 0) {
+      // Cut short while this device wrote it — unless it reads as a whole
+      // document (another device saved since): then it is theirs.
+      if (!pin.pending || stat.size == pin.size) return false;
+      final ({String path, DocumentFingerprint fingerprint}) seen;
+      try {
+        seen = await _fetch(ref);
+      } on Object {
+        return false;
+      }
+      try {
+        await prepareImport(seen.path);
+        return false;
+      } on NotADocumentException {
+        // Broken: put it right below.
+      } finally {
+        _delete(seen.path);
+      }
+    }
+    final copy = '${_pinPath(ref.location)}.$documentExtension';
+    await _files.replaceFrom(copy, ref);
+    final after = await _files.stat(ref);
+    final content = (size: pin.size, hash: pin.hash);
+    _writePinNotes(ref.location, content, after?.size != pin.size);
+    if (after?.size != pin.size) return false;
+    _fingerprint = DocumentFingerprint(
+      size: pin.size,
+      hash: pin.hash,
+      modifiedMs: after!.modifiedMs,
+    );
+    _persist();
+    return true;
+  }
+
+  @override
+  Future<bool> restoreLastWritten(DocumentRef ref) async {
+    if (_pinOf(ref.location) == null) return false;
+    final copy = '${_pinPath(ref.location)}.$documentExtension';
+    await _serial(() => _files.replaceFrom(copy, ref));
+    await openDocument(ref);
+    return true;
+  }
 
   // ---- reading ----
 
@@ -293,6 +449,17 @@ class DocumentSession implements DocumentSessionBase {
       return RemoteUnreachable(e);
     }
     if (stat == null) return const RemoteMissing();
+    try {
+      if (await _repair(ref, stat)) {
+        _emit(DocumentChange.state);
+        if (_dirty) _scheduleAutosave();
+        return const RemoteRepaired();
+      }
+    } on Object catch (e) {
+      return RemoteUnreachable(e);
+    }
+    // Back on screen with work not yet written (flush did not write).
+    if (_dirty) _scheduleAutosave();
     final known = _fingerprint;
     if (known != null && known.sameStat(stat)) return const RemoteSame();
     final ({String path, DocumentFingerprint fingerprint}) incoming;

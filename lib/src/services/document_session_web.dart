@@ -117,6 +117,9 @@ class BrowserDocumentSession implements DocumentSessionBase {
   Future<RemoteCheck> resume() async => const RemoteUnbound();
 
   @override
+  Future<bool> restoreLastWritten(DocumentRef ref) async => false;
+
+  @override
   Future<void> startUntitled() async {
     _replaceWith(null, 'new');
     _ref = null;
