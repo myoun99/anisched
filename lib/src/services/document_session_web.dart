@@ -148,20 +148,30 @@ class BrowserDocumentSession implements DocumentSessionBase {
   /// `SchemaTooNewException`; then nothing changed.
   void _replaceWith(Uint8List? bytes, String label) {
     const path = '/incoming.anisched';
-    if (bytes != null) putMemoryFile(path, bytes);
+    final head = bytes?.take(16).toList();
+    if (bytes != null) {
+      checkDocumentHead(label, bytes.length, head!);
+      putMemoryFile(path, bytes);
+    }
     final CommonDatabase doc;
     try {
       doc = openMemoryFile(path);
     } on SqliteException catch (e) {
       deleteMemoryFile(path);
-      throw NotADocumentException(label, e.message);
+      throw NotADocumentException(
+        label,
+        e.message,
+        kind: NotADocumentKind.damaged,
+        size: bytes?.length,
+        head: head,
+      );
     }
     try {
       if (bytes == null) {
         doc.execute('PRAGMA application_id = $documentApplicationId');
         migrate(doc);
       } else {
-        checkAndMigrateDocument(doc, label);
+        checkAndMigrateDocument(doc, label, size: bytes.length, head: head);
       }
       _importing = true;
       try {
