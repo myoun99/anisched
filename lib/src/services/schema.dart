@@ -55,6 +55,7 @@ CREATE TABLE work_intervals (
   const Migration(17, _v17ColorsAndEvents),
   const Migration(18, _v18DaysOffAreEvents),
   const Migration(19, _v19CardEvents),
+  const Migration(20, _v20NumbersAsValuesAgain),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -199,6 +200,93 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
         [role, roles[i].$2[j], j],
       );
     }
+  }
+}
+
+/// 유저 2026-11-28 (bug): numbers typed with another prefix than the
+/// style's (`C012` under a `#` style), with spaces, or before v16 reached
+/// the store as typed, so `C012` and `12` were two cuts. Every cut and
+/// episode number goes to its value by the rule of
+/// `models/number_style.dart` at this version. Where two live rows of one
+/// episode (or work) would share a value, both keep their names — they are
+/// not merged silently — and the clash is recorded in the setting
+/// `number_clashes` (JSON: kind, id, number, value) for the app to show.
+void _v20NumbersAsValuesAgain(CommonDatabase db) {
+  String prefixOf(String key, String fallback) {
+    final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);
+    if (rows.isEmpty) return fallback;
+    final m = jsonDecode(rows.first['value'] as String);
+    return m is Map && m['prefix'] is String ? m['prefix'] as String : fallback;
+  }
+
+  // A literal copy of the rule, so this step never changes once shipped.
+  final typedValue = RegExp(r'^0*(\d{1,9})([A-Za-z]*)$');
+  String? valueOf(String typed, String prefix) {
+    var t = typed.replaceAll(RegExp(r'\s+'), '');
+    for (final p in {prefix, 'C', '#'}) {
+      if (p.isEmpty || t.length <= p.length) continue;
+      if (t.substring(0, p.length).toLowerCase() != p.toLowerCase()) continue;
+      final rest = t.substring(p.length);
+      if (typedValue.hasMatch(rest)) {
+        t = rest;
+        break;
+      }
+    }
+    final m = typedValue.firstMatch(t);
+    return m == null ? null : '${int.parse(m[1]!)}${m[2]!.toUpperCase()}';
+  }
+
+  String sortKey(String label) => label.trim().toLowerCase().replaceAllMapped(
+    RegExp(r'\d+'),
+    (m) => m[0]!.replaceFirst(RegExp('^0+(?=.)'), '').padLeft(10, '0'),
+  );
+
+  final clashes = <Map<String, Object?>>[];
+  void convert(String table, String parent, String prefix, String kind) {
+    final rows = db.select(
+      'SELECT id, $parent AS p, number, archived_at IS NULL AS live '
+      'FROM $table;',
+    );
+    final liveCount = <(int, String), int>{};
+    final values = <int, String?>{};
+    for (final r in rows) {
+      final v = valueOf(r['number'] as String, prefix);
+      values[r['id'] as int] = v;
+      final k = (r['p'] as int, v ?? r['number'] as String);
+      if (r['live'] == 1) liveCount[k] = (liveCount[k] ?? 0) + 1;
+    }
+    for (final r in rows) {
+      final v = values[r['id'] as int];
+      if (v == null || v == r['number']) continue;
+      final k = (r['p'] as int, v);
+      final live = r['live'] == 1;
+      if (live ? (liveCount[k] ?? 0) > 1 : liveCount.containsKey(k)) {
+        if (live) {
+          clashes.add({
+            'kind': kind,
+            'id': r['id'],
+            'number': r['number'],
+            'value': v,
+          });
+        }
+        continue;
+      }
+      db.execute('UPDATE $table SET number = ?, sort_key = ? WHERE id = ?;', [
+        v,
+        sortKey(v),
+        r['id'],
+      ]);
+    }
+  }
+
+  convert('cuts', 'episode_id', prefixOf('cut_style', 'C'), 'cut');
+  convert('episodes', 'work_id', prefixOf('episode_style', '#'), 'episode');
+  if (clashes.isNotEmpty) {
+    db.execute(
+      'INSERT OR REPLACE INTO settings (key, value) '
+      "VALUES ('number_clashes', ?);",
+      [jsonEncode(clashes)],
+    );
   }
 }
 

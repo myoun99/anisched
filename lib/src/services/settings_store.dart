@@ -161,6 +161,26 @@ class SettingsStore {
 
   set episodeStyle(NumberStyle s) => _setStyle(_episodeStyle, s);
 
+  /// Numbers v20 could not turn into values because another live row of
+  /// the same episode (or work) already had that value — both kept their
+  /// names (유저 2026-11-28: no silent merge). Empty when there were none.
+  List<({String kind, int id, String number, String value})> get numberClashes {
+    final v = _get('number_clashes');
+    if (v == null) return const [];
+    final list = jsonDecode(v);
+    if (list is! List) return const [];
+    return [
+      for (final m in list)
+        if (m case {
+          'kind': final String kind,
+          'id': final int id,
+          'number': final String number,
+          'value': final String value,
+        })
+          (kind: kind, id: id, number: number, value: value),
+    ];
+  }
+
   NumberStyle? _style(String key) {
     final v = _get(key);
     if (v == null) return null;

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/schema.dart';
+import 'package:anisched/src/services/settings_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -230,6 +231,37 @@ INSERT INTO cuts (episode_id, number, sort_key, archived_at) VALUES
       db.select("SELECT name FROM sqlite_master WHERE name = 'days_off'"),
       isEmpty,
     );
+  });
+
+  test('v20: numbers typed with another prefix become values; clashes '
+      'keep their names and are recorded', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 19).toList());
+    db
+      ..execute(
+        "INSERT INTO settings (key, value) VALUES ('cut_style', "
+        '\'{"prefix":"#","digits":3}\');',
+      )
+      ..execute(
+        "INSERT INTO works (title, currency, created_at) VALUES ('W', 'JPY', 0)",
+      )
+      ..execute(
+        "INSERT INTO episodes (work_id, number, sort_key) VALUES (1, '1', '')",
+      )
+      ..execute('''
+INSERT INTO cuts (episode_id, number, sort_key) VALUES
+  (1, 'C012', ''), (1, ' c 13a', ''), (1, 'C014', ''), (1, '14', ''),
+  (1, 'BANK1', '')''');
+    migrate(db);
+    expect(
+      db.select('SELECT number FROM cuts ORDER BY id').map((r) => r['number']),
+      ['12', '13A', 'C014', '14', 'BANK1'],
+    );
+    final settings = SettingsStore(db);
+    expect(settings.numberClashes, [
+      (kind: 'cut', id: 3, number: 'C014', value: '14'),
+    ]);
   });
 
   test('v19: existing events stay episode or global events', () {
