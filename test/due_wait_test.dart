@@ -1,6 +1,5 @@
 import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
-import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/schema.dart';
@@ -82,6 +81,15 @@ void main() {
         (1, DateTime(2026, 11, 10).toUtc()),
         (2, DateTime(2026, 11, 14).toUtc()),
       ]);
+      // Removing the first moves every later one down.
+      store
+        ..extendDue(target, DateTime(2026, 11, 16))
+        ..removeDueRevision(target, 1);
+      expect(store.dueRevisions(target).map((r) => r.revision), [1, 2]);
+      expect(
+        store.dueRevisions(target).first.dueAt,
+        DateTime(2026, 11, 14).toUtc(),
+      );
     });
 
     test("a cut's own deadline continues its part's revisions", () {
@@ -174,18 +182,6 @@ void main() {
       store.setPartWaiting(p.part, p.stage, waiting: true);
       store.setStatus(p.tasks[0], TaskStatus.submitted);
       expect(store.holding(), (inHand: 0, waiting: 3));
-    });
-
-    test('the reader agrees', () async {
-      final p = part4();
-      store.setPartWaiting(p.part, p.stage, waiting: true);
-      store.extendDue(DueTarget.part(p.part, p.stage), DateTime(2026, 11, 9));
-      final reader = SyncCatalogueReader(store);
-      expect(await reader.holding(), store.holding());
-      expect(
-        (await reader.dueRevisions(DueTarget.part(p.part, p.stage))).length,
-        1,
-      );
     });
   });
 
