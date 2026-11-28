@@ -733,6 +733,7 @@ class ChartBoard extends StatefulWidget {
     this.rowWrap,
     this.rowTint,
     this.onReorder,
+    this.corner,
   });
 
   final ChartWindow window;
@@ -740,6 +741,9 @@ class ChartBoard extends StatefulWidget {
   final Set<int> restWeekdays;
   final double labelWidth;
   final int rowCount;
+
+  /// The header's left cell, over the row labels (e.g. 「라인 +」).
+  final Widget? corner;
 
   /// The row's label column.
   final Widget Function(BuildContext context, int row) label;
@@ -822,7 +826,7 @@ class _ChartBoardState extends State<ChartBoard> {
             ),
             child: Row(
               children: [
-                SizedBox(width: widget.labelWidth),
+                SizedBox(width: widget.labelWidth, child: widget.corner),
                 Expanded(
                   child: ChartHeader(
                     window: widget.window,

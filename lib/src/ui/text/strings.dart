@@ -170,6 +170,9 @@ enum S {
     '今天 {a} / {b}',
   ),
   overflow('Over', 'あふれ', '넘침', 'Excès', '溢出'),
+  laneHead('Lanes', 'ライン', '라인', 'Lignes', '通道'),
+  addLane('Add a lane', 'ラインを追加', '라인 추가', 'Ajouter une ligne', '添加通道'),
+  deleteLane('Delete lane', 'ラインを削除', '라인 삭제', 'Supprimer la ligne', '删除通道'),
   laneN('Lane {n}', 'ライン {n}', '라인 {n}', 'Ligne {n}', '通道 {n}'),
 
   // Part line and details.
@@ -209,7 +212,6 @@ enum S {
   daysOff('Days off', '休み', '쉬는 날', 'Congés', '休息日'),
   remove('Remove', '削除', '지우기', 'Supprimer', '删除'),
   add('Add', '追加', '추가', 'Ajouter', '添加'),
-  lanes('Parallel work', '並行数', '병행 수', 'En parallèle', '并行数'),
   dayStart('Day starts at', '1日の始まり', '하루 시작', 'Début de journée', '一天开始于'),
   rounding(
     'Per-second rate rounding',
