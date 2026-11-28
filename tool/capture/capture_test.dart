@@ -6,9 +6,12 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
+import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
+import 'package:anisched/src/ui/hold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
@@ -116,6 +119,27 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 4: holds and deadline rounds — the first line opened with its
+  // rounds unfolded; another part on hold; one cut held on its own.
+  'holds': (
+    AppView.list,
+    (t, size) async {
+      Folds.dueRounds.value = true;
+      Folds.cutsInDetails.value = true;
+      final lines = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('line-'),
+      );
+      final extended = find.ancestor(
+        of: find.byWidgetPredicate((w) => w is RoundBadge && w.revision == 2),
+        matching: lines,
+      );
+      await t.tap(extended.first);
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // Round 4: the statistics tab, loaded.
   'stats': (
     AppView.stats,
@@ -197,6 +221,7 @@ void main() {
       for (final MapEntry(key: label, value: size) in sizes.entries) {
         testWidgets('$name $label', (t) async {
           Folds.cutsInDetails.value = false;
+          Folds.dueRounds.value = false;
           chartView.value = const ChartView();
           appLang.value = Lang.ko;
           addTearDown(() => appLang.value = Lang.ko);
@@ -209,6 +234,7 @@ void main() {
           t.view.devicePixelRatio = 2;
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
+          if (base == 'holds') prepareHolds(store);
           final shot = GlobalKey();
           await t.pumpWidget(
             RepaintBoundary(
@@ -247,4 +273,26 @@ void main() {
       }
     }
   }
+}
+
+/// Two rounds on one part, a part on hold, one cut held on its own.
+void prepareHolds(CatalogueStore store) {
+  final parts = [
+    for (final g in store.partGroups())
+      if (g.kind == GroupKind.part) g,
+  ];
+  final a = parts[1];
+  store.extendDue(
+    DueTarget.part(a.partId!, a.stageId),
+    a.dueAt!.add(const Duration(days: 3)),
+  );
+  final b = parts[2];
+  store.setPartWaiting(
+    b.partId!,
+    b.stageId,
+    waiting: true,
+    reason: 'LO 待ち',
+    until: now.add(const Duration(days: 4)),
+  );
+  store.setTaskWaiting(a.tasks.last.id, waiting: true, reason: '修正待ち');
 }
