@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/size_class.dart';
@@ -78,8 +79,6 @@ class WorkView extends StatefulWidget {
 }
 
 class _WorkViewState extends State<WorkView> {
-  void _onView() => setState(() {});
-
   /// The work whose bar was tapped open.
   String? _open;
 
@@ -89,15 +88,18 @@ class _WorkViewState extends State<WorkView> {
 
   PartGroup? get _openGroup => _open == null ? null : widget.parts[_open];
 
+  /// The running view's days; only the board's date parts follow it.
+  late final _window = RunningWindow(widget.now, widget.layout.size);
+
   @override
-  void initState() {
-    super.initState();
-    chartView.addListener(_onView);
+  void didUpdateWidget(WorkView old) {
+    super.didUpdateWidget(old);
+    _window.update(widget.now, widget.layout.size);
   }
 
   @override
   void dispose() {
-    chartView.removeListener(_onView);
+    _window.dispose();
     super.dispose();
   }
 
@@ -111,11 +113,6 @@ class _WorkViewState extends State<WorkView> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final lanes = widget.lanes;
-    final window = ChartWindow.of(
-      widget.now,
-      widget.layout.size,
-      chartView.value,
-    );
     final rowCount = lanes == null
         ? 0
         : (lanes.usedLanes > lanes.lanes ? lanes.usedLanes : lanes.lanes);
@@ -138,7 +135,10 @@ class _WorkViewState extends State<WorkView> {
                 valueListenable: chartMonthView,
                 builder: (context, month, _) => month
                     ? const SizedBox.shrink()
-                    : ChartPager(days: window.days),
+                    : ValueListenableBuilder<ChartWindow>(
+                        valueListenable: _window,
+                        builder: (context, w, _) => ChartPager(days: w.days),
+                      ),
               ),
               const MonthViewToggle(),
             ],
@@ -154,15 +154,20 @@ class _WorkViewState extends State<WorkView> {
                     ? MonthStack(
                         first: DateTime(widget.now.year, widget.now.month - 1),
                         last: _lastMonth(lanes),
-                        month: (context, w) => _board(context, w, lanes, [
-                          for (var r = 0; r < rowCount; r++)
-                            if (_laneIn(lanes, r, w)) r,
-                        ], month: true),
+                        month: (context, w) =>
+                            _board(context, FixedWindow(w), lanes, [
+                              for (var r = 0; r < rowCount; r++)
+                                if (_laneIn(lanes, r, w)) r,
+                            ], month: true),
                       )
-                    : ChartViewport(
-                        days: window.days,
-                        labelWidth: _labelWidth,
-                        child: _board(context, window, lanes, [
+                    : ValueListenableBuilder<ChartWindow>(
+                        valueListenable: _window,
+                        builder: (context, w, board) => ChartViewport(
+                          days: w.days,
+                          labelWidth: _labelWidth,
+                          child: board!,
+                        ),
+                        child: _board(context, _window, lanes, [
                           for (var r = 0; r < rowCount; r++) r,
                         ], month: false),
                       ),
@@ -178,7 +183,7 @@ class _WorkViewState extends State<WorkView> {
   /// or one month's in the month view.
   Widget _board(
     BuildContext context,
-    ChartWindow window,
+    ValueListenable<ChartWindow> window,
     LaneLayout lanes,
     List<int> rows, {
     required bool month,
@@ -196,7 +201,7 @@ class _WorkViewState extends State<WorkView> {
       shrinkWrap: month,
       corner: _corner(context),
       label: (context, i) => _laneLabel(context, lanes, rows[i]),
-      bars: (context, i) => [
+      bars: (context, i, window) => [
         for (final s in lanes.spans)
           if (lanes.laneOf[s.key] == rows[i])
             _bar(s, window, lanes.overflow, red),

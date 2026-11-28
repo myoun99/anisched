@@ -96,6 +96,60 @@ class ChartView {
 /// The shared scroll and zoom of the date area.
 final chartView = ValueNotifier<ChartView>(const ChartView());
 
+/// The running view's days: [chartView] over today at a size, as one
+/// listenable a [ChartBoard]'s date parts follow (the views no longer
+/// rebuild for a scroll or a zoom).
+class RunningWindow extends ChangeNotifier
+    implements ValueListenable<ChartWindow> {
+  RunningWindow(this._now, this._size) {
+    chartView.addListener(_moved);
+    _value = _compute();
+  }
+
+  DateTime _now;
+  SizeClass _size;
+  late ChartWindow _value;
+
+  ChartWindow _compute() => ChartWindow.of(_now, _size, chartView.value);
+
+  @override
+  ChartWindow get value => _value;
+
+  void _moved() {
+    final next = _compute();
+    if (next == _value) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  /// Today or the screen size changed (the view's own rebuild).
+  void update(DateTime now, SizeClass size) {
+    _now = now;
+    _size = size;
+    _moved();
+  }
+
+  @override
+  void dispose() {
+    chartView.removeListener(_moved);
+    super.dispose();
+  }
+}
+
+/// A window that never moves: one month of the month view.
+class FixedWindow implements ValueListenable<ChartWindow> {
+  const FixedWindow(this.value);
+
+  @override
+  final ChartWindow value;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+}
+
 /// Lets the date area be dragged sideways (empty space only: bars keep
 /// their own drags), scrolled with a wheel or trackpad, and zoomed with a
 /// pinch or Ctrl + wheel. Updates [chartView]; the chart redraws only
@@ -925,7 +979,11 @@ class ChartBoard extends StatefulWidget {
   /// and dates); null when the row is closed.
   final Widget? Function(BuildContext context, int row)? below;
 
-  final ChartWindow window;
+  /// The days shown: a running window that scrolls and zooms
+  /// ([RunningWindow]), or a month's ([FixedWindow]). Only the parts that
+  /// depend on it listen — the header, the background and each row's bar
+  /// area — so moving the days leaves the row labels alone.
+  final ValueListenable<ChartWindow> window;
   final DateTime today;
 
   /// Rest weekdays, days off and holidays, marked on the background.
@@ -949,7 +1007,8 @@ class ChartBoard extends StatefulWidget {
   final Widget Function(BuildContext context, int row) label;
 
   /// The row's bars ([ChartBar]s) over the date area.
-  final List<Widget> Function(BuildContext context, int row) bars;
+  final List<Widget> Function(BuildContext context, int row, ChartWindow window)
+  bars;
 
   /// Keeps a row's identity (needed with [onReorder]).
   final Key Function(int row)? rowKey;
@@ -996,12 +1055,15 @@ class _ChartBoardState extends State<ChartBoard> {
             child: ColoredBox(color: c.panel, child: widget.label(context, i)),
           ),
           Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (tint != null) ColoredBox(color: tint),
-                ...widget.bars(context, i),
-              ],
+            child: ValueListenableBuilder<ChartWindow>(
+              valueListenable: widget.window,
+              builder: (context, window, _) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (tint != null) ColoredBox(color: tint),
+                  ...widget.bars(context, i, window),
+                ],
+              ),
             ),
           ),
         ],
@@ -1033,10 +1095,10 @@ class _ChartBoardState extends State<ChartBoard> {
     final reorder = widget.onReorder;
     final layers = Padding(
       padding: EdgeInsets.only(left: widget.labelWidth),
-      child: _DayLayers(
-        window: widget.window,
-        today: widget.today,
-        days: widget.days,
+      child: ValueListenableBuilder<ChartWindow>(
+        valueListenable: widget.window,
+        builder: (context, window, _) =>
+            _DayLayers(window: window, today: widget.today, days: widget.days),
       ),
     );
     final rows = RepaintBoundary(
@@ -1099,12 +1161,15 @@ class _ChartBoardState extends State<ChartBoard> {
               children: [
                 SizedBox(width: widget.labelWidth, child: widget.corner),
                 Expanded(
-                  child: ChartHeader(
-                    window: widget.window,
-                    today: widget.today,
-                    days: widget.days,
-                    onDayLongPress: widget.onDayLongPress,
-                    onEvent: widget.onDayEvent,
+                  child: ValueListenableBuilder<ChartWindow>(
+                    valueListenable: widget.window,
+                    builder: (context, window, _) => ChartHeader(
+                      window: window,
+                      today: widget.today,
+                      days: widget.days,
+                      onDayLongPress: widget.onDayLongPress,
+                      onEvent: widget.onDayEvent,
+                    ),
                   ),
                 ),
               ],
