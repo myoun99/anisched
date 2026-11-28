@@ -458,10 +458,32 @@ class _AppShellState extends State<AppShell> {
   void _write(void Function(CatalogueStore store) body) {
     final store = widget.store;
     if (store == null) return;
+    _holdOrder(store);
     body(store);
     episodeStyle.value = store.settings.episodeStyle;
     setState(() => _refresh++);
     unawaited(_loadGroups());
+  }
+
+  /// The user's rule: order changes only by their hand (a drag) or the
+  /// 자동 정렬 / 자동 배치 buttons — never by an edit. So before any
+  /// write, the order on screen is kept: the rows' order is saved when
+  /// none is, and every bar stays pinned to the lane it is in. Only new
+  /// work is placed (last, or in a free lane). The buttons' own writes
+  /// clear these right after.
+  void _holdOrder(CatalogueStore store) {
+    if (!store.hasGroupOrder && _groups.isNotEmpty) {
+      store.setGroupOrder([for (final g in _groups) g.key]);
+    }
+    final lanes = _lanes;
+    if (lanes == null) return;
+    for (final s in lanes.spans) {
+      final lane = lanes.laneOf[s.key];
+      // Overflow too: an edit never moves work up into a freed lane.
+      if (lane != null && !lanes.pinned.contains(s.key)) {
+        store.pinLane(s.key, lane);
+      }
+    }
   }
 
   void _setFilter(ViewFilter f) {
