@@ -9,7 +9,7 @@ import 'document_rows.dart';
 import 'schema.dart';
 import 'undo_history.dart';
 
-export 'document_rows.dart' show NotADocumentException;
+export 'document_rows.dart' show NotADocumentException, NotADocumentKind;
 
 /// Size and content hash of a written document file.
 typedef DocumentContent = ({int size, int hash});
@@ -71,14 +71,32 @@ Future<void> prepareImport(String path) =>
 
 /// [prepareImport] on the calling isolate.
 void prepareImportSync(String path) {
+  final file = File(path);
+  final size = file.lengthSync();
+  final head = <int>[];
+  if (size > 0) {
+    final raf = file.openSync();
+    try {
+      head.addAll(raf.readSync(16));
+    } finally {
+      raf.closeSync();
+    }
+  }
+  checkDocumentHead(path, size, head);
   final Database db;
   try {
     db = sqlite3.open(path, mode: OpenMode.readWrite);
   } on SqliteException catch (e) {
-    throw NotADocumentException(path, e.message);
+    throw NotADocumentException(
+      path,
+      e.message,
+      kind: NotADocumentKind.damaged,
+      size: size,
+      head: head,
+    );
   }
   try {
-    checkAndMigrateDocument(db, path);
+    checkAndMigrateDocument(db, path, size: size, head: head);
   } finally {
     db.close();
   }
@@ -100,7 +118,13 @@ void _importDocumentInto(CommonDatabase writer, String path) {
     final mine = _tables(writer, 'main');
     final theirs = _tables(writer, 'doc');
     if (mine.length != theirs.length || !mine.every(theirs.contains)) {
-      throw NotADocumentException(path, 'tables differ after migration');
+      throw NotADocumentException(
+        path,
+        'tables differ after migration: '
+        'missing ${mine.where((t) => !theirs.contains(t)).join(' ')}, '
+        'extra ${theirs.where((t) => !mine.contains(t)).join(' ')}',
+        kind: NotADocumentKind.tablesDiffer,
+      );
     }
     writer.execute('BEGIN IMMEDIATE');
     try {
