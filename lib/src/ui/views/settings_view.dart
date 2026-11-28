@@ -391,6 +391,16 @@ class _SettingsViewState extends State<SettingsView> {
                           style: TextStyle(color: c.muted),
                         ),
                       ),
+                      if (st.error != null)
+                        IconButton(
+                          key: const Key('settings-save-trouble'),
+                          icon: const Icon(Icons.info_outline, size: 18),
+                          onPressed: () => st.show(
+                            context,
+                            doc,
+                            SaveState.recheckOf(doc, widget.remote),
+                          ),
+                        ),
                     ],
                   );
                 },

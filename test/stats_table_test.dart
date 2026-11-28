@@ -37,7 +37,7 @@ Future<CatalogueStore> pumpTable(WidgetTester t, double width) async {
   return store;
 }
 
-String keyOf(StatsNode n) => '${n.kind.name}:${n.id}';
+String keyOf(StatsNode n) => n.key;
 
 Future<void> open(WidgetTester t, StatsNode n) async {
   final row = find.byKey(Key('stats-row-${keyOf(n)}'));
@@ -63,9 +63,7 @@ void main() {
     expect(find.byType(StatsTreeTable), findsNothing);
   });
 
-  testWidgets('rows open from a client down to a cut and its stages', (
-    t,
-  ) async {
+  testWidgets('rows open from a client down to a cut and its stage', (t) async {
     final store = await pumpTable(t, 1280);
     var n = treeOf(store);
     while (n.children.isNotEmpty) {
@@ -73,11 +71,9 @@ void main() {
       expect(find.byKey(Key('stats-row-${keyOf(n)}')), findsOneWidget);
       await open(t, n);
     }
-    expect(n.kind, StatsNodeKind.cut);
+    expect(n.level, StatsLevel.cut);
     expect(find.byKey(Key('stats-open-${keyOf(n)}')), findsOneWidget);
-    for (final stage in n.stages.keys) {
-      expect(find.byKey(Key('stats-stage-$stage')), findsOneWidget);
-    }
+    expect(find.byKey(Key('stats-stage-${n.stageName}')), findsOneWidget);
   });
 
   testWidgets('a column head sorts a level by it, then turns', (t) async {

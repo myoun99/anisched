@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'instant.dart';
@@ -8,6 +8,7 @@ import 'instant.dart';
 import '../models/document.dart';
 import '../platform/documents.dart';
 import '../services/document_session.dart';
+import 'document_trouble.dart';
 import 'pick_field.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -81,8 +82,12 @@ class DocumentMenu extends StatelessWidget {
     required this.session,
     required this.picker,
     this.remote,
+    this.recheck,
     this.browser = kIsWeb,
   });
+
+  /// Checks the file again (a red state icon's 「다시 시도」).
+  final Future<void> Function()? recheck;
 
   /// In a browser the document lives in the page: saving is exporting a
   /// file, opening is bringing one in (the words say so).
@@ -105,7 +110,7 @@ class DocumentMenu extends StatelessWidget {
       await job();
     } on Object catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      await showDocumentTrouble(context, e, retry: () => _run(context, job));
     }
   }
 
@@ -205,19 +210,64 @@ class DocumentMenu extends StatelessWidget {
       size: 16,
       color: st.color,
     );
-    return Tooltip(message: st.detail ?? st.word, child: i);
+    final tip = Tooltip(message: st.detail ?? st.word, child: i);
+    if (st.error == null) return tip;
+    return GestureDetector(
+      key: const Key('file-trouble'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => st.show(context, session, recheck),
+      child: tip,
+    );
   }
 }
 
 /// Where the document stands, as one icon and one word (and the error,
-/// when there is one).
+/// when there is one: one line in the user's language, the whole of it in
+/// [show]).
 class SaveState {
-  const SaveState(this.icon, this.color, this.word, [this.detail]);
+  const SaveState(
+    this.icon,
+    this.color,
+    this.word, [
+    this.error,
+    this.fromSave = false,
+  ]);
 
   final IconData icon;
   final Color color;
   final String word;
-  final String? detail;
+  final Object? error;
+
+  /// The error came from saving (trying again saves).
+  final bool fromSave;
+
+  String? get detail => switch (error) {
+    final e? => DocumentTrouble.of(e).kind.text,
+    null => null,
+  };
+
+  /// The error's dialog; 「다시 시도」 saves again, or checks the file
+  /// again through [recheck].
+  Future<void> show(
+    BuildContext context,
+    DocumentSessionBase session,
+    Future<void> Function()? recheck,
+  ) => showDocumentTrouble(
+    context,
+    error!,
+    retry: fromSave ? session.save : recheck,
+  );
+
+  /// Checks the document again and hands the answer to [remote] (when it
+  /// can be set).
+  static Future<void> Function()? recheckOf(
+    DocumentSessionBase session,
+    ValueListenable<RemoteCheck?>? remote,
+  ) => switch (remote) {
+    final ValueNotifier<RemoteCheck?> n =>
+      () async => n.value = await session.resume(),
+    _ => null,
+  };
 
   static SaveState of(
     BuildContext context,
@@ -232,14 +282,15 @@ class SaveState {
         Icons.error_outline,
         red,
         S.notSaved.t,
-        '$err',
+        err,
+        true,
       ),
       RemoteMissing() => SaveState(Icons.error_outline, red, S.fileMissing.t),
       RemoteUnreachable(:final error) => SaveState(
         Icons.cloud_off,
         red,
         S.notSaved.t,
-        '$error',
+        error,
       ),
       _ when session.document == null => SaveState(
         Icons.cloud_off,

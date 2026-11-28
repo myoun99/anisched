@@ -64,14 +64,14 @@ String moneyText(Money m) => m.isEmpty
 /// sight are built. A column's head sorts by it, within each level (a
 /// second tap turns the order). A row opens into its children; on a
 /// narrow screen it also shows, under it, the columns that did not fit;
-/// a cut shows its time per stage, timer runs, take and state.
+/// a cut shows its stage time, timer runs, take and state.
 class StatsTreeTable extends StatefulWidget {
   const StatsTreeTable({super.key, required this.roots, this.clientOf});
 
   /// The top rows (the tree's clients).
   final List<StatsNode> roots;
 
-  /// A client's chip by id; null: its name alone.
+  /// A client's chip by id; null: its name alone (「회사 없음」 without one).
   final ClientTag? Function(int id)? clientOf;
 
   @override
@@ -95,8 +95,6 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
     return _descending ? list.reversed.toList() : list;
   }
 
-  static String _key(StatsNode n) => '${n.kind.name}:${n.id}';
-
   /// The rows in sight order: each node, its opened line (when it has
   /// something to say), then its children when open.
   List<(StatsNode, int, bool)> _rows(int shown) {
@@ -104,9 +102,9 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
     void walk(List<StatsNode> nodes, int depth) {
       for (final n in _sorted(nodes)) {
         out.add((n, depth, false));
-        if (!_open.contains(_key(n))) continue;
+        if (!_open.contains(n.key)) continue;
         final hidden = shown < StatsColumn.values.length;
-        if (hidden || n.kind == StatsNodeKind.cut) out.add((n, depth, true));
+        if (hidden || n.level == StatsLevel.cut) out.add((n, depth, true));
         walk(n.children, depth + 1);
       }
     }
@@ -205,39 +203,54 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
 
   Widget _name(BuildContext context, StatsNode n) {
     final label = n.label;
-    return switch (n.kind) {
-      StatsNodeKind.client => switch (n.id) {
+    return switch (n.level) {
+      StatsLevel.client => switch (n.clientId) {
         final int id when widget.clientOf?.call(id) != null => ClientChip(
           widget.clientOf!(id)!,
         ),
-        _ => FitText(label ?? '—'),
+        _ => FitText(label ?? S.noClient.t),
       },
-      // A part's stages show on its cuts (their bars).
-      StatsNodeKind.part => FitText(
-        label == null ? S.noPart.t : S.partTitle.f({'p': label}),
-      ),
-      StatsNodeKind.work || StatsNodeKind.episode => FitText(
+      StatsLevel.work || StatsLevel.episode => FitText(
         label ?? '—',
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
-      StatsNodeKind.cut || StatsNodeKind.all => Row(
+      // A unit: its part (or storyboard) at one stage; a cut at its
+      // unit's stage.
+      StatsLevel.unit || StatsLevel.cut || StatsLevel.all => Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 6,
         children: [
-          for (final stage in n.stages.keys) Dot(stageColor(stage)),
-          Flexible(child: FitText(label ?? '')),
+          if (n.stageName case final stage?) Dot(stageColor(stage)),
+          Flexible(child: FitText(_title(n))),
         ],
       ),
     };
   }
 
+  /// A unit's part (「파트 없음」 for an episode's part-less cuts; a
+  /// storyboard's own name) and stage; a cut's number.
+  static String _title(StatsNode n) {
+    final label = n.label;
+    if (n.level != StatsLevel.unit) return label ?? '';
+    final board = n.children.any((c) => c.key.startsWith('cut:s'));
+    final part = board
+        ? label ?? ''
+        : label == null
+        ? S.noPart.t
+        : S.partTitle.f({'p': label});
+    return switch (n.stageName) {
+      final stage? => '$part · ${stageText(stage)}',
+      null => part,
+    };
+  }
+
   Widget _row(BuildContext context, StatsNode n, int depth, int shown) {
     final c = AppColors.of(context);
-    final key = _key(n);
+    final key = n.key;
     final open = _open.contains(key);
     final opens =
         n.children.isNotEmpty ||
-        n.kind == StatsNodeKind.cut ||
+        n.level == StatsLevel.cut ||
         shown < StatsColumn.values.length;
     return InkWell(
       key: Key('stats-row-$key'),
@@ -291,18 +304,12 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
   }
 
   /// Under an opened row: the columns that did not fit, and for a cut its
-  /// time per stage (bars in the stage colours), timer runs, take and
-  /// state.
+  /// stage time, timer runs, take and state.
   Widget _openLine(BuildContext context, StatsNode n, int depth, int shown) {
     final c = AppColors.of(context);
     final hidden = StatsColumn.values.skip(shown);
-    final stages = n.stages;
-    final most = stages.values.fold(
-      Duration.zero,
-      (a, b) => a > b.worked ? a : b.worked,
-    );
     return Container(
-      key: Key('stats-open-${_key(n)}'),
+      key: Key('stats-open-${n.key}'),
       color: c.panelAlt,
       padding: EdgeInsets.fromLTRB(34.0 + depth * 14, 6, 12, 8),
       child: Column(
@@ -328,60 +335,37 @@ class _StatsTreeTableState extends State<StatsTreeTable> {
                   ),
               ],
             ),
-          // A cut: each stage's time (a bar in its colour), timer runs,
-          // take and state.
-          for (final MapEntry(key: stage, value: st) in stages.entries)
-            Row(
-              spacing: 8,
+          // A cut: its stage and time, timer runs, take, pay and state.
+          if (n.level == StatsLevel.cut)
+            Wrap(
+              spacing: 12,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                SizedBox(
-                  width: 52,
-                  child: FitText(
-                    stageText(stage),
-                    style: TextStyle(fontSize: 11, color: c.muted),
-                  ),
-                ),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, box) => Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        key: Key('stats-stage-$stage'),
-                        height: 8,
-                        width: most == Duration.zero
-                            ? 0
-                            : box.maxWidth *
-                                  st.worked.inSeconds /
-                                  most.inSeconds,
-                        decoration: BoxDecoration(
-                          color: stageColor(stage),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
+                if (n.stageName case final stage?)
+                  Row(
+                    key: Key('stats-stage-$stage'),
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 4,
+                    children: [
+                      Dot(stageColor(stage)),
+                      Text(
+                        '${stageText(stage)}  ${formatWorked(n.worked)}',
+                        style: const TextStyle(fontSize: 11),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    formatWorked(st.worked),
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
-                SizedBox(
-                  width: 64,
-                  child: FitText(
-                    S.timerRuns.f({'n': st.intervals}),
+                if (n.intervals case final runs?)
+                  Text(
+                    S.timerRuns.f({'n': runs}),
                     style: TextStyle(fontSize: 11, color: c.muted),
                   ),
-                ),
-                if (st.take > 1)
+                if (n.retakeRound case final take? when take > 1)
                   Text(
-                    S.retakeRound.f({'n': st.take}),
+                    S.retakeRound.f({'n': take}),
                     style: TextStyle(fontSize: 11, color: c.retake),
                   ),
-                if (st.status case final status?)
+                if (n.status case final status?)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     spacing: 4,

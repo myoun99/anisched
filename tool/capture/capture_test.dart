@@ -3,6 +3,7 @@
 //   flutter test tool/capture/capture_test.dart
 // PNGs land in build/captures/<scenario>-<size>.png. CAPTURE=a,b limits
 // the run to those scenarios (light and dark).
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -10,8 +11,10 @@ import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/device_settings.dart';
+import 'package:anisched/src/services/document_rows.dart';
 import 'package:anisched/src/services/undo_history.dart';
 import 'package:anisched/src/services/work_timer.dart';
+import 'package:anisched/src/ui/document_trouble.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
 import 'package:anisched/src/ui/shell.dart';
@@ -348,6 +351,23 @@ final scenarios = <String, (AppView, Scenario)>{
         await t.pump();
       }
       await t.tap(find.byKey(const Key('pick-delete')));
+      await t.pump();
+    },
+  ),
+  // A document that would not open: one line, details opened.
+  'doc-trouble': (
+    AppView.list,
+    (t, size) async {
+      final context = t.element(find.byType(AppShell));
+      unawaited(
+        showDocumentTrouble(
+          context,
+          NotADocumentException('일정.anisched', 'not an Anisched document'),
+          retry: () async {},
+        ),
+      );
+      await t.pump();
+      await t.tap(find.byKey(const Key('doc-trouble-details')));
       await t.pump();
     },
   ),
