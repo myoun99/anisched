@@ -511,6 +511,19 @@ enum S {
     '已存在：{names}',
   ),
 
+  // Undo and redo of the document's writes, and their keys.
+  undo('Undo', '元に戻す', '실행 취소', 'Annuler', '撤销'),
+  redo('Redo', 'やり直す', '다시 실행', 'Rétablir', '重做'),
+  shortcuts('Shortcuts', 'ショートカット', '단축키', 'Raccourcis', '快捷键'),
+  pressKeys(
+    'Press keys…',
+    'キーを押してください…',
+    '키를 누르세요…',
+    'Appuyez sur des touches…',
+    '请按键…',
+  ),
+  keysDefault('Default', '既定', '기본값', 'Par défaut', '默认'),
+
   // Put away (보관) and deleted for good (완전 삭제).
   archive('Archive', 'アーカイブ', '보관', 'Archiver', '归档'),
   unarchive('Unarchive', 'アーカイブ解除', '되돌리기', 'Désarchiver', '取消归档'),

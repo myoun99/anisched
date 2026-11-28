@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/services.dart';
 
 import '../controllers/registration.dart';
@@ -14,6 +14,7 @@ import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
+import '../services/undo_history.dart';
 import '../services/work_timer.dart';
 import 'add_cuts.dart';
 import 'bundle_editor.dart';
@@ -34,6 +35,7 @@ import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
 import 'timer_bar.dart';
+import 'undo.dart';
 import 'widgets.dart';
 import 'views/chart.dart';
 import 'views/register_view.dart';
@@ -506,10 +508,30 @@ class _AppShellState extends State<AppShell> {
   void _write(void Function(CatalogueStore store) body) {
     final store = widget.store;
     if (store == null) return;
-    body(store);
-    episodeStyle.value = store.settings.episodeStyle;
+    // All or nothing, and one undo step.
+    store.batch(() => body(store));
+    _reloadAll();
+  }
+
+  /// Every view reads the document again.
+  void _reloadAll() {
+    final store = widget.store;
+    if (store != null) episodeStyle.value = store.settings.episodeStyle;
     setState(() => _refresh++);
     unawaited(_loadGroups());
+  }
+
+  /// The document's undo history (every write is a step), if recorded.
+  UndoHistory? get _history =>
+      widget.store == null ? null : UndoHistory.of(widget.store!.db);
+
+  /// Takes back the last write (the keys and ↶), then reloads the views.
+  void _undo() {
+    if (_history?.undo() ?? false) _reloadAll();
+  }
+
+  void _redo() {
+    if (_history?.redo() ?? false) _reloadAll();
   }
 
   void _setFilter(ViewFilter f) {
@@ -1003,49 +1025,61 @@ class _AppShellState extends State<AppShell> {
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
               .copyWith(statusBarColor: Colors.transparent),
-          child: Scaffold(
-            body: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  ListenableBuilder(
-                    listenable: _selection,
-                    builder: (context, _) => _TopBar(
-                      picking: !_selection.isEmpty,
-                      narrow: narrow,
-                      title: widget.session == null
-                          ? null
-                          : ValueListenableBuilder<RemoteCheck?>(
-                              valueListenable:
-                                  widget.remote ??
-                                  ValueNotifier<RemoteCheck?>(null),
-                              builder: (context, remote, _) => DocumentMenu(
-                                session: widget.session!,
-                                picker: widget.picker,
-                                remote: remote,
+          child: UndoKeys(
+            onUndo: _undo,
+            onRedo: _redo,
+            child: Scaffold(
+              body: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _selection,
+                      builder: (context, _) => _TopBar(
+                        picking: !_selection.isEmpty,
+                        narrow: narrow,
+                        title: widget.session == null
+                            ? null
+                            : ValueListenableBuilder<RemoteCheck?>(
+                                valueListenable:
+                                    widget.remote ??
+                                    ValueNotifier<RemoteCheck?>(null),
+                                builder: (context, remote, _) => DocumentMenu(
+                                  session: widget.session!,
+                                  picker: widget.picker,
+                                  remote: remote,
+                                ),
                               ),
-                            ),
-                      actions: selectionBar,
+                        actions: selectionBar,
+                        undo: switch (_history) {
+                          final h? => UndoButtons(
+                            history: h,
+                            onUndo: _undo,
+                            onRedo: _redo,
+                          ),
+                          null => null,
+                        },
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: _view.index,
-                      sizing: StackFit.expand,
-                      children: [
-                        for (final v in AppView.values) _viewFor(v, layout),
-                      ],
+                    Expanded(
+                      child: IndexedStack(
+                        index: _view.index,
+                        sizing: StackFit.expand,
+                        children: [
+                          for (final v in AppView.values) _viewFor(v, layout),
+                        ],
+                      ),
                     ),
-                  ),
-                  _timerBar(),
-                ],
+                    _timerBar(),
+                  ],
+                ),
               ),
-            ),
-            bottomNavigationBar: _BottomBar(
-              child: ViewSwitcher(
-                key: const Key('view-switch'),
-                current: _view,
-                onSelect: _select,
+              bottomNavigationBar: _BottomBar(
+                child: ViewSwitcher(
+                  key: const Key('view-switch'),
+                  current: _view,
+                  onSelect: _select,
+                ),
               ),
             ),
           ),
@@ -1061,7 +1095,11 @@ class _TopBar extends StatelessWidget {
     required this.actions,
     this.picking = false,
     this.narrow = false,
+    this.undo,
   });
+
+  /// ↶ ↷ beside the document's menu, picking or not.
+  final Widget? undo;
 
   /// Something is picked: the actions show (only then; with nothing picked
   /// every one of them would do nothing).
@@ -1103,6 +1141,7 @@ class _TopBar extends StatelessWidget {
       ),
       const SizedBox(width: 10),
       if (title != null && !(picking && narrow)) Flexible(child: title!),
+      ?undo,
       const SizedBox(width: 10),
       Expanded(
         child: picking

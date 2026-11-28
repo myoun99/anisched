@@ -12,6 +12,7 @@ import 'src/ui/app.dart';
 import 'src/ui/app_start.dart';
 import 'src/ui/text/strings.dart';
 import 'src/ui/theme.dart';
+import 'src/ui/undo.dart';
 import 'src/ui/views/chart.dart';
 
 void main() {
@@ -29,6 +30,12 @@ Future<Widget> _start() async {
     WidgetsBinding.instance.platformDispatcher.locales,
   );
   languageSetting.addListener(() => device.language = languageSetting.value);
+  // This device's keys for undo and redo (settings can change them).
+  shortcutKeys.value = device.shortcuts(apple: appleKeys);
+  saveShortcut = (action, keys) {
+    device.setShortcut(action, keys);
+    shortcutKeys.value = device.shortcuts(apple: appleKeys);
+  };
   // The charts' month view, as this device last left it.
   chartMonthView.value = device.monthView;
   chartMonthView.addListener(() => device.monthView = chartMonthView.value);

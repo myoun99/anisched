@@ -280,10 +280,7 @@ class _RegisterViewState extends State<RegisterView> {
     final cuts = _cuts.total;
     // Saved: the form starts over, as when the screen first opened.
     setState(_clear);
-    _snack(
-      '${S.register.t} · $cuts cut',
-      key: 'registered-snack',
-    );
+    _snack('${S.register.t} · $cuts cut', key: 'registered-snack');
   }
 
   /// Everything typed and picked, to put back after a reset.
