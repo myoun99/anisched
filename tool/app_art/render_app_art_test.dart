@@ -1,11 +1,12 @@
-// The app's art from one mark: every size of the icon, a phone home
-// screen and the desktop start screen, drawn by Flutter itself. Not part
-// of `flutter test` (it runs test/ only). Run:
+// The app's art from one mark, drawn by Flutter itself and written
+// straight into every platform's folder (no copied pictures):
 //   flutter test tool/app_art/render_app_art_test.dart
-// PNGs land in build/app_art/<proposal>/. Step 1 (유저 2026-11-28):
-// proposals only — no platform file is written until one is picked.
+// Not part of `flutter test` (it runs test/ only). Previews land in
+// build/app_art/. The mark is the ani series' (Anicel's constants): a bold
+// ∧ on a 120 grid and, where the crossbar would be, Anisched's trademark
+// — a short rounded bar, a day cell of a schedule (유저 2026-11-28: ②).
 import 'dart:io';
-import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -13,123 +14,191 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../capture/capture_test.dart' show loadFonts;
 
-/// The ani series' mark on a 120 grid: a bold ∧ (no crossbar, round
-/// ends) and, where the crossbar would be, a dot — the trademark.
-class Mark {
-  const Mark({
-    required this.name,
-    required this.ground,
-    this.ink = Colors.white,
-    this.dot,
-    this.dotShape = DotShape.round,
-    this.lines = false,
-  });
+// ---- the mark (Anicel's grid) ----
 
-  final String name;
+const kGrid = 120.0;
+const kAccent = Color(0xFF4F5BD5);
+const kWhite = Color(0xFFFFFFFF);
+const kCornerRadius = 27.0;
+const kStroke = [Offset(30, 100), Offset(60, 24), Offset(90, 100)];
+const kStrokeWidth = 22.0;
 
-  /// The rounded square's colour.
-  final Color ground;
+/// The trademark where the crossbar would be: a day cell.
+const kCellCenter = Offset(60, 90);
+const kCellSize = Size(18, 10);
+const kCellRadius = 3.0;
+const kLetterBounds = Rect.fromLTRB(19, 13, 101, 111);
 
-  /// The ∧'s colour (white on the ground; the ground's on the start
-  /// screen, where there is no ground).
-  final Color ink;
+/// macOS: the body's share of the canvas (Apple's template).
+const kMacBody = 824 / 1024;
 
-  /// The dot's colour when it is not the ink's.
-  final Color? dot;
-  final DotShape dotShape;
+// The desktop start screen, in grid units: the letter (scaled) above
+// the name, no ground; drawn tall for a 5K screen, the runner only
+// scales it down.
+const kSplashWidth = 240.0;
+const kSplashHeight = 232.0;
+const kSplashLetterScale = 1.3;
+const kSplashNameSize = 34.0;
+const kSplashGap = 12.0;
+const kSplashShadow = Color(0x73000000);
+const kSplashPictureHeight = 1440;
 
-  /// Faint timeline rows across the ground.
-  final bool lines;
+enum IconShape {
+  /// Windows, Linux, Android legacy, web: the rounded square, transparent
+  /// corners.
+  rounded,
 
-  static const grid = 120.0;
-  static const radius = 27.0;
-  static const stroke = 22.0;
-  static const apex = Offset(60, 26);
-  static const feet = (Offset(28, 94), Offset(92, 94));
-  static const dotAt = Offset(60, 78);
-  static const dotRadius = 8.5;
+  /// iOS and web maskable: the ground to every edge, no transparency.
+  fullBleed,
 
-  /// Paints the mark into [size] (a square). [ground] false: the ∧ and
-  /// the dot alone, in the ground's colour (the start screen).
-  void paint(Canvas canvas, double size, {bool ground = true}) {
-    canvas.save();
-    canvas.scale(size / grid);
-    if (ground) {
-      final r = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(0, 0, grid, grid),
-        const Radius.circular(radius),
-      );
-      canvas.drawRRect(r, Paint()..color = this.ground);
-      if (lines) {
-        canvas.save();
-        canvas.clipRRect(r);
-        final faint = Paint()..color = Colors.white.withValues(alpha: 0.10);
-        for (final y in [22.0, 46.0, 70.0, 94.0]) {
-          canvas.drawRect(Rect.fromLTWH(0, y, grid, 1.4), faint);
-        }
-        // One bar on a row, as on the timeline.
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            const Rect.fromLTWH(70, 100, 38, 8),
-            const Radius.circular(4),
-          ),
-          Paint()..color = Colors.white.withValues(alpha: 0.16),
-        );
-        canvas.restore();
-      }
-    }
-    final ink = ground ? this.ink : this.ground;
-    final legs = Path()
-      ..moveTo(feet.$1.dx, feet.$1.dy)
-      ..lineTo(apex.dx, apex.dy)
-      ..lineTo(feet.$2.dx, feet.$2.dy);
-    canvas.drawPath(
-      legs,
-      Paint()
-        ..color = ink
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    final dotPaint = Paint()..color = dot ?? ink;
-    switch (dotShape) {
-      case DotShape.round:
-        canvas.drawCircle(dotAt, dotRadius, dotPaint);
-      case DotShape.cell:
-        // A day cell of the schedule: a short rounded bar.
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(center: dotAt, width: 18, height: 10),
-            const Radius.circular(3),
-          ),
-          dotPaint,
-        );
-    }
-    canvas.restore();
-  }
+  /// macOS: the rounded body inset by Apple's margin.
+  macTemplate,
 }
 
-enum DotShape { round, cell }
+/// Paints the letter and the cell (grid units) in [ink].
+void paintLetter(Canvas c, Color ink, {MaskFilter? blur}) {
+  final legs = Path()
+    ..moveTo(kStroke[0].dx, kStroke[0].dy)
+    ..lineTo(kStroke[1].dx, kStroke[1].dy)
+    ..lineTo(kStroke[2].dx, kStroke[2].dy);
+  c.drawPath(
+    legs,
+    Paint()
+      ..color = ink
+      ..maskFilter = blur
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = kStrokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round,
+  );
+  c.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: kCellCenter,
+        width: kCellSize.width,
+        height: kCellSize.height,
+      ),
+      const Radius.circular(kCellRadius),
+    ),
+    Paint()
+      ..color = ink
+      ..maskFilter = blur,
+  );
+}
 
-/// Anisched's accent (the app's theme primary, light).
-const accent = Color(0xFF4F5BD5);
+/// The icon at [size] px in [shape]; [letterScale] shrinks the letter
+/// about the centre (maskable: inside the safe circle).
+void paintIcon(
+  Canvas c,
+  double size,
+  IconShape shape, {
+  double letterScale = 1,
+}) {
+  c.save();
+  switch (shape) {
+    case IconShape.rounded:
+      c.scale(size / kGrid);
+      c.drawRRect(
+        RRect.fromRectAndRadius(
+          const Rect.fromLTWH(0, 0, kGrid, kGrid),
+          const Radius.circular(kCornerRadius),
+        ),
+        Paint()..color = kAccent,
+      );
+    case IconShape.fullBleed:
+      c.drawRect(Rect.fromLTWH(0, 0, size, size), Paint()..color = kAccent);
+      c.scale(size / kGrid);
+    case IconShape.macTemplate:
+      final body = size * kMacBody;
+      c.translate((size - body) / 2, (size - body) / 2);
+      c.scale(body / kGrid);
+      final r = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(0, 0, kGrid, kGrid),
+        const Radius.circular(kCornerRadius),
+      );
+      c.drawRRect(
+        r.shift(const Offset(0, 1.2)),
+        Paint()
+          ..color = const Color(0x40000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+      );
+      c.drawRRect(r, Paint()..color = kAccent);
+  }
+  if (letterScale != 1) {
+    c.translate(kGrid / 2, kGrid / 2);
+    c.scale(letterScale);
+    c.translate(-kGrid / 2, -kGrid / 2);
+  }
+  paintLetter(c, kWhite);
+  c.restore();
+}
 
-const proposals = [
-  // ① Anicel's mark as it is; only the colour tells them apart.
-  Mark(name: '1-accent', ground: accent),
-  // ② The dot becomes a day cell of a schedule.
-  Mark(name: '2-cell', ground: accent, dotShape: DotShape.cell),
-  // ③ The dot kept; faint timeline rows behind.
-  Mark(name: '3-lines', ground: accent, lines: true),
-  // ④ The dot in a warm colour of its own (today's red, softened): the
-  // trademark still reads at 16 px.
-  Mark(name: '4-warm-dot', ground: accent, dot: Color(0xFFFF8A65)),
-];
+/// Android's adaptive foreground: the letter alone on 108 dp, the grid
+/// as wide as the 72 dp the mask shows.
+void paintAdaptiveForeground(Canvas c, double size) {
+  c.save();
+  final grid = size * 72 / 108;
+  c.translate((size - grid) / 2, (size - grid) / 2);
+  c.scale(grid / kGrid);
+  paintLetter(c, kWhite);
+  c.restore();
+}
 
-Future<void> save(
+/// The start screen picture ([height] px tall): the letter in the accent
+/// and the name in white under it, each with a soft shadow, no ground.
+void paintSplash(Canvas c, double height) {
+  final u = height / kSplashHeight;
+  c.save();
+  c.scale(u);
+  const letter = kLetterBounds;
+  final scaled = Size(
+    letter.width * kSplashLetterScale,
+    letter.height * kSplashLetterScale,
+  );
+  final name = TextPainter(
+    text: const TextSpan(
+      text: 'Anisched',
+      style: TextStyle(
+        fontFamily: 'NanumGothic',
+        fontWeight: FontWeight.w700,
+        fontSize: kSplashNameSize,
+        color: kWhite,
+        shadows: [
+          Shadow(color: kSplashShadow, offset: Offset(0, 3), blurRadius: 5),
+        ],
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  final total = scaled.height + kSplashGap + name.height;
+  final top = (kSplashHeight - total) / 2;
+  c.save();
+  c.translate((kSplashWidth - scaled.width) / 2, top);
+  c.scale(kSplashLetterScale);
+  c.translate(-letter.left, -letter.top);
+  // The shadow (offset 0,3 · sigma 5, in grid units), then the letter.
+  c.save();
+  c.translate(0, 3 / kSplashLetterScale);
+  paintLetter(
+    c,
+    kSplashShadow,
+    blur: const MaskFilter.blur(BlurStyle.normal, 5 / kSplashLetterScale),
+  );
+  c.restore();
+  paintLetter(c, kAccent);
+  c.restore();
+  name.paint(
+    c,
+    Offset((kSplashWidth - name.width) / 2, top + scaled.height + kSplashGap),
+  );
+  name.dispose();
+  c.restore();
+}
+
+// ---- writing ----
+
+Future<Uint8List> render(
   WidgetTester t,
-  String path,
   int w,
   int h,
   void Function(Canvas c) draw,
@@ -143,114 +212,192 @@ Future<void> save(
     img.dispose();
     return data!.buffer.asUint8List();
   });
-  File(path)
-    ..createSync(recursive: true)
-    ..writeAsBytesSync(bytes!);
   pic.dispose();
+  return bytes!;
 }
 
-TextPainter label(String text, double size, Color color, {bool bold = false}) =>
-    TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontFamily: 'NanumGothic',
-          fontSize: size,
-          color: color,
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+void write(String path, List<int> bytes) => File(path)
+  ..createSync(recursive: true)
+  ..writeAsBytesSync(bytes);
+
+/// A PNG's width and height (its IHDR).
+(int, int) pngSize(String path) {
+  final d = ByteData.sublistView(File(path).readAsBytesSync());
+  return (d.getUint32(16), d.getUint32(20));
+}
+
+/// An .ico of PNG images (Windows Vista on reads them).
+Uint8List ico(List<(int, Uint8List)> images) {
+  final out = BytesBuilder();
+  final head = ByteData(6)
+    ..setUint16(0, 0, Endian.little)
+    ..setUint16(2, 1, Endian.little)
+    ..setUint16(4, images.length, Endian.little);
+  out.add(head.buffer.asUint8List());
+  var offset = 6 + 16 * images.length;
+  for (final (size, png) in images) {
+    final e = ByteData(16)
+      ..setUint8(0, size >= 256 ? 0 : size)
+      ..setUint8(1, size >= 256 ? 0 : size)
+      ..setUint16(4, 1, Endian.little)
+      ..setUint16(6, 32, Endian.little)
+      ..setUint32(8, png.length, Endian.little)
+      ..setUint32(12, offset, Endian.little);
+    out.add(e.buffer.asUint8List());
+    offset += png.length;
+  }
+  for (final (_, png) in images) {
+    out.add(png);
+  }
+  return out.toBytes();
+}
+
+const _note = '<!-- Written by tool/app_art/render_app_art_test.dart. -->';
 
 void main() {
   setUpAll(loadFonts);
-  const out = 'build/app_art';
 
-  for (final m in proposals) {
-    testWidgets('render ${m.name}', (t) async {
-      final dir = '$out/${m.name}';
-      // The icon at its sizes, each drawn at its own size.
-      for (final s in [1024, 64, 32, 16]) {
-        await save(t, '$dir/icon-$s.png', s, s, (c) => m.paint(c, s * 1.0));
-      }
+  Future<Uint8List> icon(
+    WidgetTester t,
+    int s,
+    IconShape shape, {
+    double letterScale = 1,
+  }) => render(
+    t,
+    s,
+    s,
+    (c) => paintIcon(c, s * 1.0, shape, letterScale: letterScale),
+  );
 
-      // A phone's home screen: the icon among others, its name under it.
-      const pw = 720.0;
-      const ph = 560.0;
-      await save(t, '$dir/home.png', pw.toInt(), ph.toInt(), (c) {
+  Future<Uint8List> foreground(WidgetTester t, int s) =>
+      render(t, s, s, (c) => paintAdaptiveForeground(c, s * 1.0));
+
+  testWidgets('every platform', (t) async {
+    // iOS: every size the icon set holds, full bleed (no transparency).
+    const ios = 'ios/Runner/Assets.xcassets/AppIcon.appiconset';
+    for (final f in Directory(ios).listSync().whereType<File>()) {
+      if (!f.path.endsWith('.png')) continue;
+      final (w, _) = pngSize(f.path);
+      write(f.path, await icon(t, w, IconShape.fullBleed));
+    }
+    // macOS: Apple's template.
+    const mac = 'macos/Runner/Assets.xcassets/AppIcon.appiconset';
+    for (final f in Directory(mac).listSync().whereType<File>()) {
+      if (!f.path.endsWith('.png')) continue;
+      final (w, _) = pngSize(f.path);
+      write(f.path, await icon(t, w, IconShape.macTemplate));
+    }
+    // Android: the legacy rounded square, and the adaptive pair.
+    const res = 'android/app/src/main/res';
+    const densities = {
+      'mdpi': 1.0,
+      'hdpi': 1.5,
+      'xhdpi': 2.0,
+      'xxhdpi': 3.0,
+      'xxxhdpi': 4.0,
+    };
+    for (final MapEntry(key: d, value: x) in densities.entries) {
+      write(
+        '$res/mipmap-$d/ic_launcher.png',
+        await icon(t, (48 * x).round(), IconShape.rounded),
+      );
+      write(
+        '$res/mipmap-$d/ic_launcher_foreground.png',
+        await foreground(t, (108 * x).round()),
+      );
+    }
+    write(
+      '$res/mipmap-anydpi-v26/ic_launcher.xml',
+      '''
+<?xml version="1.0" encoding="utf-8"?>
+$_note
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+'''
+          .trimLeft()
+          .codeUnits,
+    );
+    write(
+      '$res/values/ic_launcher_background.xml',
+      '''
+<?xml version="1.0" encoding="utf-8"?>
+$_note
+<resources>
+    <color name="ic_launcher_background">#4F5BD5</color>
+</resources>
+'''
+          .trimLeft()
+          .codeUnits,
+    );
+    // Windows: one .ico of every size the shell asks for.
+    write(
+      'windows/runner/resources/app_icon.ico',
+      ico([
+        for (final s in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256])
+          (s, await icon(t, s, IconShape.rounded)),
+      ]),
+    );
+    // Linux: the window's icon.
+    write(
+      'linux/runner/resources/app_icon.png',
+      await icon(t, 256, IconShape.rounded),
+    );
+    // Web: the favicon, the app icons, the maskable ones.
+    write('web/favicon.png', await icon(t, 32, IconShape.rounded));
+    for (final s in [192, 512]) {
+      write('web/icons/Icon-$s.png', await icon(t, s, IconShape.rounded));
+      write(
+        'web/icons/Icon-maskable-$s.png',
+        await icon(t, s, IconShape.fullBleed, letterScale: 0.72),
+      );
+    }
+    // Every desktop's start screen, from the app's assets.
+    const h = kSplashPictureHeight;
+    final w = (h * kSplashWidth / kSplashHeight).round();
+    write(
+      'assets/app_art/splash.png',
+      await render(t, w, h, (c) => paintSplash(c, h * 1.0)),
+    );
+  });
+
+  testWidgets('previews', (t) async {
+    for (final s in [1024, 64, 32, 16]) {
+      write('build/app_art/icon-$s.png', await icon(t, s, IconShape.rounded));
+    }
+    write(
+      'build/app_art/ios-1024.png',
+      await icon(t, 1024, IconShape.fullBleed),
+    );
+    write(
+      'build/app_art/mac-1024.png',
+      await icon(t, 1024, IconShape.macTemplate),
+    );
+    write('build/app_art/android-foreground-432.png', await foreground(t, 432));
+    write(
+      'build/app_art/maskable-512.png',
+      await icon(t, 512, IconShape.fullBleed, letterScale: 0.72),
+    );
+    // The start screen as it shows: half the short side of a 1280×800
+    // screen, on a desktop.
+    await t.runAsync(() async {});
+    write(
+      'build/app_art/splash-desktop.png',
+      await render(t, 1280, 800, (c) {
         c.drawRect(
-          const Rect.fromLTWH(0, 0, pw, ph),
+          const Rect.fromLTWH(0, 0, 1280, 800),
           Paint()
-            ..shader = ui.Gradient.linear(Offset.zero, const Offset(0, ph), [
-              const Color(0xFF2B3A55),
-              const Color(0xFF6B7FA8),
+            ..shader = ui.Gradient.radial(const Offset(640, 400), 900, [
+              const Color(0xFF3A4660),
+              const Color(0xFF1A1D26),
             ]),
         );
-        const icon = 120.0;
-        const gap = 52.0;
-        const left = (pw - 4 * icon - 3 * gap) / 2;
-        final others = [
-          const Color(0xFFE8E8E8),
-          const Color(0xFF34A853),
-          const Color(0xFFFBBC05),
-          const Color(0xFF9AA0A6),
-          const Color(0xFFEA4335),
-          const Color(0xFF1A73E8),
-          const Color(0xFFF6F6F6),
-        ];
-        var k = 0;
-        for (var row = 0; row < 2; row++) {
-          for (var col = 0; col < 4; col++) {
-            final x = left + col * (icon + gap);
-            final y = 70.0 + row * (icon + 90);
-            c.save();
-            c.translate(x, y);
-            if (row == 0 && col == 1) {
-              m.paint(c, icon);
-            } else {
-              c.drawRRect(
-                RRect.fromRectAndRadius(
-                  const Rect.fromLTWH(0, 0, icon, icon),
-                  const Radius.circular(icon * Mark.radius / Mark.grid),
-                ),
-                Paint()..color = others[k++ % others.length],
-              );
-            }
-            c.restore();
-            final name = row == 0 && col == 1 ? 'Anisched' : '';
-            if (name.isNotEmpty) {
-              final p = label(name, 24, Colors.white);
-              p.paint(c, Offset(x + (icon - p.width) / 2, y + icon + 12));
-            }
-          }
-        }
-      });
-
-      // The desktop start screen: no ground, the mark in its colour and
-      // the name in white under it, the mark's height half the screen's
-      // short side, on a desktop.
-      const dw = 1280.0;
-      const dh = 800.0;
-      await save(t, '$dir/splash.png', dw.toInt(), dh.toInt(), (c) {
-        c.drawRect(
-          const Rect.fromLTWH(0, 0, dw, dh),
-          Paint()
-            ..shader = ui.Gradient.radial(
-              const Offset(dw / 2, dh / 2),
-              dw * 0.7,
-              [const Color(0xFF2A2D36), const Color(0xFF14151A)],
-            ),
-        );
-        final mark = math.min(dw, dh) * 0.5;
-        final name = label('Anisched', mark * 0.16, Colors.white, bold: true);
-        final top = (dh - mark - name.height * 1.2) / 2;
-        c.save();
-        c.translate((dw - mark) / 2, top);
-        m.paint(c, mark, ground: false);
-        c.restore();
-        name.paint(c, Offset((dw - name.width) / 2, top + mark * 0.9));
-      });
-    });
-  }
+        const h = 400.0;
+        const w = h * kSplashWidth / kSplashHeight;
+        c.translate((1280 - w) / 2, (800 - h) / 2);
+        paintSplash(c, h);
+      }),
+    );
+  });
 }

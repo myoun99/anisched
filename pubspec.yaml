@@ -22,6 +22,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # The desktop start screen's picture (drawn by tool/app_art; the
+  # runners read it from the app's assets).
+  assets:
+    - assets/app_art/splash.png
   # BIZ UDPGothic carries Latin and Japanese; Nanum Gothic fills in Hangul;
   # Noto Sans SC (Adobe/Google subset OTF) draws Simplified Chinese and
   # leads when the app is in Chinese so Han characters take SC forms.
