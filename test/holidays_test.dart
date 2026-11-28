@@ -36,6 +36,11 @@ void main() {
     expect(listed(HolidayCountry.japan, 2025), contains('11/24 振替休日'));
     expect(listed(HolidayCountry.japan, 2021), contains('7/23 スポーツの日'));
     expect(listed(HolidayCountry.japan, 2019), contains('5/1 天皇の即位の日'));
+    // A Sunday between two holidays stays a Sunday (2003-05-04).
+    expect(
+      listed(HolidayCountry.japan, 2003).where((h) => h.startsWith('5/4')),
+      isEmpty,
+    );
   });
 
   test('Korea: 설날 three days; 대체공휴일 by the law\'s years', () {
