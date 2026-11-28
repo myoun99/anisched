@@ -50,6 +50,12 @@ void main() {
     );
   });
 
+  test('zoom stays between a week and fifteen weeks', () {
+    expect(const ChartView().zoomed(3).days, ChartView.minDays);
+    expect(const ChartView().zoomed(500).days, ChartView.maxDays);
+    expect(const ChartView(days: 105).stepped(105, zoomIn: false).days, 105);
+  });
+
   group('timeline', () {
     devices.forEach((name, size) {
       testWidgets('$name lays out without overflow', (t) async {
@@ -259,10 +265,36 @@ void main() {
         await t.pump();
       }
       expect(ChartPaints.preview, greaterThanOrEqualTo(4));
+      expect(ChartPaints.barBuilds, 0, reason: 'the bar itself is not rebuilt');
       expect(ChartPaints.background, 0, reason: 'background is its own layer');
       expect(ChartPaints.today, 0, reason: "today's column is its own layer");
       await gesture.up();
       await t.pump();
+    });
+
+    testWidgets('new rows leave the background and today alone', (t) async {
+      final store = sampleCatalogue(now);
+      final groups = store.partGroups();
+      Widget view(List<PartGroup> parts) => TimelineView(
+        parts: parts,
+        now: now,
+        layout: ScreenLayout.of(1440, 900),
+      );
+      await pumpIn(t, const Size(1440, 900), view(groups));
+      ChartPaints.reset();
+      await t.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          scrollBehavior: const AlwaysScrollbarBehavior(),
+          home: Scaffold(body: view(groups.sublist(1))),
+        ),
+      );
+      await t.pump();
+      expect(ChartPaints.background, 0);
+      expect(ChartPaints.today, 0);
+      chartView.value = chartView.value.scrolled(1);
+      await t.pump();
+      expect(ChartPaints.background, greaterThan(0), reason: 'dates moved');
     });
   });
 }

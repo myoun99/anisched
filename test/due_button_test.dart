@@ -77,9 +77,11 @@ void main() {
     await t.tap(find.byKey(Key('tl-due-${g.key}')));
     await t.pump();
     await pickDay(t, '30');
+    final due = store.partGroups().firstWhere((x) => x.key == g.key).dueAt!;
+    // A picked day is due at its end, so the day itself is never late.
     expect(
-      store.partGroups().firstWhere((x) => x.key == g.key).dueAt!.toLocal().day,
-      30,
+      (due.toLocal().day, due.toLocal().hour, due.toLocal().minute),
+      (30, 23, 59),
     );
   });
 }

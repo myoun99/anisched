@@ -130,4 +130,19 @@ void main() {
     expect(g.total, 3);
     expect(g.dueAt!.isAtSameMomentAs(due), isTrue);
   });
+
+  test('a cut added past the run is its own cell; one inside it is not', () {
+    final c = CutDraft(count: 3)
+      ..add('C004')
+      ..add('C003');
+    expect(c.cells, ['C001', 'C002', 'C003', 'C004']);
+  });
+
+  test('taking out a mixed pick takes all out; an all-out pick comes back', () {
+    final c = CutDraft(count: 3)..toggleRemoved(['C001']);
+    c.toggleRemoved(['C001', 'C002']);
+    expect(c.removed, {'C001', 'C002'});
+    c.toggleRemoved(['C001', 'C002']);
+    expect(c.removed, isEmpty);
+  });
 }

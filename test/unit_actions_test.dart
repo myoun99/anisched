@@ -104,4 +104,25 @@ void main() {
       expect(all.ids, hasLength(g.tasks.length));
     });
   });
+
+  group('HoldPlan edges', () {
+    test('a pick with some cuts waiting puts the rest on hold', () {
+      final s = sampleCatalogue(now);
+      final g = openPart(s);
+      final open = g.tasks.where((t) => t.status.isOpen).toList();
+      s.setTaskWaiting(open.first.id, waiting: true);
+      final plan = HoldPlan.of(s.partGroups(), again(s, g).tasks);
+      expect(plan.release, isFalse);
+    });
+
+    test("a part hold overrides its cuts' own settings", () {
+      final s = sampleCatalogue(now);
+      final g = openPart(s);
+      final open = g.tasks.where((t) => t.status.isOpen).toList();
+      // One cut said 'not waiting' on its own before the part was held.
+      s.setTaskWaiting(open.first.id, waiting: false);
+      HoldPlan.of(s.partGroups(), again(s, g).tasks).apply(s);
+      expect(again(s, g).inHand, 0);
+    });
+  });
 }

@@ -59,15 +59,16 @@ class HoldPlan {
     );
   }
 
-  /// Writes the plan; [reason] and [until] only when putting on hold.
+  /// Writes the plan. Taking a hold off clears its reason and expected
+  /// day in the store, whatever is passed.
   void apply(CatalogueStore store, {String? reason, DateTime? until}) {
     for (final p in parts) {
       store.setPartWaiting(
         p.partId,
         p.stageId,
         waiting: !release,
-        reason: release ? null : reason,
-        until: release ? null : until,
+        reason: reason,
+        until: until,
       );
       // The part's setting decides; drop the cuts' own.
       store.followPartWaiting(p.taskIds);
@@ -76,8 +77,8 @@ class HoldPlan {
       store.setWaitingMany(
         loose,
         waiting: !release,
-        reason: release ? null : reason,
-        until: release ? null : until,
+        reason: reason,
+        until: until,
       );
     }
   }
