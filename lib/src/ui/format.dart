@@ -34,7 +34,9 @@ enum DueTone { none, quiet, late }
 
 /// [dueLabel] from days already counted (negative = late, null = none).
 ({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
-  if (days == null || status == TaskStatus.done) {
+  // Handed in: no deadline to watch any more. Done but not handed in still
+  // counts down — it has yet to go.
+  if (days == null || status.isHanded) {
     return (text: '—', tone: DueTone.none);
   }
   final text = days < 0

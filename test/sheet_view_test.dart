@@ -1,5 +1,7 @@
 import 'package:anisched/src/core/size_class.dart';
+import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/models/progress.dart';
+import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:anisched/src/ui/views/sheet_view.dart';
 import 'package:anisched/src/ui/fold.dart';
@@ -10,11 +12,16 @@ import 'support/sample_catalogue.dart';
 
 final now = DateTime(2026, 11, 27, 14);
 
-Future<List<PartGroup>> pumpSheet(WidgetTester tester, Size size) async {
+Future<List<PartGroup>> pumpSheet(
+  WidgetTester tester,
+  Size size, {
+  void Function(CatalogueStore store)? before,
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final store = sampleCatalogue(now);
+  before?.call(store);
   final groups = store.partGroups(includeDone: true);
   await tester.pumpWidget(
     MaterialApp(
@@ -47,8 +54,21 @@ void main() {
     Folds.savedCuts.value = true;
   });
 
-  testWidgets('done parts are hidden until asked for', (t) async {
-    final gs = await pumpSheet(t, const Size(1280, 800));
+  testWidgets('submitted parts are hidden until asked for; done stay', (
+    t,
+  ) async {
+    final gs = await pumpSheet(
+      t,
+      const Size(1280, 800),
+      before: (s) {
+        final b = s
+            .partGroups(includeDone: true)
+            .firstWhere((g) => g.partLabel == 'B' && g.stageName == 'LO');
+        s.setStatusMany([for (final x in b.tasks) x.id], TaskStatus.submitted);
+      },
+    );
+    final kept = part(gs, '별빛 정류장', 'A', '원화');
+    expect(find.byKey(Key('line-${kept.key}')), findsOneWidget);
     final done = part(gs, '별빛 정류장', 'B', 'LO');
     expect(find.byKey(Key('line-${done.key}')), findsNothing);
     await t.tap(find.byKey(const Key('toggle-done')));
@@ -77,7 +97,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('마법소녀 리코').last);
     await t.pumpAndSettle();
-    final riko = part(gs, '마법소녀 리코', 'B', '원화 작감 수정');
+    final riko = part(gs, '마법소녀 리코', 'B', '원화/작감');
     final star = part(gs, '별빛 정류장', 'A', '원화');
     expect(find.byKey(Key('line-${riko.key}')), findsOneWidget);
     expect(find.byKey(Key('line-${star.key}')), findsNothing);

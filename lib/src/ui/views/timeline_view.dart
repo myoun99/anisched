@@ -239,30 +239,41 @@ class _TimelineLabel extends StatelessWidget {
               ],
             ),
           ),
-          DueButton(
-            key: Key('tl-due-${g.key}'),
-            title: S.pickDue.t,
-            due: g.dueAt,
-            onPicked: onDue == null ? null : (d) => onDue!(g, d),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    due.text,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: due.tone == DueTone.late
-                          ? Theme.of(context).colorScheme.error
-                          : c.muted,
-                      fontWeight: due.tone == DueTone.late
-                          ? FontWeight.w700
-                          : null,
-                    ),
+          // At most half the label; long words (6 j de retard) shrink.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 72),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: DueButton(
+                key: Key('tl-due-${g.key}'),
+                title: S.pickDue.t,
+                due: g.dueAt,
+                onPicked: onDue == null ? null : (d) => onDue!(g, d),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
                   ),
-                  RoundBadge(g.dueRevision),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        due.text,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: due.tone == DueTone.late
+                              ? Theme.of(context).colorScheme.error
+                              : c.muted,
+                          fontWeight: due.tone == DueTone.late
+                              ? FontWeight.w700
+                              : null,
+                        ),
+                      ),
+                      RoundBadge(g.dueRevision),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

@@ -129,6 +129,7 @@ void main() {
         (g) =>
             g.dueAt != null &&
             g.kickoffAt != null &&
+            !g.dueAt!.isBefore(g.kickoffAt!) &&
             w.indexOf(g.kickoffAt!) >= 0 &&
             w.indexOf(g.dueAt!) < 25,
       );
@@ -287,7 +288,10 @@ void main() {
         ),
       );
       const dayWidth = (1440 - 250) / 35;
-      final bar = find.byKey(Key('tl-bar-${groups.first.key}'));
+      final withBar = groups.firstWhere(
+        (g) => g.kickoffAt != null && !g.dueAt!.isBefore(g.kickoffAt!),
+      );
+      final bar = find.byKey(Key('tl-bar-${withBar.key}'));
       await t.sendKeyDownEvent(LogicalKeyboardKey.space);
       await t.pump();
       final g = await t.startGesture(
@@ -321,7 +325,10 @@ void main() {
     testWidgets('dragging a bar end redraws only the preview layer', (t) async {
       final store = sampleCatalogue(now);
       final g = store.partGroups().firstWhere(
-        (g) => g.dueAt != null && g.kickoffAt != null,
+        (g) =>
+            g.dueAt != null &&
+            g.kickoffAt != null &&
+            !g.dueAt!.isBefore(g.kickoffAt!),
       );
       await pumpIn(
         t,

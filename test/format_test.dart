@@ -28,9 +28,9 @@ void main() {
       expect(dueLabel(on(25), now, t).tone, DueTone.late);
     });
 
-    test('handed-over work never looks late', () {
-      expect(dueLabel(on(25), now, s).tone, DueTone.quiet);
-      expect(dueLabel(on(25), now, d), (text: '—', tone: DueTone.none));
+    test('handed-in work never looks late; done but kept still does', () {
+      expect(dueLabel(on(25), now, s), (text: '—', tone: DueTone.none));
+      expect(dueLabel(on(25), now, d).tone, DueTone.late);
       expect(dueLabel(null, now, w).text, '—');
     });
 

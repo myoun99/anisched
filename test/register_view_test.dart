@@ -56,11 +56,11 @@ void main() {
     await t.tap(find.byKey(const Key('role-작감')));
     await t.pump();
     final lo = find.descendant(
-      of: find.byKey(const Key('stage-LO 작감 수정')),
+      of: find.byKey(const Key('stage-LO/작감')),
       matching: find.byType(Checkbox),
     );
     expect(t.widget<Checkbox>(lo).value, isTrue);
-    await t.tap(find.byKey(const Key('stage-LO 작감 수정')));
+    await t.tap(find.byKey(const Key('stage-LO/작감')));
     await t.pump();
     expect(t.widget<Checkbox>(lo).value, isFalse);
   });

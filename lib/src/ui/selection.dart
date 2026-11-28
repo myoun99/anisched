@@ -48,6 +48,6 @@ class TaskSelection extends ChangeNotifier {
 /// The statuses a picked set can be moved to, in the bar's order.
 const pickActions = [
   TaskStatus.inProgress,
-  TaskStatus.submitted,
   TaskStatus.done,
+  TaskStatus.submitted,
 ];

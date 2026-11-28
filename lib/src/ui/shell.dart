@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../controllers/lanes.dart';
 import '../controllers/registration.dart';
 import '../controllers/unit_actions.dart';
 import '../core/clock.dart';
@@ -461,17 +460,12 @@ class _AppShellState extends State<AppShell> {
             : null,
         onClearPins: writable ? () => _write((s) => s.clearLanePins()) : null,
         onPlan: writable ? _plan : null,
-        laneNames: widget.store?.settings.laneNames ?? const [],
-        onAddLane: writable ? () => _write(addLane) : null,
+        laneNames: widget.store?.lanes() ?? const [],
+        onAddLane: writable ? () => _write((s) => s.addLane()) : null,
         onEditLane: writable
-            ? (lane, {name, remove = false}) => _write((s) {
-                final layout = _lanes;
-                if (remove && layout != null) {
-                  removeLane(s, layout, lane);
-                } else if (!remove) {
-                  renameLane(s, lane, name);
-                }
-              })
+            ? (lane, {name, remove = false}) => _write(
+                (s) => remove ? s.removeLane(lane) : s.renameLane(lane, name),
+              )
             : null,
       ),
       AppView.register => RegisterView(

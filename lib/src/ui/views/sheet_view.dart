@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../instant.dart';
 
 import '../../core/size_class.dart';
-import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../theme.dart';
 import '../part_line.dart';
@@ -131,7 +130,7 @@ class _SheetViewState extends State<SheetView> {
             ? widget.parts
             : [
                 for (final p in widget.parts)
-                  if ((_showDone || p.status != TaskStatus.done) &&
+                  if ((_showDone || !p.status.isHanded) &&
                       (_work == null || p.workId == _work))
                     p,
               ]
