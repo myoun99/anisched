@@ -187,7 +187,8 @@ class _TimerBarState extends State<TimerBar> {
                         child: _name(
                           'timer-cut',
                           t == null ? '—' : taskLabel(t),
-                          t == null ? null : widget.onPickCut,
+                          // Empty, the name slot picks the first cut.
+                          widget.onPickCut,
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 15,

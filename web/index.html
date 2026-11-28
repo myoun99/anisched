@@ -19,15 +19,24 @@
   <title>Anisched</title>
   <link rel="manifest" href="manifest.json">
   <style>
+    /* The app's page colour and faint ink (AppColors), so this runs into
+       the app's own loading screen (AppLoading) without a flash. */
     html, body { margin: 0; height: 100%; background: #F4F5F7; }
-    @media (prefers-color-scheme: dark) { html, body { background: #14161C; } }
-    /* Shown until Flutter draws its first frame. */
-    #loading { position: fixed; inset: 0; display: grid; place-items: center;
+    #loading { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
       font: 15px system-ui, sans-serif; color: #9CA1AC; }
+    #loading i { width: 12px; height: 12px; border: 2px solid currentColor;
+      border-right-color: transparent; border-radius: 50%;
+      animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-color-scheme: dark) {
+      html, body { background: #0E0F12; }
+      #loading { color: #5E636D; }
+    }
   </style>
 </head>
 <body>
-  <div id="loading">Anisched</div>
+  <div id="loading">Anisched<i></i></div>
   <script>
     window.addEventListener('flutter-first-frame', function () {
       var l = document.getElementById('loading');

@@ -410,11 +410,25 @@ class ChartDays {
     this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
     this.daysOff = const [],
     this.holidays = const {},
+    this.events = const [],
   });
 
   final Set<int> restWeekdays;
   final List<DaysOff> daysOff;
   final Map<DateTime, String> holidays;
+
+  /// Events on no episode (the date ruler's): days off and the user's
+  /// own dated notes, titled on the ruler.
+  final List<EventRow> events;
+
+  /// The ruler's events on [day].
+  List<EventRow> eventsOn(DateTime day) => [
+    for (final e in events)
+      if (e.date.year == day.year &&
+          e.date.month == day.month &&
+          e.date.day == day.day)
+        e,
+  ];
 
   static DateTime _key(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
@@ -436,20 +450,22 @@ class ChartDays {
         [for (final o in other.daysOff) (o.start, o.end)],
         [for (final o in daysOff) (o.start, o.end)],
       ) &&
-      mapEquals(other.holidays, holidays);
+      mapEquals(other.holidays, holidays) &&
+      listEquals(other.events, events);
 
   @override
   int get hashCode =>
       Object.hash(restWeekdays.length, daysOff.length, holidays.length);
 }
 
-/// Marked days' colours: their numbers, and (faintly) their columns.
+/// Marked days' colours: their numbers, and (faintly) their columns —
+/// one colour for every kind of day off (the user's rule).
 Map<DayKind, Color> dayMarkColors(BuildContext context) {
   final c = AppColors.of(context);
   return {
     DayKind.rest: c.restDay,
-    DayKind.off: c.dayOff,
-    DayKind.holiday: c.holiday,
+    DayKind.off: c.restDay,
+    DayKind.holiday: c.restDay,
   };
 }
 
@@ -597,18 +613,30 @@ class ChartHeader extends StatelessWidget {
     required this.window,
     required this.today,
     this.days = const ChartDays(),
+    this.onDayLongPress,
+    this.onEvent,
   });
 
   final ChartWindow window;
   final DateTime today;
   final ChartDays days;
 
+  /// A long press on a day of the ruler: a new event of no episode there
+  /// (a day off, a note); null leaves the ruler read-only.
+  final ValueChanged<DateTime>? onDayLongPress;
+
+  /// A ruler event tapped: edit or remove it.
+  final ValueChanged<EventRow>? onEvent;
+
+  /// The header's height: month, day numbers, and the line of names.
+  static const height = 58.0;
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final style = DefaultTextStyle.of(context).style;
     return SizedBox(
-      height: 44,
+      height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -630,32 +658,106 @@ class ChartHeader extends StatelessWidget {
               ),
             ),
           ),
-          // A holiday's name on hover / long press over its day.
-          if (days.holidays.isNotEmpty)
-            LayoutBuilder(
-              builder: (context, box) {
-                final dw = box.maxWidth / window.days;
-                return Stack(
-                  children: [
-                    for (var i = 0; i < window.days; i++)
-                      if (days.holidayName(window.dayAt(i)) case final name?)
-                        Positioned(
-                          left: i * dw,
-                          width: dw,
-                          top: 0,
-                          bottom: 0,
-                          child: Tooltip(
-                            key: Key('holiday-$i'),
-                            message: name,
-                            child: const SizedBox.expand(),
-                          ),
+          // The ruler's long press, and its names: a holiday's, the
+          // events' titles — small, under the day number.
+          LayoutBuilder(
+            builder: (context, box) {
+              final dw = box.maxWidth / window.days;
+              return Stack(
+                children: [
+                  if (onDayLongPress case final press?)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        key: const Key('ruler-press'),
+                        behavior: HitTestBehavior.translucent,
+                        onLongPressStart: (d) {
+                          final i = (d.localPosition.dx / dw).floor();
+                          press(window.dayAt(i.clamp(0, window.days - 1)));
+                        },
+                      ),
+                    ),
+                  for (var i = 0; i < window.days; i++)
+                    if (_RulerNote.of(days, window.dayAt(i)) case final n?)
+                      Positioned(
+                        left: i * dw,
+                        width: (dw > 56.0 ? dw : 56.0).clamp(
+                          0.0,
+                          box.maxWidth - i * dw,
                         ),
-                  ],
-                );
-              },
-            ),
+                        top: 40,
+                        height: 16,
+                        child: _RulerNote(
+                          key: Key('ruler-$i'),
+                          note: n,
+                          // A day off's words in its colour; a note muted.
+                          color:
+                              n.holiday != null || n.events.any((e) => e.rest)
+                              ? c.restDay
+                              : c.muted,
+                          onEvent: onEvent,
+                        ),
+                      ),
+                ],
+              );
+            },
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// What the ruler says on a day: a holiday's name, the day's events.
+typedef _Note = ({String? holiday, List<EventRow> events});
+
+/// A day's small line on the ruler: its holiday and event titles in one
+/// line (condensed, the whole on hover / long press). A tap edits the
+/// first event; a holiday alone only shows its name.
+class _RulerNote extends StatelessWidget {
+  const _RulerNote({
+    super.key,
+    required this.note,
+    required this.color,
+    this.onEvent,
+  });
+
+  final _Note note;
+  final Color color;
+  final ValueChanged<EventRow>? onEvent;
+
+  static _Note? of(ChartDays days, DateTime day) {
+    final holiday = days.holidayName(day);
+    final events = days.eventsOn(day);
+    if (holiday == null && events.isEmpty) return null;
+    return (holiday: holiday, events: events);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final words = [
+      ?note.holiday,
+      for (final e in note.events) e.title,
+    ].join(' · ');
+    final text = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: FitText(
+        words,
+        style: TextStyle(
+          fontSize: 10,
+          height: 1.4,
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+    final first = note.events.firstOrNull;
+    if (first == null || onEvent == null) {
+      return Tooltip(message: words, child: text);
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onEvent!(first),
+      child: text,
     );
   }
 }
@@ -815,6 +917,8 @@ class ChartBoard extends StatefulWidget {
     this.corner,
     this.below,
     this.shrinkWrap = false,
+    this.onDayLongPress,
+    this.onDayEvent,
   });
 
   /// What opens under a row, the full width of the board (label column
@@ -826,6 +930,11 @@ class ChartBoard extends StatefulWidget {
 
   /// Rest weekdays, days off and holidays, marked on the background.
   final ChartDays days;
+
+  /// The ruler's long press (a new event of no episode) and its events'
+  /// taps; see [ChartHeader].
+  final ValueChanged<DateTime>? onDayLongPress;
+  final ValueChanged<EventRow>? onDayEvent;
 
   /// As tall as its rows, not scrolling them itself: one of several
   /// boards stacked in an outer list (the month view's months).
@@ -994,6 +1103,8 @@ class _ChartBoardState extends State<ChartBoard> {
                     window: widget.window,
                     today: widget.today,
                     days: widget.days,
+                    onDayLongPress: widget.onDayLongPress,
+                    onEvent: widget.onDayEvent,
                   ),
                 ),
               ],

@@ -1,3 +1,4 @@
+import 'package:anisched/src/core/size_class.dart';
 import 'package:anisched/src/models/holidays.dart';
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
@@ -29,11 +30,24 @@ void main() {
     expect(days.holidayName(DateTime(2026, 11, 4)), isNull);
   });
 
-  test('the three marks and today are four different colours', () {
-    for (final c in [AppColors.light, AppColors.dark]) {
-      final all = {c.restDay, c.dayOff, c.holiday, c.retake};
-      expect(all, hasLength(4));
-    }
+  testWidgets('days off are one colour, whatever their kind', (t) async {
+    late Map<DayKind, Color> marks;
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Builder(
+          builder: (context) {
+            marks = dayMarkColors(context);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    // Rest weekdays, the user's days off and holidays alike; plain days
+    // have none (the bands only); today keeps its own red.
+    expect(marks.values.toSet(), hasLength(1));
+    expect(marks.containsKey(DayKind.plain), isFalse);
+    expect(marks.values.first, isNot(AppColors.light.retake));
   });
 
   testWidgets('a holiday on the header names itself', (t) async {
@@ -51,7 +65,9 @@ void main() {
         ),
       ),
     );
-    expect(find.byKey(const Key('holiday-2')), findsOneWidget);
+    // Its name on the ruler, under the day number.
+    expect(find.byKey(const Key('ruler-2')), findsOneWidget);
+    expect(find.text('文化の日'), findsOneWidget);
     expect(find.byTooltip('文化の日'), findsOneWidget);
   });
 
@@ -89,5 +105,53 @@ void main() {
     final rest = store.settings.restOnHolidays;
     await tap('holiday-rest');
     expect(store.settings.restOnHolidays, !rest);
+  });
+
+  testWidgets('a long press on the ruler makes a day off for everything', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(1280, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    chartView.value = const ChartView();
+    final store = sampleCatalogue(now);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          initialView: AppView.timeline,
+          reader: SyncCatalogueReader(store),
+          store: store,
+          clock: () => now,
+        ),
+      ),
+    );
+    await t.pump();
+    final restBefore = store.restDays().length;
+    final ruler = find.byKey(const Key('ruler-press'));
+    final box = t.getRect(ruler);
+    final window = ChartWindow.of(now, SizeClass.wide, chartView.value);
+    final dw = box.width / window.days;
+    // The 3rd day of the window, on its ruler.
+    await t.longPressAt(Offset(box.left + dw * 2.5, box.top + 10));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('event-title')), '여행');
+    await t.tap(find.byKey(const Key('event-rest')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('event-ok')));
+    await t.pumpAndSettle();
+    final rest = store.restDays();
+    expect(rest, hasLength(restBefore + 1));
+    final day = window.dayAt(2);
+    final added = rest.firstWhere(
+      (e) => e.date.month == day.month && e.date.day == day.day,
+    );
+    expect(added.title, '여행');
+    expect(added.episodeId, isNull);
+    // Shown on the ruler; a tap there opens it again.
+    await t.tap(find.text('여행'));
+    await t.pumpAndSettle();
+    expect(find.byKey(const Key('event-delete')), findsOneWidget);
+    expect(t.widget<Switch>(find.byKey(const Key('event-rest'))).value, isTrue);
   });
 }

@@ -9,12 +9,18 @@ import 'src/services/document_session.dart';
 import 'src/services/sample_data.dart';
 import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
+import 'src/ui/app_start.dart';
 import 'src/ui/text/strings.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/views/chart.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // The name and a spinner first; the app once everything is ready.
+  runApp(const AppStart(load: _start));
+}
+
+Future<Widget> _start() async {
   final (:db, :reader, :session, :device) = await boot();
   // This device's own look (not in the document): theme and language.
   languageSetting.value = device.language;
@@ -55,15 +61,13 @@ Future<void> main() async {
     },
   );
   unawaited(session.resume().then((r) => remote.value = r));
-  runApp(
-    AnischedApp(
-      reader: reader,
-      store: CatalogueStore(db),
-      timer: WorkTimerStore(db),
-      session: session,
-      remote: remote,
-      // An empty document offers the example catalogue (first run).
-      onSample: (store) => fillSample(store, DateTime.now()),
-    ),
+  return AnischedApp(
+    reader: reader,
+    store: CatalogueStore(db),
+    timer: WorkTimerStore(db),
+    session: session,
+    remote: remote,
+    // An empty document offers the example catalogue (first run).
+    onSample: (store) => fillSample(store, DateTime.now()),
   );
 }
