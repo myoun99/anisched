@@ -298,4 +298,19 @@ void main() {
     expect(workPicked(t, '별빛 정류장'), isFalse);
     expect(find.text('100'), findsOneWidget);
   });
+
+  testWidgets('a cell\'s name is edited as its value, the C outside', (
+    t,
+  ) async {
+    await pumpRegister(t, const Size(1440, 900));
+    await t.longPress(find.byKey(const Key('cell-C012')));
+    await t.pumpAndSettle();
+    final field = t.widget<TextField>(find.byKey(const Key('name-input')));
+    expect(field.controller!.text, '12', reason: 'no C in the field');
+    expect(field.decoration!.prefixText, 'C');
+    await t.enterText(find.byKey(const Key('name-input')), '12A');
+    await t.tap(find.byKey(const Key('name-ok')));
+    await t.pumpAndSettle();
+    expect(find.text('C012A'), findsOneWidget);
+  });
 }

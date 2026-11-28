@@ -529,17 +529,24 @@ class _PresetLineState<T> extends State<PresetLine<T>> {
 }
 
 /// A small dialog asking for one name (a cut added or renamed by hand).
+///
+/// [prefix]: a number's notation (`C`, `#`) shown faint before the field,
+/// never part of what is typed — the field holds the value alone (12,
+/// 12A); the store writes it in the document's style.
 Future<String?> askName(
   BuildContext context, {
   required String title,
   String initial = '',
+  String? prefix,
 }) => showInstantDialog<String>(
   context: context,
-  builder: (_) => _NameDialog(title: title, initial: initial),
+  builder: (_) => _NameDialog(title: title, initial: initial, prefix: prefix),
 );
 
 class _NameDialog extends StatefulWidget {
-  const _NameDialog({required this.title, required this.initial});
+  const _NameDialog({required this.title, required this.initial, this.prefix});
+
+  final String? prefix;
 
   final String title;
   final String initial;
@@ -565,6 +572,10 @@ class _NameDialogState extends State<_NameDialog> {
       key: const Key('name-input'),
       controller: _ctl,
       autofocus: true,
+      decoration: InputDecoration(
+        prefixText: widget.prefix,
+        prefixStyle: TextStyle(color: AppColors.of(context).faint),
+      ),
       onSubmitted: (v) => Navigator.of(context).pop(v),
     ),
     actions: [

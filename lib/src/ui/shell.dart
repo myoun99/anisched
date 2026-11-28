@@ -9,6 +9,7 @@ import '../controllers/unit_actions.dart';
 import '../core/clock.dart';
 import '../core/size_class.dart';
 import '../models/lanes.dart';
+import '../models/number_style.dart';
 import '../models/progress.dart';
 import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
@@ -793,10 +794,13 @@ class _AppShellState extends State<AppShell> {
     final cuts = pickedCuts(picked);
     if (cuts.length != 1) return;
     final t = picked.firstWhere((t) => t.cutId == cuts.single);
+    final style = widget.store!.settings.cutStyle;
+    // The value alone in the field (12, 12A); the notation outside it.
     final name = await askName(
       context,
       title: S.cutName.t,
-      initial: t.cutNumber ?? '',
+      initial: parseCutInput(t.cutNumber ?? '', style),
+      prefix: style.prefix,
     );
     if (name == null || name.trim().isEmpty || !mounted) return;
     try {

@@ -252,16 +252,22 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   Future<void> _addCut() async {
-    final name = await askName(context, title: S.addCut.t);
+    final name = await askName(
+      context,
+      title: S.addCut.t,
+      prefix: _cuts.prefix,
+    );
     if (name == null || !mounted) return;
     setState(() => _cuts.add(name));
   }
 
   Future<void> _rename(String id) async {
+    // The value alone in the field (12, 12A); the notation outside it.
     final name = await askName(
       context,
       title: S.cutName.t,
-      initial: _cuts.nameOf(id),
+      initial: _cuts.valueOf(id),
+      prefix: _cuts.prefix,
     );
     if (name == null || !mounted) return;
     setState(() {
