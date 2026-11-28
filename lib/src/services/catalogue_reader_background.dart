@@ -293,6 +293,16 @@ class BackgroundCatalogueReader implements CatalogueReader {
   }) => _ask((s) => s.events(from: from, to: to));
 
   @override
+  Future<StatsNode> statsTree({
+    required DateTime from,
+    required DateTime to,
+    int? clientId,
+    int? workId,
+  }) => _ask(
+    (s) => s.statsTree(from: from, to: to, clientId: clientId, workId: workId),
+  );
+
+  @override
   Future<Map<String, List<EventRow>>> cardEvents({
     required DateTime from,
     required DateTime to,

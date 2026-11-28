@@ -127,6 +127,14 @@ abstract interface class CatalogueReader {
     required DateTime to,
   });
 
+  /// See [CatalogueStore.statsTree].
+  Future<StatsNode> statsTree({
+    required DateTime from,
+    required DateTime to,
+    int? clientId,
+    int? workId,
+  });
+
   /// See [CatalogueStore.cardEvents].
   Future<Map<String, List<EventRow>>> cardEvents({
     required DateTime from,
@@ -310,6 +318,17 @@ class SyncCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
   }) => _run(() => store.events(from: from, to: to));
+
+  @override
+  Future<StatsNode> statsTree({
+    required DateTime from,
+    required DateTime to,
+    int? clientId,
+    int? workId,
+  }) => _run(
+    () =>
+        store.statsTree(from: from, to: to, clientId: clientId, workId: workId),
+  );
 
   @override
   Future<Map<String, List<EventRow>>> cardEvents({

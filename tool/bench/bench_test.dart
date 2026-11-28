@@ -72,6 +72,10 @@ void main() {
       ),
     );
     bench(
+      'statsTree (year, $cuts cuts)',
+      () => store.statsTree(from: DateTime(2026), to: DateTime(2027)),
+    );
+    bench(
       'events + holidays (a month)',
       () => store
         ..events(from: DateTime(2026, 11), to: DateTime(2026, 12))
@@ -193,6 +197,15 @@ void main() {
       'reader partGroups (isolate round trip)',
       median([
         for (var i = 0; i < runs; i++) await timeAsync(reader.partGroups),
+      ]),
+    ));
+    rows.add((
+      'reader statsTree (isolate round trip)',
+      median([
+        for (var i = 0; i < 3; i++)
+          await timeAsync(
+            () => reader.statsTree(from: DateTime(2026), to: DateTime(2027)),
+          ),
       ]),
     ));
     await reader.close();
