@@ -569,9 +569,11 @@ List<({double from, double to, DateTime day})> spanCells(
   DateTime Function(DateTime d) first,
   DateTime Function(DateTime d) next,
 ) => [
-  for (var d = first(window.start);
-      window.indexOf(d) < window.days;
-      d = next(d))
+  for (
+    var d = first(window.start);
+    window.indexOf(d) < window.days;
+    d = next(d)
+  )
     (
       from: window.indexOf(d).toDouble(),
       to: window.indexOf(next(d)).toDouble(),

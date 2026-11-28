@@ -1,7 +1,6 @@
 /// On-hold (대기) and deadline-round (차수) pieces shared by the views.
 library;
 
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';

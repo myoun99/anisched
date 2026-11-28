@@ -143,6 +143,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     unawaited(_doc?.cancel());
+    widget.remote?.removeListener(_onRemote);
     _selection.dispose();
     super.dispose();
   }
@@ -176,7 +177,31 @@ class _AppShellState extends State<AppShell> {
       episodeStyle.value = s.settings.episodeStyle;
     }
     _doc = widget.session?.changes.listen(_onDocument);
+    widget.remote?.addListener(_onRemote);
     unawaited(_loadGroups());
+  }
+
+  /// The file came back to life from this device's last save: say so.
+  void _onRemote() {
+    if (!mounted || widget.remote?.value is! RemoteRepaired) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('doc-repaired'),
+          content: Row(
+            spacing: 8,
+            children: [
+              Icon(
+                Icons.settings_backup_restore,
+                size: 18,
+                color: Theme.of(context).colorScheme.onInverseSurface,
+              ),
+              Flexible(child: Text(S.docRepaired.t)),
+            ],
+          ),
+        ),
+      );
   }
 
   /// Reloads the sheet's groups; the last ones stay on screen meanwhile.

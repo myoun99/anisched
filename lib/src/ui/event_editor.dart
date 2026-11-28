@@ -3,7 +3,6 @@
 /// removes one.
 library;
 
-
 import 'package:flutter/material.dart';
 
 import '../models/progress.dart';
