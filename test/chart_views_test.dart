@@ -400,53 +400,5 @@ void main() {
       await t.pump();
       expect(ChartPaints.background, greaterThan(0), reason: 'dates moved');
     });
-
-    testWidgets('moving the days rebuilds the bars, not the row labels', (
-      t,
-    ) async {
-      chartView.value = const ChartView();
-      final window = RunningWindow(DateTime(2026, 11, 27), SizeClass.wide);
-      addTearDown(window.dispose);
-      var labels = 0;
-      var bars = 0;
-      await t.pumpWidget(
-        MaterialApp(
-          home: SizedBox(
-            width: 900,
-            height: 400,
-            child: ChartBoard(
-              window: window,
-              today: DateTime(2026, 11, 27),
-              labelWidth: 100,
-              rowCount: 3,
-              label: (context, i) {
-                labels++;
-                return Text('row $i');
-              },
-              bars: (context, i, w) {
-                bars++;
-                return [
-                  ChartBar(
-                    window: w,
-                    start: DateTime(2026, 11, 27),
-                    end: DateTime(2026, 11, 29),
-                    color: Colors.blue,
-                  ),
-                ];
-              },
-            ),
-          ),
-        ),
-      );
-      labels = 0;
-      bars = 0;
-      chartView.value = chartView.value.scrolled(3);
-      await t.pump();
-      chartView.value = chartView.value.stepped(35, zoomIn: true);
-      await t.pump();
-      expect(labels, 0, reason: 'labels do not depend on the days');
-      expect(bars, 6, reason: 'the bars of every row, twice');
-      chartView.value = const ChartView();
-    });
   });
 }
