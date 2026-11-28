@@ -140,7 +140,7 @@ void main() {
       'reader partGroups (isolate round trip)',
       median([
         for (var i = 0; i < runs; i++)
-          await timeAsync(() => reader.partGroups()),
+          await timeAsync(reader.partGroups),
       ]),
     ));
     await reader.close();
@@ -159,6 +159,8 @@ void main() {
 
 /// 20 works × 5 episodes × 4 parts × 25 cuts, LO and 원화 on each, with
 /// deadlines, plans, statuses, timer stretches and events spread around.
+void fillForProbe(CatalogueStore store) => _fill(store);
+
 void _fill(CatalogueStore store) {
   final db = store.db;
   db.execute('BEGIN');

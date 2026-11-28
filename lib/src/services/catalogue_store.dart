@@ -1907,6 +1907,14 @@ WHERE t.done_at >= ? AND t.done_at < ?
     final rounding = settings.secondsRounding;
     final rows = db.select(
       '''
+WITH open_units AS MATERIALIZED (
+  -- (stage, part — or loose episode) units that still have work in hand:
+  -- one pass here instead of a search per submitted task.
+  SELECT DISTINCT t2.stage_id, c2.part_id,
+         CASE WHEN c2.part_id IS NULL THEN c2.episode_id END AS loose_episode
+  FROM live_tasks t2 JOIN cuts c2 ON c2.id = t2.cut_id
+  WHERE ?3 = 0 AND t2.status <> 'submitted'
+)
 SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        d.due_at AS part_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
@@ -1971,12 +1979,12 @@ WHERE (?2 IS NULL OR w.id = ?2)
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
   AND (p.id IS NULL OR p.archived_at IS NULL)
-  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND EXISTS (
-    SELECT 1 FROM cuts c2 JOIN live_tasks t2 ON t2.cut_id = c2.id
-    WHERE t2.stage_id = t.stage_id AND t2.status <> 'submitted'
-      AND (c2.part_id = c.part_id
-        OR (c.part_id IS NULL AND c2.part_id IS NULL
-            AND c2.episode_id = c.episode_id)))))
+  AND (?3 = 1 OR t.status <> 'submitted' OR (t.storyboard_id IS NULL AND (
+    EXISTS (SELECT 1 FROM open_units o
+            WHERE o.stage_id = t.stage_id AND o.part_id = c.part_id)
+    OR (c.part_id IS NULL AND EXISTS (SELECT 1 FROM open_units o
+            WHERE o.stage_id = t.stage_id AND o.part_id IS NULL
+              AND o.loose_episode = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
       [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
@@ -1984,8 +1992,12 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     final sharedLabels = _sharedLabels();
     final cutStyle = settings.cutStyle;
     final episodeStyle = settings.episodeStyle;
-    String? cut(Object? v) =>
-        v == null ? null : shownNumber(v as String, cutStyle);
+    // Many rows share an episode, and a cut its stages: show each once.
+    final shownCuts = <String, String>{};
+    final shownEpisodes = <String, String>{};
+    String? cut(Object? v) => v == null
+        ? null
+        : shownCuts.putIfAbsent(v as String, () => shownNumber(v, cutStyle));
     return [
       for (final r in rows)
         TaskRow(
@@ -1998,9 +2010,9 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           clientColor: r['client_color'] as int?,
           currency: r['currency'] as String,
           episodeId: r['episode_id'] as int,
-          episodeNumber: shownNumber(
+          episodeNumber: shownEpisodes.putIfAbsent(
             r['episode_number'] as String,
-            episodeStyle,
+            () => shownNumber(r['episode_number'] as String, episodeStyle),
           ),
           stageId: r['stage_id'] as int,
           stageName: r['stage_name'] as String,
