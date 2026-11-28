@@ -313,6 +313,7 @@ enum S {
   name('Name', '名前', '이름', 'Nom', '名称'),
   register('Add', '登録', '등록', 'Ajouter', '登记'),
   resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
+  inUse('In use', '使用中', '사용 중', 'Utilisé', '使用中'),
   createNew('Create new', '新規作成', '새로 만들기', 'Créer', '新建'),
   createNamed(
     'Create “{name}”',

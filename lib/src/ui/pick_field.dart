@@ -2,13 +2,45 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'client_chip.dart';
 import 'fit_text.dart';
 import 'instant.dart';
+import 'palette.dart';
 import 'theme.dart';
 import 'text/strings.dart';
 
 /// One choice in a [PickField] list.
 typedef PickOption<T> = ({T value, String title, String? note});
+
+/// Tools on each line of a pick list of what is registered (the register
+/// screen's clients, works, episodes and parts): rename in the line,
+/// delete — greyed while it is used ([inUse]) — and, for a kind with
+/// colours, recolour. One set for every such list ([PresetLine]).
+class PresetTools<T> {
+  const PresetTools({
+    required this.rename,
+    required this.delete,
+    required this.inUse,
+    this.colorOf,
+    this.recolor,
+    this.onUndo,
+    this.editable,
+  });
+
+  /// Lines that take the tools; null: all (a 「none」 line takes none).
+  final bool Function(T value)? editable;
+
+  final void Function(T value, String name) rename;
+  final void Function(T value) delete;
+  final bool Function(T value) inUse;
+
+  /// The line's colour, and setting it; null: a kind without colours.
+  final Color Function(T value)? colorOf;
+  final void Function(T value, Color color)? recolor;
+
+  /// The app's undo, offered after a delete.
+  final VoidCallback? onUndo;
+}
 
 /// A field that picks one existing item or makes a new one, in the way
 /// accounting apps pick a client (freee's 取引先): tapping opens the
@@ -25,7 +57,11 @@ class PickField<T> extends StatelessWidget {
     this.enabled = true,
     this.width = 220,
     this.current,
+    this.tools,
   });
+
+  /// Rename, delete and recolour on each line of the list; null: none.
+  final PresetTools<T>? tools;
 
   /// The picked item's value, so the list opens centred on it.
   final T? current;
@@ -51,6 +87,7 @@ class PickField<T> extends StatelessWidget {
       search: search,
       current: current,
       onCreate: onCreate,
+      tools: tools,
     );
     if (picked != null) onPicked(picked);
   }
@@ -109,6 +146,7 @@ Future<PickOption<T>?> showCenteredPicker<T>({
   T? current,
   Future<PickOption<T>?> Function(String name)? onCreate,
   bool searchable = true,
+  PresetTools<T>? tools,
 }) => showInstantDialog<PickOption<T>>(
   context: context,
   builder: (_) => _PickDialog<T>(
@@ -117,6 +155,7 @@ Future<PickOption<T>?> showCenteredPicker<T>({
     current: current,
     onCreate: onCreate,
     searchable: searchable,
+    tools: tools,
   ),
 );
 
@@ -127,8 +166,10 @@ class _PickDialog<T> extends StatefulWidget {
     this.current,
     this.onCreate,
     this.searchable = true,
+    this.tools,
   });
 
+  final PresetTools<T>? tools;
   final String title;
   final Future<List<PickOption<T>>> Function(String query) search;
   final T? current;
@@ -256,6 +297,18 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
                   final o = _options[i];
                   final now =
                       widget.current != null && o.value == widget.current;
+                  if (widget.tools case final tools?) {
+                    return PresetLine(
+                      key: now
+                          ? const Key('pick-current')
+                          : Key('pick-option-$i'),
+                      option: o,
+                      current: now,
+                      tools: tools,
+                      onPick: () => Navigator.of(context).pop(o),
+                      onChanged: _load,
+                    );
+                  }
                   return Material(
                     color: now ? c.selected : Colors.transparent,
                     child: ListTile(
@@ -303,6 +356,172 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One line of a pick list with its tools ([PresetTools]): the name
+/// (tap: pick it), then icons alone — colour (a dot of it), rename,
+/// delete. Rename edits the name in the line (Enter or a tap outside
+/// saves); delete is greyed while the item is used, and offers an undo.
+class PresetLine<T> extends StatefulWidget {
+  const PresetLine({
+    super.key,
+    required this.option,
+    required this.tools,
+    required this.onPick,
+    required this.onChanged,
+    this.current = false,
+  });
+
+  final PickOption<T> option;
+  final PresetTools<T> tools;
+  final VoidCallback onPick;
+
+  /// After a rename or delete: the list reads again.
+  final VoidCallback onChanged;
+  final bool current;
+
+  @override
+  State<PresetLine<T>> createState() => _PresetLineState<T>();
+}
+
+class _PresetLineState<T> extends State<PresetLine<T>> {
+  TextEditingController? _name;
+
+  void _save() {
+    final name = _name?.text.trim() ?? '';
+    _name?.dispose();
+    setState(() => _name = null);
+    if (name.isEmpty || name == widget.option.title) return;
+    widget.tools.rename(widget.option.value, name);
+    widget.onChanged();
+  }
+
+  void _delete() {
+    final tools = widget.tools;
+    tools.delete(widget.option.value);
+    widget.onChanged();
+    final undo = tools.onUndo;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('preset-deleted'),
+          content: Text('${S.remove.t} · ${widget.option.title}'),
+          action: undo == null
+              ? null
+              : SnackBarAction(
+                  key: const Key('preset-undo'),
+                  label: S.undoDrop.t,
+                  onPressed: undo,
+                ),
+        ),
+      );
+  }
+
+  @override
+  void dispose() {
+    _name?.dispose();
+    super.dispose();
+  }
+
+  Widget _icon(
+    String key,
+    IconData icon,
+    String tip,
+    VoidCallback? onTap, {
+    Widget? child,
+  }) => IconButton(
+    key: Key('$key-${widget.option.value}'),
+    tooltip: tip,
+    onPressed: onTap,
+    icon: child ?? Icon(icon, size: 18),
+    visualDensity: VisualDensity.compact,
+    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    padding: EdgeInsets.zero,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final o = widget.option;
+    final tools = widget.tools;
+    final used = tools.inUse(o.value);
+    final name = _name;
+    final edits = tools.editable?.call(o.value) ?? true;
+    final colour = tools.colorOf?.call(o.value);
+    return Material(
+      color: widget.current ? c.selected : Colors.transparent,
+      child: InkWell(
+        onTap: name == null ? widget.onPick : null,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16, right: 6),
+          child: Row(
+            spacing: 2,
+            children: [
+              Expanded(
+                child: name != null
+                    ? TextField(
+                        key: Key('preset-name-${o.value}'),
+                        controller: name,
+                        autofocus: true,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: const InputDecoration(isDense: true),
+                        onSubmitted: (_) => _save(),
+                        onTapOutside: (_) => _save(),
+                      )
+                    : FitText(
+                        o.title,
+                        style: TextStyle(
+                          fontWeight: widget.current ? FontWeight.w700 : null,
+                        ),
+                      ),
+              ),
+              if (o.note case final n? when name == null)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 90),
+                  child: FitText(
+                    n,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: c.muted),
+                  ),
+                ),
+              if (edits && colour != null && tools.recolor != null)
+                ClientColorButton(
+                  menuKey: Key('preset-color-${o.value}'),
+                  color: colour,
+                  swatches: clientSwatches,
+                  tooltip: S.client.t,
+                  onPicked: (col) {
+                    tools.recolor!(o.value, col);
+                    widget.onChanged();
+                  },
+                ),
+              if (edits) ...[
+                _icon(
+                  'preset-rename',
+                  Icons.edit_outlined,
+                  S.name.t,
+                  () => setState(
+                    () => _name = TextEditingController(text: o.title),
+                  ),
+                ),
+                // In use: greyed, its tooltip says why.
+                Tooltip(
+                  message: used ? S.inUse.t : S.remove.t,
+                  child: _icon(
+                    'preset-delete',
+                    Icons.delete_outline,
+                    '',
+                    used ? null : _delete,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

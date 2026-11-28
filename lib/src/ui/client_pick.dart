@@ -19,7 +19,15 @@ class ClientPick extends StatelessWidget {
     this.onCreate,
     this.onColor,
     this.width = 220,
+    this.tools,
+    this.inUse,
   });
+
+  /// Rename, delete and recolour on each client of the list; null: none.
+  final PresetTools<int>? tools;
+
+  /// Filled as the list searches: whether each client is used.
+  final Map<int, bool>? inUse;
 
   final PickOption<int>? picked;
   final CatalogueReader? reader;
@@ -56,12 +64,14 @@ class ClientPick extends StatelessWidget {
           final found = await r.searchClients(q);
           for (final x in found) {
             colors[x.id] = x.color;
+            inUse?[x.id] = x.inUse;
           }
           return [
             for (final x in found) (value: x.id, title: x.name, note: null),
           ];
         },
         onPicked: onPicked,
+        tools: tools,
         onCreate: onCreate == null
             ? null
             : (name) async => (value: onCreate!(name), title: name, note: null),

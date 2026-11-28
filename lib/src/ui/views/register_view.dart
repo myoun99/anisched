@@ -7,7 +7,10 @@ import 'package:flutter/rendering.dart';
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
 import '../../services/catalogue_reader.dart';
+import '../../models/progress.dart';
+import '../../services/catalogue_store.dart';
 import '../client_pick.dart';
+import '../palette.dart';
 import '../count_stepper.dart';
 import '../date_span.dart';
 import '../sliding_row.dart';
@@ -38,7 +41,16 @@ class RegisterView extends StatefulWidget {
     this.onCreateEpisode,
     this.onRegister,
     this.onClientColor,
+    this.onWrite,
+    this.onUndo,
   });
+
+  /// One edit of what the pick lists hold (rename, delete), then the
+  /// views reload; null hides the lists' tools.
+  final void Function(void Function(CatalogueStore store) write)? onWrite;
+
+  /// The app's undo, offered after a delete in a pick list.
+  final VoidCallback? onUndo;
 
   final DateTime now;
   final ScreenLayout layout;
@@ -89,6 +101,44 @@ class _RegisterViewState extends State<RegisterView> {
   /// Dates set on one stage's row, by stage name; a stage without its own
   /// takes the stage above's (the first: [_kickoff], no deadline).
   final _ownDates = <String, ({DateTime? kickoff, DateTime? due})>{};
+
+  /// What the pick lists last showed, for their tools: whether each item
+  /// is used, an episode's subtitle (kept when renumbered), a part's id.
+  final _used = <(CatalogueKind, int), bool>{};
+  final _clientsUsed = <int, bool>{};
+  final _episodeTitles = <int, String?>{};
+  final _partIds = <String, ({int id, bool used})>{};
+
+  /// The tools for one kind of list: rename and delete through
+  /// [RegisterView.onWrite]; a picked item renamed shows its new name, a
+  /// picked one deleted is unpicked.
+  PresetTools<T>? _tools<T>({
+    required bool Function(T value) inUse,
+    required void Function(CatalogueStore s, T value, String name) rename,
+    required void Function(CatalogueStore s, T value) delete,
+    required void Function(T value, String? name) after,
+    Color Function(T value)? colorOf,
+    void Function(T value, Color color)? recolor,
+    bool Function(T value)? editable,
+  }) {
+    final write = widget.onWrite;
+    if (write == null) return null;
+    return PresetTools<T>(
+      inUse: inUse,
+      rename: (v, name) {
+        write((s) => rename(s, v, name));
+        setState(() => after(v, name));
+      },
+      delete: (v) {
+        write((s) => delete(s, v));
+        setState(() => after(v, null));
+      },
+      colorOf: colorOf,
+      recolor: recolor,
+      editable: editable,
+      onUndo: widget.onUndo,
+    );
+  }
 
   /// While dragging across the grid: true picks, false drops.
   bool? _paint;
@@ -512,6 +562,29 @@ class _RegisterViewState extends State<RegisterView> {
                 _part = null;
               }),
               onCreate: widget.onCreateClient,
+              inUse: _clientsUsed,
+              tools: _tools<int>(
+                inUse: (id) => _clientsUsed[id] ?? true,
+                rename: (s, id, name) => s.renameClient(id, name),
+                delete: (s, id) => s.deleteClient(id),
+                after: (id, name) {
+                  if (_client?.value != id) return;
+                  if (name == null) {
+                    _client = _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _client = (value: id, title: name, note: null);
+                  }
+                },
+                colorOf: (id) => clientColorOf(id, _clientColors[id]),
+                recolor: widget.onClientColor == null
+                    ? null
+                    : (id, col) {
+                        _clientColors[id] = col.toARGB32();
+                        widget.onClientColor!(id, col.toARGB32());
+                        setState(() {});
+                      },
+              ),
               onColor: widget.onClientColor == null
                   ? null
                   : (id, argb) {
@@ -525,16 +598,32 @@ class _RegisterViewState extends State<RegisterView> {
               label: S.title.t,
               width: fw,
               value: _work?.title,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      for (final x in await r.searchWorks(
-                        q,
-                        clientId: _client?.value,
-                      ))
-                        (value: x.id, title: x.title, note: null),
-                    ],
+              search: (q) async {
+                if (r == null) return const [];
+                final rows = await r.searchWorks(q, clientId: _client?.value);
+                for (final x in rows) {
+                  _used[(CatalogueKind.work, x.id)] = x.inUse;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.title, note: null),
+                ];
+              },
               onPicked: _pickWork,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.work, id)] ?? true,
+                rename: (s, id, name) => s.renameWork(id, name),
+                delete: (s, id) => s.deleteWork(id),
+                after: (id, name) {
+                  if (_work?.value != id) return;
+                  if (name == null) {
+                    _work = _episode = null;
+                    _part = null;
+                  } else {
+                    _work = (value: id, title: name, note: null);
+                  }
+                },
+              ),
               onCreate: widget.onCreateWork == null
                   ? null
                   : (name) async => (
@@ -550,14 +639,40 @@ class _RegisterViewState extends State<RegisterView> {
               width: sw,
               enabled: _work != null,
               value: _episode?.title,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      if (_work != null)
-                        for (final x in await r.searchEpisodes(_work!.value, q))
-                          (value: x.id, title: x.number, note: x.title),
-                    ],
+              search: (q) async {
+                final w = _work;
+                if (r == null || w == null) return const [];
+                final rows = await r.searchEpisodes(w.value, q);
+                for (final x in rows) {
+                  _used[(CatalogueKind.episode, x.id)] = x.inUse;
+                  _episodeTitles[x.id] = x.title;
+                }
+                return [
+                  for (final x in rows)
+                    (value: x.id, title: x.number, note: x.title),
+                ];
+              },
               onPicked: _pickEpisode,
+              tools: _tools<int>(
+                inUse: (id) => _used[(CatalogueKind.episode, id)] ?? true,
+                // The number changes; the subtitle stays.
+                rename: (s, id, name) =>
+                    s.renameEpisode(id, name, title: _episodeTitles[id]),
+                delete: (s, id) => s.deleteEpisode(id),
+                after: (id, name) {
+                  if (_episode?.value != id) return;
+                  if (name == null) {
+                    _episode = null;
+                    _part = null;
+                  } else {
+                    _episode = (
+                      value: id,
+                      title: episodeShown(name),
+                      note: null,
+                    );
+                  }
+                },
+              ),
               onCreate: widget.onCreateEpisode == null
                   ? null
                   : (name) async {
@@ -572,19 +687,33 @@ class _RegisterViewState extends State<RegisterView> {
               width: sw,
               enabled: _episode != null,
               value: _part,
-              search: (q) async => r == null
-                  ? const []
-                  : [
-                      (value: '', title: '—', note: null),
-                      if (_episode != null)
-                        for (final x in await r.parts(_episode!.value))
-                          if (x.label.contains(q))
-                            (
-                              value: x.label,
-                              title: x.label,
-                              note: '${x.cutCount}',
-                            ),
-                    ],
+              search: (q) async {
+                if (r == null) return const [];
+                final e = _episode;
+                final rows = e == null
+                    ? const <PartRow>[]
+                    : await r.parts(e.value);
+                for (final x in rows) {
+                  _partIds[x.label] = (id: x.id, used: x.inUse);
+                }
+                return [
+                  (value: '', title: '—', note: null),
+                  for (final x in rows)
+                    if (x.label.contains(q))
+                      (value: x.label, title: x.label, note: '${x.cutCount}'),
+                ];
+              },
+              tools: _tools<String>(
+                // 「—」 (no part) and a typed new one are not saved parts.
+                editable: _partIds.containsKey,
+                inUse: (label) => _partIds[label]?.used ?? true,
+                rename: (s, label, name) =>
+                    s.renamePart(_partIds[label]!.id, name),
+                delete: (s, label) => s.deletePart(_partIds[label]!.id),
+                after: (label, name) {
+                  if (_part == label) _part = name;
+                },
+              ),
               onPicked: (x) =>
                   setState(() => _part = x.value.isEmpty ? null : x.value),
               onCreate: (name) async => (value: name, title: name, note: null),

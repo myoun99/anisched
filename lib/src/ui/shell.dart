@@ -1027,6 +1027,8 @@ class _AppShellState extends State<AppShell> {
         onClientColor: writable
             ? (id, argb) => _write((s) => s.setClientColor(id, argb))
             : null,
+        onWrite: writable ? _write : null,
+        onUndo: _undo,
         onRegister: writable
             ? (draft) {
                 var n = 0;

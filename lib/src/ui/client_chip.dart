@@ -93,7 +93,11 @@ class ClientColorButton extends StatelessWidget {
     required this.swatches,
     required this.onPicked,
     this.tooltip,
+    this.menuKey = const Key('client-color'),
   });
+
+  /// The swatch menu's key (each pick-list line keys its own).
+  final Key menuKey;
 
   final Color color;
   final List<Color> swatches;
@@ -112,7 +116,7 @@ class ClientColorButton extends StatelessWidget {
       child: const SizedBox.square(dimension: 26),
     );
     return PopupMenuButton<Color>(
-      key: const Key('client-color'),
+      key: menuKey,
       tooltip: tooltip ?? '',
       onSelected: onPicked,
       itemBuilder: (_) => [
