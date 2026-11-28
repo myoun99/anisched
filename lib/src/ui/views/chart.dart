@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,7 @@ DateTime chartDay(DateTime t) {
 }
 
 /// The days a chart shows: [days] columns from [start].
+@immutable
 class ChartWindow {
   const ChartWindow(this.start, this.days);
 
@@ -48,6 +50,13 @@ class ChartWindow {
   int indexOf(DateTime t) => chartDay(t).difference(start).inDays;
 
   DateTime dayAt(int i) => start.add(Duration(days: i));
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChartWindow && other.start == start && other.days == days;
+
+  @override
+  int get hashCode => Object.hash(start, days);
 }
 
 /// Where the date area is scrolled to and how far it is zoomed, shared by
@@ -271,54 +280,41 @@ class _IconFace extends StatelessWidget {
   }
 }
 
-/// Rest-day shading and today's line under a row or the header.
-class ChartGrid extends StatelessWidget {
-  const ChartGrid({
-    super.key,
-    required this.window,
-    required this.today,
-    required this.restWeekdays,
-  });
+/// Paint counts per chart layer, for tests that pin which layer redraws.
+@visibleForTesting
+abstract final class ChartPaints {
+  static int background = 0;
+  static int today = 0;
+  static int preview = 0;
 
-  final ChartWindow window;
-  final DateTime today;
-
-  /// DateTime.weekday values (1 = Mon … 7 = Sun).
-  final Set<int> restWeekdays;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return CustomPaint(
-      painter: _GridPainter(
-        window: window,
-        today: window.indexOf(today),
-        rest: restWeekdays,
-        shade: c.panelAlt,
-        todayLine: Theme.of(context).colorScheme.error,
-      ),
-      size: Size.infinite,
-    );
-  }
+  static void reset() => background = today = preview = 0;
 }
 
-class _GridPainter extends CustomPainter {
-  _GridPainter({
+/// The colour today's column is washed with, light or dark.
+Color chartTodayWash(BuildContext context) {
+  final red = Theme.of(context).colorScheme.error;
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  return red.withValues(alpha: dark ? 0.16 : 0.09);
+}
+
+/// The background layer: rest-day shading and, when days are wide enough,
+/// faint day lines. Changes only with the window, rest days or theme.
+class _BackgroundPainter extends CustomPainter {
+  _BackgroundPainter({
     required this.window,
-    required this.today,
     required this.rest,
     required this.shade,
-    required this.todayLine,
+    required this.line,
   });
 
   final ChartWindow window;
-  final int today;
   final Set<int> rest;
   final Color shade;
-  final Color todayLine;
+  final Color line;
 
   @override
   void paint(Canvas canvas, Size size) {
+    ChartPaints.background++;
     final dw = size.width / window.days;
     final fill = Paint()..color = shade;
     for (var i = 0; i < window.days; i++) {
@@ -326,28 +322,97 @@ class _GridPainter extends CustomPainter {
         canvas.drawRect(Rect.fromLTWH(i * dw, 0, dw, size.height), fill);
       }
     }
-    if (today >= 0 && today < window.days) {
-      final x = (today + 0.5) * dw;
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        Paint()
-          ..color = todayLine
-          ..strokeWidth = 1.5,
-      );
+    if (dw >= 14) {
+      final p = Paint()
+        ..color = line.withValues(alpha: 0.5)
+        ..strokeWidth = 1;
+      for (var i = 1; i < window.days; i++) {
+        canvas.drawLine(Offset(i * dw, 0), Offset(i * dw, size.height), p);
+      }
     }
   }
 
   @override
-  bool shouldRepaint(_GridPainter old) =>
-      old.window.start != window.start ||
-      old.window.days != window.days ||
-      old.today != today ||
+  bool shouldRepaint(_BackgroundPainter old) =>
+      old.window != window ||
       old.shade != shade ||
-      old.rest.length != rest.length;
+      old.line != line ||
+      !setEquals(old.rest, rest);
 }
 
-/// Month labels over day numbers.
+/// The today layer: today's whole column, washed, on the same day grid
+/// as the bars.
+class _TodayPainter extends CustomPainter {
+  _TodayPainter({
+    required this.window,
+    required this.today,
+    required this.wash,
+  });
+
+  final ChartWindow window;
+  final int today;
+  final Color wash;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    ChartPaints.today++;
+    if (today < 0 || today >= window.days) return;
+    final dw = size.width / window.days;
+    canvas.drawRect(
+      Rect.fromLTWH(today * dw, 0, dw, size.height),
+      Paint()..color = wash,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TodayPainter old) =>
+      old.window != window || old.today != today || old.wash != wash;
+}
+
+/// Background and today layers for one strip of days (header or body),
+/// each behind its own repaint boundary.
+class _DayLayers extends StatelessWidget {
+  const _DayLayers({
+    required this.window,
+    required this.today,
+    required this.restWeekdays,
+  });
+
+  final ChartWindow window;
+  final DateTime today;
+  final Set<int> restWeekdays;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        RepaintBoundary(
+          child: CustomPaint(
+            painter: _BackgroundPainter(
+              window: window,
+              rest: restWeekdays,
+              shade: c.panelAlt,
+              line: c.line,
+            ),
+          ),
+        ),
+        RepaintBoundary(
+          child: CustomPaint(
+            painter: _TodayPainter(
+              window: window,
+              today: window.indexOf(today),
+              wash: chartTodayWash(context),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Month labels over day numbers, drawn in one painter.
 class ChartHeader extends StatelessWidget {
   const ChartHeader({
     super.key,
@@ -363,72 +428,76 @@ class ChartHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final t = window.indexOf(today);
+    final style = DefaultTextStyle.of(context).style;
     return SizedBox(
       height: 44,
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final dw = box.maxWidth / window.days;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: ChartGrid(
-                  window: window,
-                  today: today,
-                  restWeekdays: restWeekdays,
-                ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _DayLayers(window: window, today: today, restWeekdays: restWeekdays),
+          RepaintBoundary(
+            child: CustomPaint(
+              painter: _HeaderPainter(
+                window: window,
+                today: window.indexOf(today),
+                rest: restWeekdays,
+                ink: style.color ?? c.muted,
+                muted: c.muted,
+                faint: c.faint,
+                red: Theme.of(context).colorScheme.error,
+                style: style,
+                lang: appLang.value,
               ),
-              for (var i = 0; i < window.days; i++)
-                if (i == 0 || window.dayAt(i).day == 1)
-                  Positioned(
-                    left: i * dw + 4,
-                    top: 4,
-                    child: Text(
-                      monthName(window.dayAt(i).month),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-              for (var i = 0; i < window.days; i++)
-                if (_labelled(i, dw, t))
-                  Positioned(
-                    left: i * dw,
-                    width: dw >= 16 ? dw : 22,
-                    top: 22,
-                    child: Text(
-                      '${window.dayAt(i).day}',
-                      textAlign: dw >= 16 ? TextAlign.center : TextAlign.start,
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: i == t
-                            ? Theme.of(context).colorScheme.error
-                            : restWeekdays.contains(window.dayAt(i).weekday)
-                            ? c.faint
-                            : c.muted,
-                        fontWeight: i == t ? FontWeight.w700 : null,
-                      ),
-                    ),
-                  ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-extension on ChartHeader {
+class _HeaderPainter extends CustomPainter {
+  _HeaderPainter({
+    required this.window,
+    required this.today,
+    required this.rest,
+    required this.ink,
+    required this.muted,
+    required this.faint,
+    required this.red,
+    required this.style,
+    required this.lang,
+  });
+
+  final ChartWindow window;
+  final int today;
+  final Set<int> rest;
+  final Color ink;
+  final Color muted;
+  final Color faint;
+  final Color red;
+  final TextStyle style;
+  final Lang lang;
+
+  TextPainter _text(String s, Color color, {bool bold = false}) => TextPainter(
+    text: TextSpan(
+      text: s,
+      style: style.copyWith(
+        fontSize: 11,
+        color: color,
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+  )..layout();
+
   /// Narrow days keep a number only on Mondays (and today), so the
   /// numbers never run together when zoomed out.
-  bool _labelled(int i, double dw, int today) {
-    if (dw >= 16) return true;
-    final d = window.dayAt(i);
-    if (i == today) return true;
+  bool _labelled(int i, double dw) {
+    if (dw >= 16 || i == today) return true;
     if ((i - today).abs() < (dw >= 8 ? 2 : 4)) return false;
+    final d = window.dayAt(i);
     return d.weekday == DateTime.monday &&
         (dw >= 8 ||
             (DateTime.utc(
@@ -439,14 +508,280 @@ extension on ChartHeader {
                     7)
                 .isEven);
   }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    ChartPaints.background++;
+    final dw = size.width / window.days;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    for (var i = 0; i < window.days; i++) {
+      final d = window.dayAt(i);
+      if (i == 0 || d.day == 1) {
+        _text(
+          monthName(d.month, lang),
+          ink,
+          bold: true,
+        ).paint(canvas, Offset(i * dw + 4, 4));
+      }
+      if (!_labelled(i, dw)) continue;
+      final t = _text(
+        '${d.day}',
+        i == today ? red : (rest.contains(d.weekday) ? faint : muted),
+        bold: i == today,
+      );
+      final x = dw >= 16 ? i * dw + (dw - t.width) / 2 : i * dw + 1;
+      t.paint(canvas, Offset(x, 24));
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_HeaderPainter old) =>
+      old.window != window ||
+      old.today != today ||
+      old.ink != ink ||
+      old.muted != muted ||
+      old.lang != lang ||
+      !setEquals(old.rest, rest);
+}
+
+/// The bar being dragged: where it would land, painted on its own layer.
+class ChartDrag {
+  const ChartDrag(this.rect, this.color);
+
+  /// In global coordinates.
+  final Rect rect;
+  final Color color;
+}
+
+/// Hands the board's drag-preview notifier to its bars.
+class _DragScope extends InheritedWidget {
+  const _DragScope({required this.drag, required super.child});
+
+  final ValueNotifier<ChartDrag?> drag;
+
+  @override
+  bool updateShouldNotify(_DragScope old) => old.drag != drag;
+}
+
+class _PreviewPainter extends CustomPainter {
+  _PreviewPainter(this.drag, this.box, this.ink) : super(repaint: drag);
+
+  final ValueNotifier<ChartDrag?> drag;
+  final RenderBox? Function() box;
+  final Color ink;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    ChartPaints.preview++;
+    final d = drag.value;
+    final b = box();
+    if (d == null || b == null || !b.attached) return;
+    final r = d.rect.shift(-b.localToGlobal(Offset.zero));
+    final rr = RRect.fromRectAndRadius(r, const Radius.circular(4));
+    canvas.drawRRect(rr, Paint()..color = d.color.withValues(alpha: 0.55));
+    canvas.drawRRect(
+      rr,
+      Paint()
+        ..color = ink
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_PreviewPainter old) => old.ink != ink;
+}
+
+/// The chart both date tabs use: a header, then rows of a label column
+/// and a date area, in layers — background (rest days, day lines), today's
+/// column, the rows with their bars, and the drag preview — each behind
+/// its own repaint boundary, so dragging redraws the preview only and
+/// scrolling the dates leaves the bars' data alone.
+class ChartBoard extends StatefulWidget {
+  const ChartBoard({
+    super.key,
+    required this.window,
+    required this.today,
+    required this.restWeekdays,
+    required this.labelWidth,
+    required this.rowCount,
+    required this.label,
+    required this.bars,
+    this.rowKey,
+    this.rowWrap,
+    this.rowTint,
+    this.onReorder,
+  });
+
+  final ChartWindow window;
+  final DateTime today;
+  final Set<int> restWeekdays;
+  final double labelWidth;
+  final int rowCount;
+
+  /// The row's label column.
+  final Widget Function(BuildContext context, int row) label;
+
+  /// The row's bars ([ChartBar]s) over the date area.
+  final List<Widget> Function(BuildContext context, int row) bars;
+
+  /// Keeps a row's identity (needed with [onReorder]).
+  final Key Function(int row)? rowKey;
+
+  /// Wraps a whole row, e.g. as a drop target.
+  final Widget Function(int row, Widget child)? rowWrap;
+
+  /// A wash over a row's date area (e.g. overflow lanes).
+  final Color? Function(int row)? rowTint;
+
+  /// Rows can be reordered by their [ReorderableDragStartListener]s.
+  final void Function(int from, int to)? onReorder;
+
+  static const rowExtent = 46.0;
+  static const barTop = 12.0;
+  static const barHeight = 22.0;
+
+  @override
+  State<ChartBoard> createState() => _ChartBoardState();
+}
+
+class _ChartBoardState extends State<ChartBoard> {
+  final _drag = ValueNotifier<ChartDrag?>(null);
+  final _previewKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _drag.dispose();
+    super.dispose();
+  }
+
+  Widget _row(BuildContext context, int i) {
+    final c = AppColors.of(context);
+    final tint = widget.rowTint?.call(i);
+    Widget row = DecoratedBox(
+      key: widget.rowKey?.call(i),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: widget.labelWidth,
+            child: ColoredBox(color: c.panel, child: widget.label(context, i)),
+          ),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (tint != null) ColoredBox(color: tint),
+                ...widget.bars(context, i),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (widget.rowWrap case final wrap?) row = wrap(i, row);
+    return row;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final reorder = widget.onReorder;
+    return _DragScope(
+      drag: _drag,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: c.line)),
+            ),
+            child: Row(
+              children: [
+                SizedBox(width: widget.labelWidth),
+                Expanded(
+                  child: ChartHeader(
+                    window: widget.window,
+                    today: widget.today,
+                    restWeekdays: widget.restWeekdays,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(left: widget.labelWidth),
+                  child: _DayLayers(
+                    window: widget.window,
+                    today: widget.today,
+                    restWeekdays: widget.restWeekdays,
+                  ),
+                ),
+                RepaintBoundary(
+                  child: OwnScroll(
+                    builder: (controller) => Scrollbar(
+                      controller: controller,
+                      child: reorder == null
+                          ? ListView.builder(
+                              controller: controller,
+                              itemCount: widget.rowCount,
+                              itemExtent: ChartBoard.rowExtent,
+                              itemBuilder: _row,
+                            )
+                          : ReorderableListView.builder(
+                              scrollController: controller,
+                              buildDefaultDragHandles: false,
+                              itemCount: widget.rowCount,
+                              itemExtent: ChartBoard.rowExtent,
+                              onReorderItem: reorder,
+                              itemBuilder: _row,
+                            ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.only(left: widget.labelWidth),
+                  child: IgnorePointer(
+                    child: ClipRect(
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          key: _previewKey,
+                          painter: _PreviewPainter(
+                            _drag,
+                            () =>
+                                _previewKey.currentContext?.findRenderObject()
+                                    as RenderBox?,
+                            Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Which end of a bar a drag moves.
 enum BarEdge { start, end }
 
-/// A date bar inside a row: [start]..[end] (days, both included). Its two
-/// ends can be dragged; the bar previews the new dates while dragging and
-/// reports them once on release through [onDates].
+/// A date bar inside a [ChartBoard] row: [start]..[end] (days, both
+/// included), on the same day cells as the background. Its two ends can
+/// be dragged; while dragging, only the board's preview layer redraws,
+/// and the new dates are reported once on release through [onDates].
 class ChartBar extends StatefulWidget {
   const ChartBar({
     super.key,
@@ -456,8 +791,6 @@ class ChartBar extends StatefulWidget {
     required this.color,
     this.label,
     this.textColor,
-    this.top = 0,
-    this.height = 16,
     this.onDates,
     this.faded = false,
     this.wrapBody,
@@ -469,8 +802,6 @@ class ChartBar extends StatefulWidget {
   final Color color;
   final String? label;
   final Color? textColor;
-  final double top;
-  final double height;
   final bool faded;
 
   /// Wraps the bar's face (between its edge handles), e.g. to make it a
@@ -488,60 +819,95 @@ class _ChartBarState extends State<ChartBar> {
   BarEdge? _edge;
   double _dx = 0;
   double _from = 0;
+  double _dayWidth = 1;
 
-  (DateTime, DateTime) _dates(double dayWidth) {
+  (DateTime, DateTime) _dates() {
     final s = chartDay(widget.start);
     final e = chartDay(widget.end);
     if (_edge == null) return (s, e);
-    final d = Duration(days: (_dx / dayWidth).round());
+    final d = Duration(days: (_dx / _dayWidth).round());
     return switch (_edge!) {
       BarEdge.start => (s.add(d).isAfter(e) ? e : s.add(d), e),
       BarEdge.end => (s, e.add(d).isBefore(s) ? s : e.add(d)),
     };
   }
 
-  Widget _handle(BarEdge edge, double dayWidth, double handle) =>
-      GestureDetector(
-        key: Key('bar-${edge.name}'),
-        behavior: HitTestBehavior.opaque,
-        // Measured from where the finger went down, so nothing is lost
-        // while the date area's own drag competes for the gesture.
-        dragStartBehavior: DragStartBehavior.down,
-        onHorizontalDragStart: (d) => setState(() {
-          _edge = edge;
-          _from = d.globalPosition.dx;
-          _dx = 0;
-        }),
-        onHorizontalDragUpdate: (d) =>
-            setState(() => _dx = d.globalPosition.dx - _from),
-        onHorizontalDragEnd: (_) {
-          final (s, e) = _dates(dayWidth);
-          setState(() => _edge = null);
-          widget.onDates?.call(s, e);
-        },
-        onHorizontalDragCancel: () => setState(() => _edge = null),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeLeftRight,
-          child: SizedBox(width: handle),
-        ),
-      );
+  /// Publishes where the bar would land to the board's preview layer.
+  void _preview() {
+    final scope = context.getInheritedWidgetOfExactType<_DragScope>();
+    final box = context.findRenderObject() as RenderBox?;
+    if (scope == null || box == null) return;
+    final (s, e) = _dates();
+    final left = widget.window.indexOf(s) * _dayWidth;
+    final width = (e.difference(s).inDays + 1) * _dayWidth;
+    final origin = box.localToGlobal(Offset.zero);
+    scope.drag.value = ChartDrag(
+      Rect.fromLTWH(
+        origin.dx + left,
+        origin.dy + ChartBoard.barTop,
+        width,
+        ChartBoard.barHeight,
+      ),
+      widget.color,
+    );
+  }
+
+  void _endPreview() {
+    context.getInheritedWidgetOfExactType<_DragScope>()?.drag.value = null;
+  }
+
+  Widget _handle(BarEdge edge, double handle) => GestureDetector(
+    key: Key('bar-${edge.name}'),
+    behavior: HitTestBehavior.opaque,
+    // Measured from where the finger went down, so nothing is lost while
+    // the date area's own drag competes for the gesture.
+    dragStartBehavior: DragStartBehavior.down,
+    onHorizontalDragStart: (d) {
+      setState(() => _edge = edge);
+      _from = d.globalPosition.dx;
+      _dx = 0;
+      _preview();
+    },
+    onHorizontalDragUpdate: (d) {
+      // No rebuild: only the preview layer redraws.
+      _dx = d.globalPosition.dx - _from;
+      _preview();
+    },
+    onHorizontalDragEnd: (_) {
+      final (s, e) = _dates();
+      _endPreview();
+      setState(() => _edge = null);
+      widget.onDates?.call(s, e);
+    },
+    onHorizontalDragCancel: () {
+      _endPreview();
+      setState(() => _edge = null);
+    },
+    child: MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: SizedBox(width: handle),
+    ),
+  );
 
   Widget _face() {
     final face = SizedBox.expand(
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: widget.label == null
-            ? null
-            : Text(
-                widget.label!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: widget.textColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: widget.label == null
+              ? null
+              : Text(
+                  widget.label!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: widget.textColor,
+                  ),
                 ),
-              ),
+        ),
       ),
     );
     return widget.wrapBody?.call(face) ?? face;
@@ -551,8 +917,10 @@ class _ChartBarState extends State<ChartBar> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, box) {
-        final dw = box.maxWidth / widget.window.days;
-        final (s, e) = _dates(dw);
+        _dayWidth = box.maxWidth / widget.window.days;
+        final dw = _dayWidth;
+        final s = chartDay(widget.start);
+        final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
         // Two grips never wider than a third of the bar each.
@@ -563,28 +931,22 @@ class _ChartBarState extends State<ChartBar> {
             Positioned(
               left: left,
               width: width,
-              top: widget.top,
-              height: widget.height,
+              top: ChartBoard.barTop,
+              height: ChartBoard.barHeight,
               child: Opacity(
-                opacity: widget.faded ? 0.35 : 1,
+                opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: widget.color,
                     borderRadius: BorderRadius.circular(4),
-                    border: _edge == null
-                        ? null
-                        : Border.all(
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (widget.onDates != null)
-                        _handle(BarEdge.start, dw, handle),
+                        _handle(BarEdge.start, handle),
                       Expanded(child: _face()),
-                      if (widget.onDates != null)
-                        _handle(BarEdge.end, dw, handle),
+                      if (widget.onDates != null) _handle(BarEdge.end, handle),
                     ],
                   ),
                 ),

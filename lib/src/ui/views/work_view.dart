@@ -69,6 +69,8 @@ class _WorkViewState extends State<WorkView> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final red = Theme.of(context).colorScheme.error;
+    final accent = Theme.of(context).colorScheme.primary;
     final lanes = widget.lanes;
     final window = ChartWindow.of(
       widget.now,
@@ -124,41 +126,33 @@ class _WorkViewState extends State<WorkView> {
             child: ChartViewport(
               days: window.days,
               labelWidth: _labelWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: c.line)),
-                    ),
-                    child: Row(
-                      children: [
-                        SizedBox(width: _labelWidth),
-                        Expanded(
-                          child: ChartHeader(
-                            window: window,
-                            today: widget.now,
-                            restWeekdays: widget.restWeekdays,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: OwnScroll(
-                      builder: (controller) => Scrollbar(
-                        controller: controller,
-                        child: ListView.builder(
-                          controller: controller,
-                          itemCount: rowCount,
-                          itemExtent: 52,
-                          itemBuilder: (context, r) =>
-                              _laneRow(context, lanes!, r, window),
-                        ),
-                      ),
-                    ),
-                  ),
+              child: ChartBoard(
+                window: window,
+                today: widget.now,
+                restWeekdays: widget.restWeekdays,
+                labelWidth: _labelWidth,
+                rowCount: rowCount,
+                label: (context, r) => _laneLabel(context, lanes!, r),
+                bars: (context, r) => [
+                  for (final s in lanes!.spans)
+                    if (lanes.laneOf[s.key] == r)
+                      _bar(s, window, lanes.overflow, accent, red),
                 ],
+                rowTint: (r) =>
+                    r >= lanes!.lanes ? red.withValues(alpha: 0.06) : null,
+                rowWrap: (r, child) => DragTarget<String>(
+                  key: Key('lane-$r'),
+                  onAcceptWithDetails: (d) => widget.onPin?.call(d.data, r),
+                  builder: (context, candidates, _) => candidates.isEmpty
+                      ? child
+                      : DecoratedBox(
+                          position: DecorationPosition.foreground,
+                          decoration: BoxDecoration(
+                            color: c.selected.withValues(alpha: 0.5),
+                          ),
+                          child: child,
+                        ),
+                ),
               ),
             ),
           ),
@@ -167,63 +161,20 @@ class _WorkViewState extends State<WorkView> {
     );
   }
 
-  Widget _laneRow(
-    BuildContext context,
-    LaneLayout lanes,
-    int r,
-    ChartWindow window,
-  ) {
-    final c = AppColors.of(context);
-    final red = Theme.of(context).colorScheme.error;
-    final accent = Theme.of(context).colorScheme.primary;
+  Widget _laneLabel(BuildContext context, LaneLayout lanes, int r) {
     final over = r >= lanes.lanes;
-    final overflow = lanes.overflow;
-    final spans = [
-      for (final s in lanes.spans)
-        if (lanes.laneOf[s.key] == r) s,
-    ];
-    return DragTarget<String>(
-      key: Key('lane-$r'),
-      onAcceptWithDetails: (d) => widget.onPin?.call(d.data, r),
-      builder: (context, candidates, _) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: candidates.isNotEmpty
-              ? c.selected
-              : over
-              ? red.withValues(alpha: 0.06)
-              : null,
-          border: Border(bottom: BorderSide(color: c.line)),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: _labelWidth,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 10),
-                child: Text(
-                  over ? S.overflow.t : S.laneN.f({'n': r + 1}),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: over ? red : null,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ChartGrid(
-                    window: window,
-                    today: widget.now,
-                    restWeekdays: widget.restWeekdays,
-                  ),
-                  for (final s in spans) _bar(s, window, overflow, accent, red),
-                ],
-              ),
-            ),
-          ],
+    final red = Theme.of(context).colorScheme.error;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 10),
+        child: Text(
+          over ? S.overflow.t : S.laneN.f({'n': r + 1}),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: over ? red : null,
+          ),
         ),
       ),
     );
@@ -245,8 +196,6 @@ class _WorkViewState extends State<WorkView> {
       window: window,
       start: s.start,
       end: s.end,
-      top: 13,
-      height: 26,
       color: color,
       textColor: Colors.white,
       label: pinned ? '• $label' : label,

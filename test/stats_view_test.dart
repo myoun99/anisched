@@ -73,7 +73,11 @@ void main() {
   }
 
   testWidgets('nothing loads until the tab is shown', (t) async {
-    final reader = await pumpStats(t, const Size(1440, 900), view: AppView.list);
+    final reader = await pumpStats(
+      t,
+      const Size(1440, 900),
+      view: AppView.list,
+    );
     expect(reader.asked, isEmpty);
     await t.tap(find.byKey(const Key('view-tab-stats')));
     await t.pump();
