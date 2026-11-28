@@ -141,9 +141,16 @@ class _SlideScope extends InheritedWidget {
 /// A sideways drag that starts at once: past a few pixels, when the
 /// finger has gone more sideways than up or down, it takes the gesture —
 /// before a vertical list's own slop is reached. Mostly-vertical moves are
-/// left to the list.
+/// left to the list. A finger that goes down left of [calmBefore] (a
+/// chart's names, which open on a tap) waits for the screen's own slop:
+/// a tap there drifts a few pixels and must stay a tap.
 class QuickHorizontalDrag extends HorizontalDragGestureRecognizer {
   QuickHorizontalDrag({super.debugOwner});
+
+  /// Left of this (local x) the drag starts only past the usual slop.
+  double calmBefore = 0;
+
+  bool _calm = false;
 
   /// Sideways pixels before the drag starts (a touch screen's own slop
   /// is 18).
@@ -154,6 +161,7 @@ class QuickHorizontalDrag extends HorizontalDragGestureRecognizer {
   @override
   void addAllowedPointer(PointerDownEvent event) {
     _moved = Offset.zero;
+    _calm = event.localPosition.dx < calmBefore;
     super.addAllowedPointer(event);
   }
 
@@ -170,7 +178,8 @@ class QuickHorizontalDrag extends HorizontalDragGestureRecognizer {
   ) {
     final dx = _moved.dx.abs();
     final s = computeHitSlop(pointerDeviceKind, gestureSettings);
-    return dx > (s < slop ? s : slop) && dx > _moved.dy.abs();
+    final need = _calm || s < slop ? s : slop;
+    return dx > need && dx > _moved.dy.abs();
   }
 }
 
@@ -183,6 +192,7 @@ Widget quickHorizontalDrag({
   GestureDragUpdateCallback? onUpdate,
   GestureDragEndCallback? onEnd,
   GestureDragCancelCallback? onCancel,
+  double calmBefore = 0,
   required Widget child,
 }) => RawGestureDetector(
   key: key,
@@ -193,6 +203,7 @@ Widget quickHorizontalDrag({
           QuickHorizontalDrag.new,
           (r) {
             r
+              ..calmBefore = calmBefore
               ..dragStartBehavior = DragStartBehavior.down
               ..onStart = onStart
               ..onUpdate = onUpdate

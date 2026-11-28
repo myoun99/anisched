@@ -312,6 +312,7 @@ class ToolbarButton extends StatelessWidget {
     required this.label,
     required this.selected,
     this.onTap,
+    this.enabled = true,
     this.dropdown = false,
     this.icon,
   });
@@ -321,6 +322,11 @@ class ToolbarButton extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// False: drawn faint and not tappable (a tool with nothing to act
+  /// on). A button whose tap a parent handles keeps [onTap] null and
+  /// this true.
+  final bool enabled;
 
   /// Shown instead of the label.
   final IconData? icon;
@@ -345,9 +351,13 @@ class ToolbarButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon case final i?)
-                Icon(i, size: 20, color: selected ? null : c.muted)
+                Icon(
+                  i,
+                  size: 20,
+                  color: !enabled ? c.faint : (selected ? null : c.muted),
+                )
               else
-                Text(label),
+                Text(label, style: enabled ? null : TextStyle(color: c.faint)),
               if (dropdown && icon == null)
                 Icon(Icons.arrow_drop_down, size: 20, color: c.muted),
             ],
@@ -355,7 +365,7 @@ class ToolbarButton extends StatelessWidget {
         ),
       ),
     );
-    final tapped = onTap == null
+    final tapped = onTap == null || !enabled
         ? body
         : InkWell(
             borderRadius: BorderRadius.circular(8),
