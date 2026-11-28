@@ -179,6 +179,8 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 7: the register screen's top (how many rows the roles take).
+  'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
   'stats': (
     AppView.stats,
