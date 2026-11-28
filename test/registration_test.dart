@@ -70,6 +70,40 @@ void main() {
     expect(groups.every((g) => g.dueAt!.isAtSameMomentAs(due)), isTrue);
   });
 
+  test('names are matched by value, however they were typed', () {
+    final store = fresh();
+    final w = store.createWork('W');
+    final ep = store.addEpisode(w, '#01');
+    store.addCut(ep, 'C009');
+    RegistrationDraft draft(CutDraft cuts) =>
+        RegistrationDraft(workId: w, episodeId: ep, stages: ['LO'], cuts: cuts);
+    // '9' is the cut already there.
+    expect(
+      () => register(store, draft(CutDraft(count: 1)..rename('C001', '9'))),
+      throwsA(isA<CutNameClash>()),
+    );
+    // Typed 'c1' and 'c2' still split and pair as the grid said.
+    register(
+      store,
+      draft(
+        CutDraft(count: 3)
+          ..rename('C001', 'c1')
+          ..rename('C002', 'c2')
+          ..toggleShared(['C001', 'C002'])
+          ..toggleSplit(['C003']),
+      ),
+    );
+    final rows = store.cuts(ep);
+    expect(rows.map((c) => c.number), [
+      'C001',
+      'C002',
+      'C003A',
+      'C003B',
+      'C009',
+    ]);
+    expect(rows.first.sharedLabel, 'C001-002');
+  });
+
   test('an existing part label is reused; clashing names change nothing', () {
     final store = fresh();
     final w = store.createWork('별빛 정류장');

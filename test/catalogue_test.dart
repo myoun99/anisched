@@ -277,7 +277,7 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
         ..addEpisode(b, '#2');
       expect(store.clients().single.closingDay, 20);
       expect(store.works().map((w) => w.title).toSet(), {'작품A', '작품B'});
-      expect(store.episodes(b).map((e) => e.number), ['#2', '#10']);
+      expect(store.episodes(b).map((e) => e.number), ['#02', '#10']);
     });
 
     test('archiving hides everything beneath; restoring brings it back', () {
@@ -304,7 +304,7 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       }
       store.archive(ArchiveKind.cut, c1);
       expect(visible(), 1);
-      expect(store.cuts(ep).map((c) => c.number), ['C2']);
+      expect(store.cuts(ep).map((c) => c.number), ['C002']);
       store.archive(ArchiveKind.task, ids[1]);
       expect(visible(), 0);
       store
@@ -329,9 +329,32 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
         ..archive(ArchiveKind.cut, c);
       final trash = store.archived();
       expect(trash.map((a) => (a.kind, a.label)).toSet(), {
-        (ArchiveKind.task, 'C7 · LO'),
-        (ArchiveKind.cut, '#01 C7'),
+        (ArchiveKind.task, 'C007 · LO'),
+        (ArchiveKind.cut, '#01 C007'),
       });
+    });
+
+    test('numbers are stored as values and shown in the current style', () {
+      final w = store.createWork('작품A');
+      final ep = store.addEpisode(w, '#7');
+      final c = store.addCut(ep, 'C012A');
+      store
+        ..addCut(ep, 'BANK1')
+        ..addTask(stageId(w, 'LO'), cutId: c);
+      // The same value typed another way is the same cut.
+      expect(store.addCuts(ep, ['12a', 'c012A', '012A']).skipped, hasLength(3));
+      expect(store.cuts(ep).map((c) => c.number), ['C012A', 'BANK1']);
+      store.settings
+        ..cutStyle = (prefix: '', digits: 4)
+        ..episodeStyle = (prefix: 'EP', digits: 3);
+      // Every view follows the new style at once; typed names stay.
+      expect(store.cuts(ep).map((c) => c.number), ['0012A', 'BANK1']);
+      expect(store.episodes(w).single.number, 'EP007');
+      final row = store.taskRows().single;
+      expect((row.episodeNumber, row.cutNumber), ('EP007', '0012A'));
+      expect(store.searchEpisodes(w, 'ep00').single.id, ep);
+      store.renumberCuts({c: '13'});
+      expect(store.cuts(ep).first.number, '0013');
     });
 
     test('restoring onto a reused cut number is refused', () {

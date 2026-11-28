@@ -165,6 +165,45 @@ INSERT INTO tasks (stage_id, cut_id, status, submitted_at, done_at)
     );
   });
 
+  test('v16: numbers become values; clashes and names stay as typed', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 15).toList());
+    db
+      ..execute(
+        "INSERT INTO works (title, currency, created_at) VALUES ('W', 'JPY', 0)",
+      )
+      ..execute(
+        'INSERT INTO episodes (work_id, number, sort_key) '
+        "VALUES (1, '#07', ''), (1, 'SP', '')",
+      )
+      ..execute('''
+INSERT INTO cuts (episode_id, number, sort_key, archived_at) VALUES
+  (1, 'C012A', '', NULL), (1, 'BANK1', '', NULL),
+  (1, 'C1', '', NULL), (1, 'C001', '', NULL),
+  (1, 'C5', '', NULL), (1, 'C005', '', 9)''');
+    migrate(db);
+    expect(
+      db
+          .select('SELECT number FROM episodes ORDER BY id')
+          .map((r) => r['number']),
+      ['7', 'SP'],
+    );
+    expect(
+      db.select('SELECT number FROM cuts ORDER BY id').map((r) => r['number']),
+      ['12A', 'BANK1', 'C1', 'C001', '5', 'C005'],
+    );
+    expect(
+      db
+          .select(
+            'SELECT s.stage_name FROM role_stages s JOIN roles r '
+            "ON r.id = s.role_id WHERE r.name = '감독' ORDER BY s.position",
+          )
+          .map((r) => r['stage_name']),
+      ['콘티/감독', 'LO/감독', '원화/감독'],
+    );
+  });
+
   test('v15: works on the default format write no setting', () {
     final db = sqlite3.openInMemory();
     addTearDown(db.close);
