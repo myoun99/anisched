@@ -25,6 +25,14 @@ void main() {
     expect(loadDeviceSettings(tmp.path).language, LanguageChoice.device);
   });
 
+  test('the month view choice is kept, and off by default', () {
+    final s = loadDeviceSettings(tmp.path);
+    expect(s.monthView, isFalse);
+    s.monthView = true;
+    expect(loadDeviceSettings(tmp.path).monthView, isTrue);
+    expect(loadDeviceSettings(tmp.path).themeMode, ThemeChoice.system);
+  });
+
   test('a damaged file gives the defaults', () {
     File('${tmp.path}/device.json').writeAsStringSync('{nope');
     final s = loadDeviceSettings(tmp.path);
