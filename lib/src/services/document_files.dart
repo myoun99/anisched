@@ -33,6 +33,13 @@ abstract interface class DocumentFiles {
   /// Replaces the whole document with [localPath]'s bytes so a reader never
   /// sees half a file.
   Future<void> replaceFrom(String localPath, DocumentRef ref);
+
+  /// Whether [replaceFrom] swaps the whole file at once, so a process
+  /// killed midway leaves the old document (temp + rename; Apple's
+  /// coordinated replace). Android's SAF stream opens the one document
+  /// for writing, cut to nothing first — not atomic (유저 2026-11-28: a
+  /// document left at 0 bytes).
+  bool get replacesAtomically;
 }
 
 /// The document could not be reached: the grant is gone, the provider
@@ -45,4 +52,20 @@ class DocumentUnreachableException implements Exception {
 
   @override
   String toString() => 'DocumentUnreachableException(${ref.location}: $reason)';
+}
+
+/// After a write the document's size is not what was written: the
+/// provider has not taken it whole. The work stays unsaved (dirty) and the
+/// write is tried again.
+class DocumentWriteMismatchException implements Exception {
+  DocumentWriteMismatchException(this.ref, this.written, this.found);
+
+  final DocumentRef ref;
+  final int written;
+  final int? found;
+
+  @override
+  String toString() =>
+      'DocumentWriteMismatchException(${ref.location}: wrote $written bytes, '
+      'found ${found ?? 'none'})';
 }

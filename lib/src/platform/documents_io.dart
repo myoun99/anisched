@@ -77,6 +77,11 @@ String _baseName(String path) => path.split(RegExp(r'[/\\]')).last;
 class ChannelDocumentFiles implements DocumentFiles {
   const ChannelDocumentFiles();
 
+  /// Apple: a coordinated `.forReplacing` swap. Android: a SAF stream
+  /// over the one granted document — not atomic.
+  @override
+  bool get replacesAtomically => !Platform.isAndroid;
+
   @override
   Future<DocumentRef> reopen(DocumentRef ref) async {
     final answer = await _call('reopen', {
