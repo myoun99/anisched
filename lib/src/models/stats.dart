@@ -31,6 +31,7 @@ class StatsFact {
     this.status,
     this.clientId,
     this.clientName,
+    this.clientColor,
     this.take = 1,
     this.submittedAt,
     this.doneAt,
@@ -57,7 +58,7 @@ class StatsFact {
 
   /// Where the task sits, for the drill-down ([StatsNode]): its episode
   /// (shown number), part (null: the part-less cuts and storyboards), and
-  /// cut (`c<id>`, or `s<task id>` for a storyboard) with its label.
+  /// cut (its id, or `s<task id>` for a storyboard) with its label.
   final int? episodeId;
   final String? episodeLabel;
   final int? partId;
@@ -71,6 +72,7 @@ class StatsFact {
   final String unitKey;
   final int? clientId;
   final String? clientName;
+  final int? clientColor;
 
   /// Highest take (1 = never retaken).
   final int take;
@@ -180,52 +182,75 @@ class StatsSlice {
 }
 
 /// A level of the statistics drill-down.
-enum StatsNodeKind { all, client, work, episode, part, cut }
+enum StatsLevel {
+  all,
+  client,
+  work,
+  episode,
+
+  /// A schedule unit: part × stage, the part-less cuts of an episode ×
+  /// stage, or one storyboard task (TaskRow.groupKey).
+  unit,
+  cut,
+}
 
 /// One node of the statistics drill-down (유저 2026-11-28): every figure
 /// of a [StatsSlice] for the tasks under it — counted by the same rules
-/// as [Stats.total], so the root's figures are the total's — and its
-/// [children] in the catalogue's order. A [StatsNodeKind.cut] leaf (a
-/// cut, or a storyboard) has no children but its tasks by stage in
-/// [stages]; it counts each of its own tasks, shared group or not.
+/// as [Stats.total], so the root's figures are the total's (a shared
+/// group one cut, its pay per cut) — and its [children] in the
+/// catalogue's order. A [StatsLevel.cut] leaf is one task (a cut, or a
+/// storyboard, at its unit's stage) and counts it, shared group or not.
 class StatsNode extends StatsSlice {
-  StatsNode._(this.kind, Object? id, String? label) : super(id, label);
+  StatsNode._(
+    this.level,
+    String super.key,
+    super.label, {
+    this.clientId,
+    this.clientColor,
+    this.stageName,
+  });
 
-  final StatsNodeKind kind;
+  final StatsLevel level;
 
-  /// The client / work / episode / part id (null for no client, the
-  /// part-less cuts of an episode, or the root); a cut leaf's key
-  /// (`c<cut id>` or `s<storyboard task id>`).
-  Object? get id => key;
+  /// `all` · `client:3` (`client:none`) · `work:5` · `episode:9` ·
+  /// `unit:<group key>` · `cut:88` (`cut:s<task id>` for a storyboard).
+  @override
+  String get key => super.key! as String;
+
+  final int? clientId;
+  final int? clientColor;
+
+  /// The unit's and the cut's stage.
+  final String? stageName;
 
   final List<StatsNode> children = [];
 
-  /// A cut leaf's tasks by stage name.
-  final Map<String, StatsCutStage> stages = {};
+  /// [StatsSlice.onTime] / [StatsSlice.withDue] / [StatsSlice.retaken] /
+  /// [StatsSlice.earned] under the names the views use.
+  int get dueKept => onTime;
+  int get dueTotal => withDue;
+  int get retakes => retaken;
+  Map<String, int> get payByCurrency => earned;
 
-  void _stage(StatsFact f) {
-    final st = stages.putIfAbsent(f.stageName, StatsCutStage._);
-    st
-      ..take = f.take
-      ..pay = f.pay
-      ..status = f.status
-      ..handedOff = f.handedOffAt != null;
-  }
-}
+  /// A cut leaf: its timer time by stage (its one stage).
+  Map<String, Duration>? get workedByStage =>
+      level == StatsLevel.cut ? {stageName!: worked} : null;
 
-/// One stage of a cut leaf: timer time in the range and its stretches,
-/// the take, the pay (with paid retakes) and where the task stands.
-class StatsCutStage {
-  StatsCutStage._();
-
-  Duration worked = Duration.zero;
-
-  /// Timer stretches with time in the range.
-  int intervals = 0;
-  int take = 1;
-  int? pay;
+  /// A cut leaf: timer stretches with time in the range, its take, its
+  /// pay (paid retakes included, done or not), its status, handed off.
+  int? intervals;
+  int? retakeRound;
+  int? taskPay;
   TaskStatus? status;
   bool handedOff = false;
+
+  void _task(StatsFact f) {
+    intervals ??= 0;
+    retakeRound = f.take;
+    taskPay = f.pay;
+    status = f.status;
+    handedOff = f.handedOffAt != null;
+  }
 }
 
 /// One work day of the concurrency chart.
@@ -344,7 +369,7 @@ Stats computeStats({
   final fold = _StatsFold(
     Stats._(from, to, lanes, bucket),
     dayStartMinutes,
-    tree ? StatsNode._(StatsNodeKind.all, null, null) : null,
+    tree ? StatsNode._(StatsLevel.all, 'all', null) : null,
   );
   fold.s.tree = fold.tree;
   for (var p = _bucketStart(from, bucket, weekStart); p.isBefore(to);) {
@@ -409,7 +434,7 @@ class _StatsFold {
       ..._pathOf(f),
     ];
     final leaf = _leafOf(f);
-    leaf?._stage(f);
+    leaf?._task(f);
     // Handed off: the slices exist (its time is counted later), its
     // results are not.
     if (f.handedOffAt != null) {
@@ -523,81 +548,100 @@ class _StatsFold {
     }
   }
 
-  // ---- the drill-down tree (client → work → episode → part → cut) ----
+  // ---- the drill-down tree (client → work → episode → unit → cut) ----
 
   final StatsNode? tree;
   final _nodes = <String, StatsNode>{};
 
-  StatsNode _child(
-    StatsNode parent,
-    String key,
-    StatsNodeKind kind,
-    Object? id,
-    String? label,
-  ) => _nodes[key] ??= () {
-    final n = StatsNode._(kind, id, label);
-    parent.children.add(n);
-    return n;
-  }();
+  StatsNode _child(StatsNode parent, String path, StatsNode Function() make) =>
+      _nodes[path] ??= () {
+        final n = make();
+        parent.children.add(n);
+        return n;
+      }();
 
   /// [f]'s nodes above its cut: the root, its client, work, episode and
-  /// part (the part-less cuts and storyboards of an episode share one).
+  /// unit.
   List<StatsNode> _pathOf(StatsFact f) {
     final root = tree;
     if (root == null) return const [];
+    final clientKey = 'client:${f.clientId ?? 'none'}';
     final client = _child(
       root,
-      'c${f.clientId}',
-      StatsNodeKind.client,
-      f.clientId,
-      f.clientName,
+      clientKey,
+      () => StatsNode._(
+        StatsLevel.client,
+        clientKey,
+        f.clientName,
+        clientId: f.clientId,
+        clientColor: f.clientColor,
+      ),
     );
     final work = _child(
       client,
-      'w${f.workId}',
-      StatsNodeKind.work,
-      f.workId,
-      f.workTitle,
+      'work:${f.workId}',
+      () => StatsNode._(
+        StatsLevel.work,
+        'work:${f.workId}',
+        f.workTitle,
+        clientId: f.clientId,
+        clientColor: f.clientColor,
+      ),
     );
     final episode = _child(
       work,
-      'e${f.episodeId}',
-      StatsNodeKind.episode,
-      f.episodeId,
-      f.episodeLabel,
+      'episode:${f.episodeId}',
+      () => StatsNode._(
+        StatsLevel.episode,
+        'episode:${f.episodeId}',
+        f.episodeLabel,
+        clientId: f.clientId,
+        clientColor: f.clientColor,
+      ),
     );
-    final part = _child(
+    final unit = _child(
       episode,
-      'p${f.episodeId}:${f.partId}',
-      StatsNodeKind.part,
-      f.partId,
-      f.partLabel,
+      'unit:${f.groupKey}',
+      () => StatsNode._(
+        StatsLevel.unit,
+        'unit:${f.groupKey}',
+        f.partId == null && f.cutKey.startsWith('s') ? f.cutLabel : f.partLabel,
+        clientId: f.clientId,
+        clientColor: f.clientColor,
+        stageName: f.stageName,
+      ),
     );
-    return [root, client, work, episode, part];
+    return [root, client, work, episode, unit];
   }
 
   StatsNode? _leafOf(StatsFact f) {
     if (tree == null) return null;
-    final part = _nodes['p${f.episodeId}:${f.partId}']!;
     return _child(
-      part,
-      'u${f.cutKey}',
-      StatsNodeKind.cut,
-      f.cutKey,
-      f.cutLabel,
+      _nodes['unit:${f.groupKey}']!,
+      _leafPath(f),
+      () => StatsNode._(
+        StatsLevel.cut,
+        'cut:${f.cutKey}',
+        f.cutLabel,
+        clientId: f.clientId,
+        clientColor: f.clientColor,
+        stageName: f.stageName,
+      ),
     );
   }
+
+  static String _leafPath(StatsFact f) => 'unit:${f.groupKey}|${f.cutKey}';
 
   /// [f]'s tree nodes for the timer: its path and its cut.
   List<StatsNode> _timedNodes(StatsFact f) {
     if (tree == null) return const [];
     return [
       tree!,
-      _nodes['c${f.clientId}']!,
-      _nodes['w${f.workId}']!,
-      _nodes['e${f.episodeId}']!,
-      _nodes['p${f.episodeId}:${f.partId}']!,
-      _nodes['u${f.cutKey}']!,
+      _nodes['client:${f.clientId ?? 'none'}']!,
+      _nodes['work:${f.workId}']!,
+      _nodes['episode:${f.episodeId}']!,
+      _nodes['unit:${f.groupKey}']!,
+      _nodes[_leafPath(f)]!,
     ];
   }
 
@@ -639,11 +683,7 @@ class _StatsFold {
           final first = n.firstWorkAt;
           if (first == null || a.isBefore(first)) n.firstWorkAt = a.toUtc();
         }
-        if (nodes.isNotEmpty) {
-          nodes.last.stages[fact.stageName]!
-            ..worked += length
-            ..intervals += 1;
-        }
+        if (nodes.isNotEmpty) nodes.last.intervals = nodes.last.intervals! + 1;
       }
       // Walk the stretch hour by hour (wall clock) for the heatmap, and by
       // work day for the periods and the concurrency chart.
