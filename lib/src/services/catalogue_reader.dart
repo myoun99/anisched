@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/catalogue.dart';
+import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
 import '../models/progress.dart';
@@ -115,6 +116,12 @@ abstract interface class CatalogueReader {
     int workId,
     String query,
   );
+
+  /// See [CatalogueStore.holidays].
+  Future<List<Holiday>> holidays({
+    required DateTime from,
+    required DateTime to,
+  });
 
   /// See [CatalogueStore.events].
   Future<Map<int?, List<EventRow>>> events({
@@ -286,6 +293,12 @@ class SyncCatalogueReader implements CatalogueReader {
   @override
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>
       _run(store.numberStyles);
+
+  @override
+  Future<List<Holiday>> holidays({
+    required DateTime from,
+    required DateTime to,
+  }) => _run(() => store.holidays(from: from, to: to));
 
   @override
   Future<Map<int?, List<EventRow>>> events({

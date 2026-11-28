@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqlite3/common.dart';
 
 import '../models/catalogue.dart';
+import '../models/holidays.dart';
 import '../models/number_style.dart';
 import '../models/progress.dart';
 
@@ -23,6 +24,9 @@ class SettingsStore {
   static const _laneNames = 'lane_names';
   static const _timerAutoStart = 'timer_auto_start';
   static const _cutStyle = 'cut_style';
+  static const _holidayCountry = 'holiday_country';
+  static const _showHolidays = 'show_holidays';
+  static const _restOnHolidays = 'rest_on_holidays';
   static const _episodeStyle = 'episode_style';
 
   /// How per-second rates round a cut's length. Default: nearest second.
@@ -120,6 +124,24 @@ class SettingsStore {
   bool get timerAutoStart => _get(_timerAutoStart) == '1';
 
   set timerAutoStart(bool follow) => _set(_timerAutoStart, follow ? '1' : '0');
+
+  /// Whose public holidays the calendar knows (유저 2026-11-28). Default:
+  /// Japan.
+  HolidayCountry get holidayCountry =>
+      HolidayCountry.parse(_get(_holidayCountry));
+
+  set holidayCountry(HolidayCountry c) => _set(_holidayCountry, c.code);
+
+  /// Whether views mark the holidays. Default: on.
+  bool get showHolidays => _get(_showHolidays) != '0';
+
+  set showHolidays(bool on) => _set(_showHolidays, on ? '1' : '0');
+
+  /// Whether holidays count as days off for the pace, like rest weekdays.
+  /// Default: off.
+  bool get restOnHolidays => _get(_restOnHolidays) == '1';
+
+  set restOnHolidays(bool on) => _set(_restOnHolidays, on ? '1' : '0');
 
   /// How cut numbers are written, for the whole document. Default `C001`.
   NumberStyle get cutStyle => _style(_cutStyle) ?? defaultCutStyle;

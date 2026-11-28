@@ -6,6 +6,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/clock.dart';
 import '../models/catalogue.dart';
+import '../models/holidays.dart';
 import '../models/lanes.dart';
 import '../models/number_style.dart';
 import '../models/progress.dart';
@@ -278,6 +279,12 @@ class BackgroundCatalogueReader implements CatalogueReader {
     int workId,
     String query,
   ) => _ask((s) => s.searchEpisodes(workId, query));
+
+  @override
+  Future<List<Holiday>> holidays({
+    required DateTime from,
+    required DateTime to,
+  }) => _ask((s) => s.holidays(from: from, to: to));
 
   @override
   Future<Map<int?, List<EventRow>>> events({
