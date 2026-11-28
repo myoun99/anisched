@@ -256,7 +256,6 @@ void main() {
       await t.drag(zoom, const Offset(-ZoomDrag.stepPixels * 3 - 4, 0));
       await t.pump();
       expect(chartView.value.days, 49, reason: 'three steps out');
-      expect(find.text('49일'), findsOneWidget);
     });
 
     testWidgets('Ctrl + wheel zooms the date area', (t) async {

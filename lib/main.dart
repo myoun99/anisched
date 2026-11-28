@@ -11,6 +11,7 @@ import 'src/services/work_timer.dart';
 import 'src/ui/app.dart';
 import 'src/ui/text/strings.dart';
 import 'src/ui/theme.dart';
+import 'src/ui/views/chart.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,9 @@ Future<void> main() async {
     WidgetsBinding.instance.platformDispatcher.locales,
   );
   languageSetting.addListener(() => device.language = languageSetting.value);
+  // The charts' month view, as this device last left it.
+  chartMonthView.value = device.monthView;
+  chartMonthView.addListener(() => device.monthView = chartMonthView.value);
   themeModeSetting.value = switch (device.themeMode) {
     ThemeChoice.system => ThemeMode.system,
     ThemeChoice.light => ThemeMode.light,
