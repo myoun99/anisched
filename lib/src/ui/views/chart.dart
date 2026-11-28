@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import '../text/strings.dart';
 import '../fit_text.dart';
+import '../palette.dart';
 
 /// Local calendar day as a UTC midnight, so day differences are exact.
 DateTime chartDay(DateTime t) {
@@ -1154,8 +1155,9 @@ class _ChartBarState extends State<ChartBar> {
             decoration: BoxDecoration(
               color: widget.color,
               borderRadius: BorderRadius.circular(4),
+              // A faint edge keeps near-white bars (LO) visible.
               border: widget.outline == null
-                  ? null
+                  ? Border.all(color: barInk.withValues(alpha: 0.18))
                   : Border.all(color: widget.outline!, width: 1.5),
             ),
             // The label takes every pixel between the grips.
@@ -1197,6 +1199,78 @@ class _ChartBarState extends State<ChartBar> {
                 child: _handle(BarEdge.end),
               ),
             ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A row's empty date area answering a long press with the day under the
+/// finger (a new event there). Goes first among a row's bars, so bars and
+/// marks stay on top.
+class ChartDayPress extends StatelessWidget {
+  const ChartDayPress({
+    super.key,
+    required this.window,
+    required this.onLongPress,
+  });
+
+  final ChartWindow window;
+  final ValueChanged<DateTime> onLongPress;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (d) {
+        final i = (d.localPosition.dx / (box.maxWidth / window.days)).floor();
+        onLongPress(window.dayAt(i.clamp(0, window.days - 1)));
+      },
+    ),
+  );
+}
+
+/// Something placed in one day's cell of a row, at bar height (an
+/// event's mark); nothing when the day is out of the window.
+class ChartDayBox extends StatelessWidget {
+  const ChartDayBox({
+    super.key,
+    required this.window,
+    required this.day,
+    required this.child,
+    this.minWidth = 0,
+  });
+
+  final ChartWindow window;
+  final DateTime day;
+  final Widget child;
+
+  /// At least this wide, running on over the next days (a title to read).
+  final double minWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final i = window.indexOf(day);
+    if (i < 0 || i >= window.days) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, box) {
+        final dw = box.maxWidth / window.days;
+        final left = i * dw;
+        final width = (dw > minWidth ? dw : minWidth).clamp(
+          0.0,
+          box.maxWidth - left,
+        );
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: left,
+              width: width,
+              top: ChartBoard.barTop,
+              height: ChartBoard.barHeight,
+              child: child,
+            ),
           ],
         );
       },

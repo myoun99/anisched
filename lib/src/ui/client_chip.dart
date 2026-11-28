@@ -67,3 +67,68 @@ class ClientChip extends StatelessWidget {
     );
   }
 }
+
+/// A client's colour, picked from a row of swatches (the register
+/// screen, beside the client).
+class ClientColorButton extends StatelessWidget {
+  const ClientColorButton({
+    super.key,
+    required this.color,
+    required this.swatches,
+    required this.onPicked,
+    this.tooltip,
+  });
+
+  final Color color;
+  final List<Color> swatches;
+  final ValueChanged<Color> onPicked;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    Widget square(Color col, {bool on = false}) => DecoratedBox(
+      decoration: BoxDecoration(
+        color: col,
+        borderRadius: BorderRadius.circular(5),
+        border: on ? Border.all(color: c.muted, width: 2) : null,
+      ),
+      child: const SizedBox.square(dimension: 26),
+    );
+    return PopupMenuButton<Color>(
+      key: const Key('client-color'),
+      tooltip: tooltip ?? '',
+      onSelected: onPicked,
+      itemBuilder: (_) => [
+        PopupMenuItem<Color>(
+          enabled: false,
+          child: SizedBox(
+            width: 4 * 34,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (i, s) in swatches.indexed)
+                  InkWell(
+                    key: Key('client-color-$i'),
+                    onTap: () => Navigator.of(context).pop(s),
+                    child: square(s, on: s == color),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            square(color),
+            const Icon(Icons.palette_outlined, size: 15, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+}

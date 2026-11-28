@@ -1,9 +1,11 @@
-/// Stage and client colours: bars take their stage's colour, clients a
-/// swatch of their own. Until the data's colours arrive (v17:
-/// `stageColorOf`, `clientColor`) each name or id picks a stable tone here.
+/// Stage and client colours: bars take their stage's colour (the data's
+/// `stageColorOf`), clients their own (`ClientRow.color`). A stage name
+/// the user typed, or a client without a colour, picks a stable tone here.
 library;
 
 import 'package:flutter/material.dart';
+
+import '../models/stage_names.dart';
 
 /// Cream tones for bars: light enough that dark ink reads on them in
 /// both themes.
@@ -36,10 +38,13 @@ const clientSwatches = [
 int _stable(String s) =>
     s.codeUnits.fold(7, (h, c) => (h * 31 + c) & 0x7fffffff);
 
-/// A stage's bar colour (stand-in until the data gives it).
-Color stageColor(String stageName) =>
-    stageTones[_stable(stageName) % stageTones.length];
+/// A stage's bar colour.
+Color stageColor(String stageName) => switch (stageColorOf(stageName)) {
+  final argb? => Color(argb),
+  null => stageTones[_stable(stageName) % stageTones.length],
+};
 
-/// A client's swatch (stand-in until the data gives it).
-Color clientColorOf(int clientId) =>
-    clientSwatches[clientId % clientSwatches.length];
+/// A client's colour: its own, else a swatch by its id.
+Color clientColorOf(int clientId, [int? argb]) => argb != null
+    ? Color(argb)
+    : clientSwatches[clientId % clientSwatches.length];

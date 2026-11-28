@@ -485,12 +485,27 @@ void prepareBundles(CatalogueStore store) {
   }
 }
 
-/// Clients on three of the works (round 9's chips).
+/// Clients on three of the works (round 9's chips) and two events on
+/// 별빛 #07: one on its bars, one past them.
 void prepareClients(CatalogueStore store) {
-  final a = store.addClient('스튜디오 아침');
-  final b = store.addClient('Studio Kumo');
-  final works = {for (final g in store.partGroups()) g.workTitle: g.workId};
+  final a = store.addClient('스튜디오 아침', color: 0xFFE0843B);
+  final b = store.addClient('Studio Kumo', color: 0xFF2E9E6B);
+  final groups = store.partGroups();
+  final works = {for (final g in groups) g.workTitle: g.workId};
   store.setWorkClient(works['별빛 정류장']!, a);
   store.setWorkClient(works['마법소녀 리코']!, b);
   store.setWorkClient(works['여름 끝에서']!, a);
+  final star = groups.firstWhere((g) => g.workTitle == '별빛 정류장');
+  store.addEvent(
+    episodeId: star.episodeId,
+    date: now.add(const Duration(days: 2)),
+    timeMinutes: 13 * 60,
+    title: 'アフレコ',
+  );
+  store.addEvent(
+    episodeId: star.episodeId,
+    date: now.add(const Duration(days: 9)),
+    title: '打ち合わせ',
+    note: '스튜디오 B',
+  );
 }

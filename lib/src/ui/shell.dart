@@ -18,6 +18,7 @@ import '../services/work_timer.dart';
 import 'client_chip.dart';
 import 'document_menu.dart';
 import 'empty_start.dart';
+import 'event_editor.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
@@ -109,6 +110,9 @@ class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
 
+  /// Dated events by episode, for the timeline.
+  Map<int?, List<EventRow>> _events = const {};
+
   /// The first read has come back (an empty document is then truly empty).
   bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
@@ -166,7 +170,17 @@ class _AppShellState extends State<AppShell> {
     final reader = widget.reader;
     if (reader == null) return;
     final done = _filter.showDone;
-    final (groups, signals, paces, lanes, works, clients, roles) = await (
+    final today = widget.clock();
+    final (
+      groups,
+      signals,
+      paces,
+      lanes,
+      works,
+      clients,
+      roles,
+      events,
+    ) = await (
       reader.partGroups(
         includeDone: done,
         includeHandedOff: _filter.showHandedOff,
@@ -177,16 +191,22 @@ class _AppShellState extends State<AppShell> {
       reader.works(),
       reader.clients(),
       reader.roles(),
+      // Events a few months either side (the chart scrolls).
+      reader.events(
+        from: today.subtract(const Duration(days: 120)),
+        to: today.add(const Duration(days: 240)),
+      ),
     ).wait;
     if (!mounted) return;
     setState(() {
       _loaded = true;
+      _events = events;
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
       _clients = {
         for (final c in clients)
-          c.id: (name: c.name, color: clientColorOf(c.id)),
+          c.id: (name: c.name, color: clientColorOf(c.id, c.color)),
       };
       _roles = roles;
       _groups = groups;
@@ -194,6 +214,43 @@ class _AppShellState extends State<AppShell> {
       _paces = {for (final p in paces) p.stageName: p};
       _lanes = lanes.layout;
     });
+  }
+
+  /// A new event on [g]'s episode, on [day] (a long press on the
+  /// timeline).
+  Future<void> _newEvent(PartGroup g, DateTime day) async {
+    final a = await showEventEditor(context, day: day);
+    if (a is! EventSave) return;
+    _write(
+      (s) => s.addEvent(
+        episodeId: g.episodeId,
+        date: day,
+        timeMinutes: a.timeMinutes,
+        title: a.title,
+        note: a.note,
+      ),
+    );
+  }
+
+  /// An event tapped: the same window edits or removes it.
+  Future<void> _editEvent(EventRow e) async {
+    final a = await showEventEditor(context, day: e.date, existing: e);
+    switch (a) {
+      case EventSave():
+        _write(
+          (s) => s.updateEvent(
+            e.id,
+            episodeId: e.episodeId,
+            date: e.date,
+            timeMinutes: a.timeMinutes,
+            title: a.title,
+            note: a.note,
+          ),
+        );
+      case EventRemove():
+        _write((s) => s.deleteEvent(e.id));
+      case null:
+    }
   }
 
   /// A unit's client: its work's, with the client's colour.
@@ -645,6 +702,9 @@ class _AppShellState extends State<AppShell> {
         selection: _selection,
         onSchedule: writable ? _schedule : null,
         details: (g) => wiring.details(g, client: true),
+        events: _events,
+        onNewEvent: writable ? _newEvent : null,
+        onEvent: writable ? _editEvent : null,
       ),
       AppView.work => WorkView(
         lanes: _lanes,
@@ -694,6 +754,9 @@ class _AppShellState extends State<AppShell> {
               }
             : null,
         onEdit: writable ? _write : null,
+        onClientColor: writable
+            ? (id, argb) => _write((s) => s.setClientColor(id, argb))
+            : null,
         onRegister: writable
             ? (draft) {
                 var n = 0;

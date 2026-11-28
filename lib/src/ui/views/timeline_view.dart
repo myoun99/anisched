@@ -9,6 +9,7 @@ import '../selection.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'chart.dart';
+import '../event_editor.dart';
 import '../palette.dart';
 import '../text/strings.dart';
 import '../fit_text.dart';
@@ -29,7 +30,20 @@ class TimelineView extends StatefulWidget {
     this.onReorder,
     this.onDue,
     this.details,
+    this.events = const {},
+    this.onNewEvent,
+    this.onEvent,
   });
+
+  /// Dated events by episode (null: on no episode), shown on that
+  /// episode's rows.
+  final Map<int?, List<EventRow>> events;
+
+  /// A long press on a row's day: a new event there.
+  final void Function(PartGroup group, DateTime day)? onNewEvent;
+
+  /// An event tapped: edit or remove it.
+  final ValueChanged<EventRow>? onEvent;
 
   /// A unit's details (the list's own, from the shell's wiring), opened
   /// under its row across the whole board by a tap on the row's label.
@@ -161,22 +175,105 @@ class _TimelineViewState extends State<TimelineView> {
   List<Widget> _bars(BuildContext context, PartGroup g, ChartWindow window) {
     final start = g.kickoffAt;
     final end = g.dueAt;
-    if (start == null || end == null || end.isBefore(start)) return const [];
+    final dated = start != null && end != null && !end.isBefore(start);
     final handed = !g.status.isOpen; // submitted or done
     final onSchedule = widget.onSchedule;
+    final onNew = widget.onNewEvent;
+    bool onBar(DateTime d) =>
+        dated &&
+        !chartDay(d).isBefore(chartDay(start)) &&
+        !chartDay(d).isAfter(chartDay(end));
     return [
-      ChartBar(
-        key: Key('tl-bar-${g.key}'),
-        selected: _open == g.key,
-        window: window,
-        start: start,
-        end: end,
-        color: stageColor(g.stageName),
-        textColor: barInk,
-        faded: handed || (g.waiting > 0 && g.inHand == 0),
-        onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
-      ),
+      // A long press on the row's days puts an event there.
+      if (onNew != null)
+        ChartDayPress(window: window, onLongPress: (d) => onNew(g, d)),
+      if (dated)
+        ChartBar(
+          key: Key('tl-bar-${g.key}'),
+          selected: _open == g.key,
+          window: window,
+          start: start,
+          end: end,
+          color: stageColor(g.stageName),
+          textColor: barInk,
+          faded: handed || (g.waiting > 0 && g.inHand == 0),
+          onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
+        ),
+      for (final e in widget.events[g.episodeId] ?? const <EventRow>[])
+        ChartDayBox(
+          key: Key('tl-event-${g.key}-${e.id}'),
+          window: window,
+          day: e.date,
+          minWidth: 72,
+          child: EventMark(
+            event: e,
+            onBar: onBar(e.date),
+            onTap: widget.onEvent == null ? null : () => widget.onEvent!(e),
+          ),
+        ),
     ];
+  }
+}
+
+/// An event in its day cell: a small flag and its title, inside the bar
+/// when it falls on it (ink on the bar), else a chip of its own.
+class EventMark extends StatelessWidget {
+  const EventMark({
+    super.key,
+    required this.event,
+    required this.onBar,
+    this.onTap,
+  });
+
+  final EventRow event;
+  final bool onBar;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final ink = onBar ? barInk : Theme.of(context).colorScheme.onSurface;
+    final time = event.timeMinutes;
+    return Tooltip(
+      message: [
+        if (time != null) eventTimeLabel(time),
+        event.title,
+        if (event.note != null) event.note!,
+      ].join('  '),
+      child: GestureDetector(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: onBar
+              ? const BoxDecoration()
+              : BoxDecoration(
+                  color: c.panelAlt,
+                  border: Border.all(color: c.line),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 1,
+              children: [
+                Icon(Icons.flag, size: 10, color: ink),
+                Flexible(
+                  child: FitText(
+                    event.title,
+                    tooltip: false,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: ink,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

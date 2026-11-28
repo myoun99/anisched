@@ -119,11 +119,11 @@ String partCutsLine(PartGroup g) => switch (g.kind) {
   GroupKind.storyboard => groupTitle(g),
 };
 
-/// What is left to work on: 「3 cut」, or 「1건」 for a storyboard.
-String cutsLeftLabel(PartGroup g) {
-  final n = g.tasks.where((t) => t.status.needsWork).length;
-  return g.kind == GroupKind.storyboard ? S.items.f({'n': n}) : '$n cut';
-}
+/// Cuts not yet submitted ([PartGroup.toSubmit]): 「3 cut」, or 「1건」
+/// for a storyboard.
+String cutsLeftLabel(PartGroup g) => g.kind == GroupKind.storyboard
+    ? S.items.f({'n': g.toSubmit})
+    : '${g.toSubmit} cut';
 
 /// 「4컷」 for cuts, 「1건」 for a storyboard.
 String groupCount(PartGroup g) =>
