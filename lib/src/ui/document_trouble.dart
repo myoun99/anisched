@@ -45,7 +45,14 @@ class DocumentTrouble {
       DocumentUnreachableException() ||
       RemoteMissing() => DocumentTroubleKind.unreachable,
       SchemaTooNewException() => DocumentTroubleKind.newer,
-      NotADocumentException() => DocumentTroubleKind.notDocument,
+      NotADocumentException(:final kind) => switch (kind) {
+        NotADocumentKind.empty => DocumentTroubleKind.empty,
+        NotADocumentKind.notSqlite ||
+        NotADocumentKind.foreignApp => DocumentTroubleKind.notDocument,
+        NotADocumentKind.damaged ||
+        NotADocumentKind.tablesDiffer ||
+        NotADocumentKind.migrateFailed => DocumentTroubleKind.damaged,
+      },
       _ => DocumentTroubleKind.other,
     }, '$e');
   }
