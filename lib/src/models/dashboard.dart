@@ -23,8 +23,7 @@ class DashboardDue {
 
   /// Cuts not yet worked through (received, in progress, retake).
   int get remaining =>
-      pace?.remaining ??
-      unitCount(group.tasks.where((t) => t.status.needsWork));
+      pace?.remaining ?? unitCount(group.tasks.where((t) => t.status.isOpen));
 
   /// What today asks of this card ([Pace.today]).
   double get perDay => pace?.today ?? 0;
@@ -67,7 +66,7 @@ class Dashboard {
   final TodayView today;
 
   /// Today as a statistics range: [StatsSlice.handed] the cuts handed in
-  /// (submitted or done) today, [StatsSlice.worked] the timer time.
+  /// (submitted) today, [StatsSlice.worked] the timer time.
   final StatsSlice todayStats;
 
   /// The running timer stretch, if any, and the timer's target task.

@@ -160,13 +160,13 @@ void main() {
         TaskStatus.retake.dbName,
       );
 
-      store.setStatus(task, TaskStatus.done);
+      // Handing the retake in keeps the first hand-in.
+      store.setStatus(task, TaskStatus.submitted);
       final row = db.select(
-        'SELECT status, submitted_at, done_at FROM tasks WHERE id = ?',
+        'SELECT status, submitted_at FROM tasks WHERE id = ?',
         [task],
       ).first;
-      expect(TaskStatus.fromDb(row['status'] as String), TaskStatus.done);
-      expect(row['done_at'], t0.millisecondsSinceEpoch);
+      expect(TaskStatus.fromDb(row['status'] as String), TaskStatus.submitted);
       expect(row['submitted_at'], t0.millisecondsSinceEpoch);
     });
 
@@ -196,12 +196,12 @@ void main() {
       final lo = stageId(w, 'LO');
       final id = store.addTask(lo, cutId: store.addCut(ep, 'C1'));
       db.execute('''
-CREATE TRIGGER no_done BEFORE UPDATE OF status ON tasks
-WHEN NEW.status = 'done' AND NEW.id <> $id
+CREATE TRIGGER no_submit BEFORE UPDATE OF status ON tasks
+WHEN NEW.status = 'submitted' AND NEW.id <> $id
 BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       final other = store.addTask(lo, cutId: store.addCut(ep, 'C2'));
       expect(
-        () => store.setStatusMany([id, other], TaskStatus.done),
+        () => store.setStatusMany([id, other], TaskStatus.submitted),
         throwsA(isA<SqliteException>()),
       );
       expect(
@@ -313,7 +313,7 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       expect(visible(), 2);
 
       // Archived work stops counting in monthly totals too.
-      store.setStatusMany(ids, TaskStatus.done);
+      store.setStatusMany(ids, TaskStatus.submitted);
       expect(store.monthlyTotals(2026, 11)['JPY']!.total, 2000);
       store.archive(ArchiveKind.work, w);
       expect(store.monthlyTotals(2026, 11), isEmpty);
@@ -343,10 +343,10 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       final lo = stageId(w, 'LO');
       store
         ..addTask(lo, cutId: c1)
-        ..setStatus(store.addTask(lo, cutId: c2), TaskStatus.done);
+        ..setStatus(store.addTask(lo, cutId: c2), TaskStatus.inProgress);
       final g = store.partGroups().single;
       expect((g.clientName, g.clientColor), ('스튜디오 X', 0xFF336699));
-      expect(g.toSubmit, 2); // done is not handed in yet
+      expect(g.toSubmit, 2); // in progress is not handed in yet
       store.setStatus(g.tasks.last.id, TaskStatus.submitted);
       expect(store.partGroups().single.toSubmit, 1);
       store.setClientColor(studio, null);
@@ -731,7 +731,10 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
         final lo = stageId(work, 'LO');
         store.setEpisodeRate(ep, lo, Rate(RateUnit.fixed, rate));
         final t = store.addTask(lo, cutId: store.addCut(ep, cutNo));
-        CatalogueStore(db, clock: () => doneAt).setStatus(t, TaskStatus.done);
+        CatalogueStore(
+          db,
+          clock: () => doneAt,
+        ).setStatus(t, TaskStatus.submitted);
         return t;
       }
 
@@ -742,7 +745,7 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       // No client: calendar month.
       doneTask(won, 'C4', 50000, DateTime(2026, 11, 1));
       doneTask(won, 'C5', 99999, DateTime(2026, 10, 31, 23)); // October
-      // Done but unpriced.
+      // Handed in but unpriced.
       final ep = store.addEpisode(won, '#x');
       final t = store.addTask(
         stageId(won, 'LO'),
@@ -751,7 +754,7 @@ BEGIN SELECT RAISE(ABORT, 'nope'); END;''');
       CatalogueStore(
         db,
         clock: () => DateTime(2026, 11, 2),
-      ).setStatus(t, TaskStatus.done);
+      ).setStatus(t, TaskStatus.submitted);
 
       final totals = store.monthlyTotals(2026, 11);
       expect(totals['JPY'], (total: 7000, unpriced: 0));

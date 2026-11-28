@@ -105,19 +105,19 @@ void main() {
   }
 
   for (final size in const [Size(390, 844), Size(844, 390)]) {
-    testWidgets('a phone shows done, ⋯ and ✕ at $size', (t) async {
+    testWidgets('a phone shows submit, ⋯ and ✕ at $size', (t) async {
       await pumpShell(t, size);
       expect(find.byKey(const Key('pick-clear')), findsNothing);
       await pickOne(t);
       for (final key in const [
         'picked-count',
-        'apply-done',
+        'apply-submitted',
         'pick-more',
         'pick-clear',
       ]) {
         onBar(t, size, key);
       }
-      expect(find.text('완료'), findsWidgets);
+      expect(find.text('제출'), findsWidgets);
       expect(t.takeException(), isNull);
     });
   }
@@ -127,20 +127,20 @@ void main() {
     final g = store.partGroups().firstWhere((g) => g.inHand > 0);
     await t.longPress(find.byKey(Key('line-${g.key}')).first);
     await t.pump();
-    expect(find.byKey(const Key('apply-submitted')), findsNothing);
+    expect(find.byKey(const Key('apply-in_progress')), findsNothing);
     expect(find.byKey(const Key('pick-drop')), findsNothing);
     await t.tap(find.byKey(const Key('pick-more')));
     await t.pump();
-    for (final name in const ['제출', '작업중', '리테이크', '받음']) {
+    for (final name in const ['작업중', '리테이크', '받음']) {
       expect(find.text(name), findsOneWidget, reason: name);
     }
-    await t.tap(find.byKey(const Key('apply-submitted')));
+    await t.tap(find.byKey(const Key('apply-retake')));
     await t.pump();
     await t.pump();
     final after = store
         .partGroups(includeDone: true)
         .firstWhere((x) => x.key == g.key);
-    expect(after.tasks.every((x) => x.status == TaskStatus.submitted), isTrue);
+    expect(after.tasks.every((x) => x.status == TaskStatus.retake), isTrue);
     expect(find.byKey(const Key('pick-more')), findsNothing);
     expect(t.takeException(), isNull);
   });
@@ -155,7 +155,6 @@ void main() {
       'picked-count',
       'apply-in_progress',
       'apply-submitted',
-      'apply-done',
       'pick-hold',
       'pick-drop',
       'pick-clear',

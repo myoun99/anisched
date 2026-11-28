@@ -11,7 +11,6 @@ const r = TaskStatus.received;
 const w = TaskStatus.inProgress;
 const s = TaskStatus.submitted;
 const t = TaskStatus.retake;
-const d = TaskStatus.done;
 
 void main() {
   test('cuts left are the ones not yet submitted', () {
@@ -40,9 +39,8 @@ void main() {
       expect(dueLabel(on(25), now, t).tone, DueTone.late);
     });
 
-    test('handed-in work never looks late; done but kept still does', () {
+    test('handed-in work never looks late', () {
       expect(dueLabel(on(25), now, s), (text: '—', tone: DueTone.none));
-      expect(dueLabel(on(25), now, d).tone, DueTone.late);
       expect(dueLabel(null, now, w).text, '—');
     });
 

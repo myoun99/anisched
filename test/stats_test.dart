@@ -60,7 +60,7 @@ void main() {
 
     // Mon 10:00–12:00 on cut 1, handed Mon; Tue 14:00–15:00 on cut 2,
     // handed Wed (on time); cut 3 handed Fri (2 days late) after a retake.
-    // Handing in marks done. Cut 4 is finished Thu but not handed in.
+    // Cut 4 is handed Thu (a day late).
     timer.start(taskId: tasks[0]);
     now = DateTime(2026, 11, 2, 12);
     timer.stop();
@@ -72,7 +72,7 @@ void main() {
     now = DateTime(2026, 11, 4, 9);
     store.setStatus(tasks[1], TaskStatus.submitted);
     now = DateTime(2026, 11, 5, 9);
-    store.setStatus(tasks[3], TaskStatus.done);
+    store.setStatus(tasks[3], TaskStatus.submitted);
     now = DateTime(2026, 11, 6, 9);
     store.setStatus(tasks[2], TaskStatus.submitted);
     store.requestRetake(tasks[2]);
@@ -84,22 +84,21 @@ void main() {
       to: DateTime(2026, 11, 9),
       bucket: StatsBucket.day,
     );
-    expect(s.total.handed, 3);
-    expect(s.total.done, 4);
+    expect(s.total.handed, 4);
     expect(s.total.worked, const Duration(hours: 3));
     expect(s.total.perCut, const Duration(minutes: 90));
     expect(s.total.earned, {'JPY': 16000});
     expect(s.hourly['JPY'], closeTo(8000 / 3, 0.001)); // timed cuts only
     expect(s.periods, hasLength(7));
-    expect([for (final p in s.periods) p.handed], [1, 0, 1, 0, 1, 0, 0]);
+    expect([for (final p in s.periods) p.handed], [1, 0, 1, 1, 1, 0, 0]);
     expect(s.periods[0].worked, const Duration(hours: 2));
-    expect(s.periods[0].earned, {'JPY': 4000}); // done when handed Mon
-    expect(s.periods[3].earned, {'JPY': 4000}); // cut 4, done Thu
-    expect(s.lateness, {-2: 1, 0: 1, 2: 1});
+    expect(s.periods[0].earned, {'JPY': 4000}); // paid when handed Mon
+    expect(s.periods[3].earned, {'JPY': 4000}); // cut 4, handed Thu
+    expect(s.lateness, {-2: 1, 0: 1, 1: 1, 2: 1});
     expect(s.onTime, 2);
-    expect(s.late, 1);
-    expect(s.takes, {1: 2, 2: 1});
-    expect(s.total.retakeRate, closeTo(1 / 3, 0.001));
+    expect(s.late, 2);
+    expect(s.takes, {1: 3, 2: 1});
+    expect(s.total.retakeRate, closeTo(1 / 4, 0.001));
     expect(s.heatmap[0][10], const Duration(hours: 1)); // Mon 10h
     expect(s.heatmap[0][11], const Duration(hours: 1));
     expect(s.heatmap[1][14], const Duration(hours: 1)); // Tue 14h
@@ -171,31 +170,13 @@ void main() {
     now = DateTime(2026, 11, 2, 11);
     timer.stop();
     store
-      ..setStatus(timed, TaskStatus.done)
-      ..setStatus(untimed, TaskStatus.done);
+      ..setStatus(timed, TaskStatus.submitted)
+      ..setStatus(untimed, TaskStatus.submitted);
     final s = store.stats(
       from: DateTime(2026, 11, 2),
       to: DateTime(2026, 11, 3),
     );
     expect(s.total.earned, {'JPY': 6000});
     expect(s.hourly['JPY'], 3000);
-  });
-
-  test('submitting work not done marks it done too; done stays first', () {
-    final w = store.createWork('W');
-    final r = store.addEpisodeWithCuts(w, '#1', 'C001~C002');
-    final a = store.addTask(stage(w, '원화'), cutId: r.cutIds[0]);
-    final b = store.addTask(stage(w, '원화'), cutId: r.cutIds[1]);
-    int? col(int id, String c) =>
-        db.select('SELECT $c FROM tasks WHERE id = ?', [id]).first.columnAt(0)
-            as int?;
-    store.setStatus(a, TaskStatus.submitted);
-    expect(col(a, 'done_at'), col(a, 'submitted_at'));
-    final finished = now.toUtc().millisecondsSinceEpoch;
-    store.setStatus(b, TaskStatus.done);
-    now = now.add(const Duration(days: 2));
-    store.setStatus(b, TaskStatus.submitted);
-    expect(col(b, 'done_at'), finished);
-    expect(col(b, 'submitted_at'), isNot(finished));
   });
 }

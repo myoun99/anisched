@@ -19,12 +19,12 @@ class UnitBundle {
   bool get single => stages.length == 1;
 
   /// The stage whose deadline speaks for the bundle (D, pace, signal):
-  /// the earliest deadline among stages with cuts still to work on (done
-  /// but unsent cuts are not work); with none left, the first stage.
+  /// the earliest deadline among stages with cuts still to work on; with
+  /// none left, the first stage.
   PartGroup get lead {
     PartGroup? best;
     for (final g in stages) {
-      if (!g.tasks.any((t) => t.status.needsWork)) continue;
+      if (!g.tasks.any((t) => t.status.isOpen)) continue;
       if (best == null) {
         best = g;
         continue;

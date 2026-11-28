@@ -346,7 +346,7 @@ void main() {
       final c = store.addTask(key, cutId: r1.cutIds[2]);
       store
         ..addTask(key, cutId: r2.cutIds[0])
-        ..setStatus(c, TaskStatus.done);
+        ..setStatus(c, TaskStatus.inProgress);
       expect(store.tasksBeside(a).map((t) => t.id), [b, c]);
       expect(store.tasksBeside(999), isEmpty);
     });

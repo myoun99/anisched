@@ -113,7 +113,7 @@ class _CatalogueBrowserState extends State<CatalogueBrowser> {
   );
 
   static int _left(Iterable<TaskRow> tasks) =>
-      cutUnits(tasks.where((t) => t.status.needsWork)).length;
+      cutUnits(tasks.where((t) => t.status.isOpen)).length;
 
   List<_Node> _nodes() {
     final under = _under.toList();

@@ -57,6 +57,7 @@ CREATE TABLE work_intervals (
   const Migration(19, _v19CardEvents),
   const Migration(20, _v20NumbersAsValuesAgain),
   const Migration(21, _v21CutOrder),
+  const Migration(22, _v22DoneIsSubmitted),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -208,6 +209,29 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
 /// 12A < 13), then names that are not numbers in the order they were added
 /// (their keys tie; the cut id follows). The rule of
 /// `models/number_style.dart`'s `cutSortKey` at this version.
+/// 2026-11-28 유저: 완료와 제출 합침 — the statuses are received · in
+/// progress · submitted · retake. A task left at 'done' (finished, not
+/// yet handed in) becomes 'submitted': its hand-in is when it was done
+/// (else when it was received), the deadline then in force is today's,
+/// and a timer still running on it stops, as at any hand-in. `done_at`
+/// stays in the table, no longer read or written.
+void _v22DoneIsSubmitted(CommonDatabase db) {
+  db
+    ..execute('''
+UPDATE tasks SET submitted_due_at =
+  (SELECT due_at FROM task_dues WHERE task_id = tasks.id)
+WHERE status = 'done' AND submitted_at IS NULL;''')
+    ..execute('''
+UPDATE work_intervals
+SET stopped_at = MAX(CAST(strftime('%s', 'now') AS INTEGER) * 1000, started_at)
+WHERE stopped_at IS NULL
+  AND task_id IN (SELECT id FROM tasks WHERE status = 'done');''')
+    ..execute('''
+UPDATE tasks SET status = 'submitted',
+  submitted_at = COALESCE(submitted_at, done_at, received_at)
+WHERE status = 'done';''');
+}
+
 void _v21CutOrder(CommonDatabase db) {
   // A literal copy of the rule, so this step never changes once shipped.
   final value = RegExp(r'^(0|[1-9]\d{0,8})([A-Z]*)$');

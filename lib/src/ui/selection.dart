@@ -62,7 +62,6 @@ class TaskSelection extends ChangeNotifier {
 /// The statuses a picked set can be moved to.
 const pickActions = [
   TaskStatus.inProgress,
-  TaskStatus.done,
   TaskStatus.submitted,
   TaskStatus.retake,
   TaskStatus.received,
@@ -72,10 +71,9 @@ const pickActions = [
 /// on the bar with their words, the rest go under ⋯ (the user's order,
 /// 2026-11-28). Status actions by their stored name.
 const pickPriority = [
-  'done',
+  'submitted',
   'edit',
   'share',
-  'submitted',
   'in_progress',
   'due',
   'hold',

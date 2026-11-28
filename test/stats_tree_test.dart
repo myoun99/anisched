@@ -43,7 +43,7 @@ void main() {
     store
       ..setPartDue(part, lo, DateTime(2026, 11, 30))
       ..setStatus(tasks[0], TaskStatus.submitted)
-      ..setStatus(tasks[1], TaskStatus.done); // the pair, both done
+      ..setStatus(tasks[1], TaskStatus.submitted); // the pair, both
   });
 
   tearDown(() => db.close());
@@ -53,11 +53,11 @@ void main() {
     final stats = store.stats(from: from, to: to).total;
     final root = store.statsTree(from: from, to: to);
     expect(
-      (root.cuts, root.finished, root.handed, root.done, root.worked),
-      (stats.cuts, stats.finished, stats.handed, stats.done, stats.worked),
+      (root.cuts, root.finished, root.handed, root.worked),
+      (stats.cuts, stats.finished, stats.handed, stats.worked),
     );
     expect(root.earned, stats.earned);
-    expect((root.withDue, root.onTime), (1, 1));
+    expect((root.withDue, root.onTime), (2, 2));
 
     final client = only(root);
     final work = only(client);
@@ -72,7 +72,7 @@ void main() {
     expect((client.clientColor, unit.clientColor), (0xFF336699, 0xFF336699));
     expect(unit.key, startsWith('unit:part:$part:'));
     expect(unit.stageName, 'LO');
-    expect((root.dueKept, root.dueTotal, root.retakes), (1, 1, 0));
+    expect((root.dueKept, root.dueTotal, root.retakes), (2, 2, 0));
     expect(root.payByCurrency, root.earned);
     expect(unit.children.map((c) => c.label), ['C001', 'C002', 'C003']);
     final leaf = unit.children.first;
@@ -91,10 +91,10 @@ void main() {
       only(only(only(store.statsTree(from: from, to: to)))),
     );
     expect((partNode.cuts, partNode.finished), (2, 2));
-    // Submitted counts as done too: C001, and the pair once.
-    expect(partNode.done, 2);
+    // C001, and the pair once.
+    expect(partNode.handed, 2);
     expect(partNode.earned['JPY'], 3000); // the pair paid twice
-    expect(partNode.children.map((c) => (c.cuts, c.done, c.earned['JPY'])), [
+    expect(partNode.children.map((c) => (c.cuts, c.handed, c.earned['JPY'])), [
       (1, 1, 1000),
       (1, 1, 1000),
       (1, 1, 1000),
