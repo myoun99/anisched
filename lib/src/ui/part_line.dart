@@ -152,77 +152,10 @@ class PartLine extends StatelessWidget {
               child: Row(
                 children: [
                   const SizedBox(width: lineInset),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      spacing: 2,
-                      children: [
-                        // The line's long press picks it: no tooltips here;
-                        // the opened details show every word.
-                        FitText.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '${g.workTitle} ${g.episodeNumber}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if (b == null)
-                                TextSpan(
-                                  text: '  ${stageText(g.stageName)}',
-                                  style: TextStyle(color: c.muted),
-                                )
-                              else ...[
-                                const TextSpan(text: '  '),
-                                // The stage whose D is shown reads darker.
-                                for (final (i, s) in b.stages.indexed)
-                                  TextSpan(
-                                    text:
-                                        '${i == 0 ? '' : '・'}'
-                                        '${stageText(s.stageName)}',
-                                    style: TextStyle(
-                                      color: s == g ? null : c.muted,
-                                    ),
-                                  ),
-                              ],
-                            ],
-                          ),
-                          tooltip: false,
-                        ),
-                        if (partCutsLine(g).isNotEmpty)
-                          FitText(
-                            partCutsLine(g),
-                            style: TextStyle(fontSize: 12, color: c.muted),
-                            tooltip: false,
-                          ),
-                      ],
-                    ),
-                  ),
+                  Expanded(child: _title(c, b)),
                   SizedBox(
                     width: wide ? _progressW : 70,
-                    child: Row(
-                      spacing: 5,
-                      children: [
-                        SizedBox(width: wide ? 40 : 26, child: _progress(b)),
-                        Flexible(
-                          child: Text(
-                            b == null
-                                ? '${g.handed}/${g.total}'
-                                : '${b.handed}/${b.total}',
-                            maxLines: 1,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(fontSize: 12, color: c.muted),
-                          ),
-                        ),
-                        if (_waiting(b) > 0)
-                          HoldMark(
-                            key: Key('hold-mark-${b?.key ?? g.key}'),
-                            count: _waiting(b),
-                          ),
-                      ],
-                    ),
+                    child: _progressCell(c, b, wide),
                   ),
                   SizedBox(
                     width: wide ? _clientW : _clientNarrowW,
@@ -244,43 +177,7 @@ class PartLine extends StatelessWidget {
                     height: 40,
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: DueButton(
-                        key: Key('due-${g.key}'),
-                        title: S.pickDue.t,
-                        due: g.dueAt,
-                        onPicked: onDue,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 6,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child:
-                                      signal ??
-                                      (signals == null
-                                          ? null
-                                          : SignalLabel(
-                                              due: signals!.due,
-                                              plan: signals!.plan,
-                                            )) ??
-                                      DueText(
-                                        g.dueAt,
-                                        g.status,
-                                        now,
-                                        dayStartMinutes: dayStartMinutes,
-                                      ),
-                                ),
-                              ),
-                              RoundBadge(g.dueRevision),
-                            ],
-                          ),
-                        ),
-                      ),
+                      child: _due(),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -301,6 +198,114 @@ class PartLine extends StatelessWidget {
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
+  }
+
+  /// Work and episode with the stage (a bundle's stages, the one whose D
+  /// shows darker); under them, the part and cut range.
+  Widget _title(AppColors c, UnitBundle? b) {
+    final g = group;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 2,
+      children: [
+        // The line's long press picks it: no tooltips here; the opened
+        // details show every word.
+        FitText.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '${g.workTitle} ${g.episodeNumber}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              if (b == null)
+                TextSpan(
+                  text: '  ${stageText(g.stageName)}',
+                  style: TextStyle(color: c.muted),
+                )
+              else ...[
+                const TextSpan(text: '  '),
+                for (final (i, s) in b.stages.indexed)
+                  TextSpan(
+                    text: '${i == 0 ? '' : '・'}${stageText(s.stageName)}',
+                    style: TextStyle(color: s == g ? null : c.muted),
+                  ),
+              ],
+            ],
+          ),
+          tooltip: false,
+        ),
+        if (partCutsLine(g).isNotEmpty)
+          FitText(
+            partCutsLine(g),
+            style: TextStyle(fontSize: 12, color: c.muted),
+            tooltip: false,
+          ),
+      ],
+    );
+  }
+
+  /// The progress bar(s), handed / all, and the hold mark.
+  Widget _progressCell(AppColors c, UnitBundle? b, bool wide) {
+    final g = group;
+    return Row(
+      spacing: 5,
+      children: [
+        SizedBox(width: wide ? 40 : 26, child: _progress(b)),
+        Flexible(
+          child: Text(
+            b == null ? '${g.handed}/${g.total}' : '${b.handed}/${b.total}',
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: TextStyle(fontSize: 12, color: c.muted),
+          ),
+        ),
+        if (_waiting(b) > 0)
+          HoldMark(
+            key: Key('hold-mark-${b?.key ?? g.key}'),
+            count: _waiting(b),
+          ),
+      ],
+    );
+  }
+
+  /// The D label (or the given signal), a button for the deadline.
+  Widget _due() {
+    final g = group;
+    return DueButton(
+      key: Key('due-${g.key}'),
+      title: S.pickDue.t,
+      due: g.dueAt,
+      onPicked: onDue,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child:
+                    signal ??
+                    (signals == null
+                        ? null
+                        : SignalLabel(
+                            due: signals!.due,
+                            plan: signals!.plan,
+                          )) ??
+                    DueText(
+                      g.dueAt,
+                      g.status,
+                      now,
+                      dayStartMinutes: dayStartMinutes,
+                    ),
+              ),
+            ),
+            RoundBadge(g.dueRevision),
+          ],
+        ),
+      ),
+    );
   }
 
   int _waiting(UnitBundle? b) =>

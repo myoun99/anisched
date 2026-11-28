@@ -362,7 +362,7 @@ void main() {
               home: Builder(
                 builder: (context) => Scaffold(
                   body: ChartBoard(
-                    window: window,
+                    window: FixedWindow(window),
                     today: DateTime(2026, 11, 21, 14),
                     days: const ChartDays(),
                     labelWidth: 56,
@@ -373,7 +373,7 @@ void main() {
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),
-                    bars: (context, r) => [
+                    bars: (context, r, window) => [
                       ChartBar(
                         window: window,
                         start: DateTime(2026, 11, 21),

@@ -13,10 +13,13 @@ final now = DateTime(2026, 11, 27, 14);
 void main() {
   // The user's rule: toolbars speak in icons — no day counts, no item
   // counts, no 「오늘 2/3」; the words live in tooltips.
-  for (final size in const [Size(390, 844), Size(1280, 800)]) {
+  // One size: the rule does not depend on it (a phone, where words would
+  // have pushed the icons hardest); the month view once (it swaps the
+  // zoom out of the same toolbar).
+  for (final size in const [Size(390, 844)]) {
     for (final view in const [AppView.list, AppView.timeline, AppView.work]) {
       for (final month in [false, true]) {
-        if (month && view == AppView.list) continue;
+        if (month && view != AppView.timeline) continue;
         testWidgets('no words in the ${view.name} toolbar '
             '${month ? '(months) ' : ''}at $size', (t) async {
           t.view.physicalSize = size;

@@ -52,6 +52,26 @@ PartGroup part(List<PartGroup> gs, String work, String label, String stage) =>
     );
 
 void main() {
+  testWidgets('opening a line rebuilds that line (and the one before) only', (
+    t,
+  ) async {
+    final gs = await pumpSheet(t, const Size(1280, 800));
+    var lines = 0;
+    debugOnRebuildDirtyWidget = (e, _) {
+      if (e.widget is PartLine) lines++;
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = null);
+    await t.tap(find.byKey(Key('line-${gs[0].key}')));
+    await t.pump();
+    expect(lines, 1);
+    lines = 0;
+    // The next tap: that line, and the one it takes the highlight from.
+    await t.tap(find.byKey(Key('line-${gs[1].key}')));
+    await t.pump();
+    debugOnRebuildDirtyWidget = null;
+    expect(lines, 2);
+  });
+
   setUp(() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
