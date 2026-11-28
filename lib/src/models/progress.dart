@@ -86,7 +86,11 @@ class TaskRow {
     this.partWaitUntil,
     this.handedOffAt,
     this.handedOffNote,
+    this.archived = false,
   });
+
+  /// Put away (보관) — only in lists asked with `includeArchived`.
+  final bool archived;
 
   /// Handed off to someone else (빠짐) — only in lists asked with
   /// `includeHandedOff`.
@@ -338,6 +342,9 @@ class PartGroup {
 
   TaskRow get _first => tasks.first;
   String get key => _first.groupKey;
+
+  /// Every task of the unit is put away (보관).
+  bool get archived => tasks.every((t) => t.archived);
 
   GroupKind get kind => _first.storyboardId != null
       ? GroupKind.storyboard

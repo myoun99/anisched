@@ -158,6 +158,17 @@ String naturalSortKey(String label) =>
   );
 }
 
+/// What `CatalogueStore.deleteTasks` would take away, for the confirmation
+/// before it: the tasks, the cuts, episodes and works left empty by them,
+/// and the timer time recorded on the tasks, in whole minutes.
+typedef DeletionSummary = ({
+  int tasks,
+  int cuts,
+  int episodes,
+  int works,
+  int timerMinutes,
+});
+
 /// What can be archived (hidden, restorable). Archiving hides everything
 /// beneath it in the views; restoring brings it back as it was.
 enum ArchiveKind {

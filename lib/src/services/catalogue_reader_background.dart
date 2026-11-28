@@ -161,11 +161,13 @@ class BackgroundCatalogueReader implements CatalogueReader {
     int? workId,
     bool includeDone = false,
     bool includeHandedOff = false,
+    bool includeArchived = false,
   }) => _ask(
     (s) => s.partGroups(
       workId: workId,
       includeDone: includeDone,
       includeHandedOff: includeHandedOff,
+      includeArchived: includeArchived,
     ),
   );
 

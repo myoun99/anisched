@@ -35,6 +35,7 @@ abstract interface class CatalogueReader {
     int? workId,
     bool includeDone = false,
     bool includeHandedOff = false,
+    bool includeArchived = false,
   });
 
   /// See [CatalogueStore.today].
@@ -174,11 +175,13 @@ class SyncCatalogueReader implements CatalogueReader {
     int? workId,
     bool includeDone = false,
     bool includeHandedOff = false,
+    bool includeArchived = false,
   }) => _run(
     () => store.partGroups(
       workId: workId,
       includeDone: includeDone,
       includeHandedOff: includeHandedOff,
+      includeArchived: includeArchived,
     ),
   );
 
