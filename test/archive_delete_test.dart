@@ -1,6 +1,7 @@
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
+import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart';
@@ -82,9 +83,7 @@ void main() {
     expect(find.byKey(Key('line-${g.key}')), findsWidgets);
   });
 
-  testWidgets('the filter shows archived cards; ⋯ brings them back', (
-    t,
-  ) async {
+  testWidgets('the filter shows archived cards; ⋯ brings them back', (t) async {
     final store = await pumpShell(t, size: const Size(390, 844));
     final g = openPart(store);
     store.archiveTasks([for (final x in g.tasks) x.id]);
@@ -151,9 +150,48 @@ void main() {
       sum.timerMinutes > 0 ? findsOneWidget : findsNothing,
     );
   });
+  // The user-visible failure: the same cut × stage is in work again, so
+  // bringing the archived task back is refused with a note.
+  testWidgets('unarchiving over a live task says why and restores nothing', (
+    t,
+  ) async {
+    Folds.cutsInDetails.value = true;
+    addTearDown(() => Folds.cutsInDetails.value = false);
+    final store = sampleCatalogue(now);
+    final g = openPart(store);
+    final old = g.tasks.first;
+    store.archiveTasks([old.id]);
+    // Registered again: a live task on the same cut × stage.
+    expect(store.addTasksForPart(g.partId!, g.stageId), hasLength(1));
+    await pumpShellWith(t, store, size: const Size(1280, 800));
+    await toggleArchived(t);
+    await t.tap(find.byKey(Key('line-${g.key}')).first);
+    await t.pump();
+    final chip = find.byKey(Key('cut-${old.id}'));
+    await t.ensureVisible(chip);
+    await t.longPress(chip);
+    await t.pump();
+    await act(t, 'pick-archive');
+    expect(find.byKey(const Key('restore-blocked')), findsOneWidget);
+    expect(find.textContaining('되돌릴 수 없음'), findsOneWidget);
+    final row = store
+        .partGroups(includeArchived: true)
+        .expand((x) => x.tasks)
+        .firstWhere((x) => x.id == old.id);
+    expect(row.archived, isTrue, reason: 'nothing came back');
+  });
 }
 
-Future<void> pumpShellWith(WidgetTester t, CatalogueStore store) async {
+Future<void> pumpShellWith(
+  WidgetTester t,
+  CatalogueStore store, {
+  Size? size,
+}) async {
+  if (size != null) {
+    t.view.physicalSize = size;
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+  }
   await t.pumpWidget(
     MaterialApp(
       theme: AppTheme.light(),
