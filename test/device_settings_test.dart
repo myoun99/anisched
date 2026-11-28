@@ -58,23 +58,23 @@ void main() {
     });
   });
 
-  test('ruler rows per chart: year off, month and weekday on, a choice '
+  test('ruler rows per chart: all on by default, a choice '
       'kept per tab', () {
     final s = loadDeviceSettings(tmp.path);
     for (final tab in RulerTab.values) {
-      expect(s.rulerRows(tab), (year: false, month: true, weekday: true));
+      expect(s.rulerRows(tab), (year: true, month: true, weekday: true));
     }
     s
-      ..setRulerRow(RulerTab.timeline, RulerRow.year, true)
+      ..setRulerRow(RulerTab.timeline, RulerRow.year, false)
       ..setRulerRow(RulerTab.work, RulerRow.weekday, false);
     final again = loadDeviceSettings(tmp.path);
     expect(again.rulerRows(RulerTab.timeline), (
-      year: true,
+      year: false,
       month: true,
       weekday: true,
     ));
     expect(again.rulerRows(RulerTab.work), (
-      year: false,
+      year: true,
       month: true,
       weekday: false,
     ));
