@@ -62,6 +62,13 @@ Future<void> loadFonts() async {
   ]);
 }
 
+/// Widgets whose string key starts with [prefix] (`line-`, `cut-` …).
+Finder byKeyPrefix(String prefix) => find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith(prefix),
+);
+
 typedef Scenario = Future<void> Function(WidgetTester t, Size size);
 
 final scenarios = <String, (AppView, Scenario)>{
@@ -70,25 +77,13 @@ final scenarios = <String, (AppView, Scenario)>{
   'details-open': (
     AppView.list,
     (t, size) async {
-      final lines = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('line-'),
-      );
+      final lines = byKeyPrefix('line-');
       await t.tap(lines.at(0));
       await t.pump();
-      final fold = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('fold-cuts-'),
-      );
+      final fold = byKeyPrefix('fold-cuts-');
       await t.tap(fold.first);
       await t.pump();
-      final chip = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('cut-'),
-      );
+      final chip = byKeyPrefix('cut-');
       if (chip.evaluate().isNotEmpty) {
         await t.tap(chip.first);
         await t.pump();
@@ -126,11 +121,7 @@ final scenarios = <String, (AppView, Scenario)>{
     (t, size) async {
       Folds.dueRounds.value = true;
       Folds.cutsInDetails.value = true;
-      final lines = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('line-'),
-      );
+      final lines = byKeyPrefix('line-');
       final extended = find.ancestor(
         of: find.byWidgetPredicate((w) => w is RoundBadge && w.revision == 2),
         matching: lines,
@@ -152,11 +143,7 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
       await t.pump();
       await t.pump(const Duration(milliseconds: 400));
-      final lines = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('line-'),
-      );
+      final lines = byKeyPrefix('line-');
       await t.tap(lines.at(1));
       await t.pump();
       await t.longPress(lines.at(0));
@@ -193,11 +180,7 @@ final scenarios = <String, (AppView, Scenario)>{
   'two-picked': (
     AppView.list,
     (t, size) async {
-      final lines = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('line-'),
-      );
+      final lines = byKeyPrefix('line-');
       await t.longPress(lines.at(0));
       await t.pump();
       await t.longPress(lines.at(1));

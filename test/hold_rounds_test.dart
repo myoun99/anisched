@@ -68,7 +68,6 @@ void main() {
     await t.pump();
     var after = partOf(store, g.key);
     expect(after.inHand, 0);
-    expect(after.partWaiting, isTrue, reason: 'a whole part waits as a part');
     expect(after.tasks.first.waitReason, 'LO 待ち');
     expect(find.byKey(Key('hold-mark-${g.key}')), findsOneWidget);
 

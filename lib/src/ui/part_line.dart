@@ -297,7 +297,6 @@ class PartDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final g = group;
-    final accent = Theme.of(context).colorScheme.primary;
     final slack = g.slackDays;
     final perDay = pace?.perDay;
     String range(DateTime? a, DateTime? b, String open) =>
@@ -430,7 +429,6 @@ class PartDetails extends StatelessWidget {
                                     t.handedOff ||
                                     (t.waiting && t.status.isOpen),
                                 task: t,
-                                highlighted: t.id == highlighted,
                                 onTap: onTask == null ? null : () => onTask!(t),
                                 onLongPress: onTaskDue == null
                                     ? null
@@ -439,97 +437,9 @@ class PartDetails extends StatelessWidget {
                                         onPicked: (d) => onTaskDue!(t, d),
                                         child: const SizedBox(),
                                       ).pick(context),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color:
-                                        t.id == highlighted ||
-                                            (isPicked?.call(t) ?? false)
-                                        ? c.selected
-                                        : c.panel,
-                                    border: Border.all(
-                                      color: t.sharedLabel != null
-                                          ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                          : c.line,
-                                    ),
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 5,
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      spacing: 6,
-                                      children: [
-                                        Dot(c.of(t.status)),
-                                        if (t.handedOff)
-                                          Icon(
-                                            Icons.person_remove_outlined,
-                                            size: 12,
-                                            color: c.muted,
-                                          )
-                                        else if (t.waiting && t.status.isOpen)
-                                          const HoldMark(),
-                                        Flexible(
-                                          child: Text.rich(
-                                            TextSpan(
-                                              children: [
-                                                TextSpan(
-                                                  text: taskLabel(t),
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                    decoration: t.handedOff
-                                                        ? TextDecoration
-                                                              .lineThrough
-                                                        : null,
-                                                  ),
-                                                ),
-                                                if (t.sharedLabel != null)
-                                                  TextSpan(
-                                                    text: ' ${t.sharedLabel}',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: c.muted,
-                                                    ),
-                                                  ),
-                                                if (t.take > 1)
-                                                  TextSpan(
-                                                    text: ' T${t.take}',
-                                                    style: TextStyle(
-                                                      color: c.retake,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      fontSize: 11,
-                                                    ),
-                                                  ),
-                                                TextSpan(
-                                                  text:
-                                                      '  ${formatLength(t.lengthMs)}',
-                                                  style: TextStyle(
-                                                    color: c.muted,
-                                                  ),
-                                                ),
-                                                if (t.dueOverridden)
-                                                  TextSpan(
-                                                    text:
-                                                        '  ${formatDate(t.dueAt)}',
-                                                    style: TextStyle(
-                                                      color: accent,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                                picked:
+                                    t.id == highlighted ||
+                                    (isPicked?.call(t) ?? false),
                               ),
                           ],
                         ),
@@ -543,32 +453,103 @@ class PartDetails extends StatelessWidget {
   }
 }
 
+/// One cut in the opened details: its status, name, take, length and own
+/// deadline; faded when on hold or pulled.
 class _CutChip extends StatelessWidget {
   const _CutChip({
-    this.waiting = false,
     required this.task,
-    required this.highlighted,
-    required this.child,
+    required this.picked,
+    this.waiting = false,
     this.onTap,
     this.onLongPress,
   });
 
   final TaskRow task;
-  final bool highlighted;
-  final Widget child;
+
+  /// Filled: picked for an action, or the one the timer runs on.
+  final bool picked;
   final VoidCallback? onTap;
 
   /// Long press: the cut's own deadline.
   final VoidCallback? onLongPress;
 
-  /// On hold: drawn faint.
+  /// On hold or pulled: drawn faint.
   final bool waiting;
 
   @override
   Widget build(BuildContext context) {
-    final child = waiting
-        ? Opacity(opacity: 0.45, child: this.child)
-        : this.child;
+    final c = AppColors.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    final t = task;
+    final Widget face = DecoratedBox(
+      decoration: BoxDecoration(
+        color: picked ? c.selected : c.panel,
+        border: Border.all(
+          color: t.sharedLabel != null
+              ? Theme.of(context).colorScheme.primary
+              : c.line,
+        ),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: [
+            Dot(c.of(t.status)),
+            if (t.handedOff)
+              Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
+            else if (t.waiting && t.status.isOpen)
+              const HoldMark(),
+            Flexible(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: taskLabel(t),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        decoration: t.handedOff
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    if (t.sharedLabel != null)
+                      TextSpan(
+                        text: ' ${t.sharedLabel}',
+                        style: TextStyle(fontSize: 10, color: c.muted),
+                      ),
+                    if (t.take > 1)
+                      TextSpan(
+                        text: ' T${t.take}',
+                        style: TextStyle(
+                          color: c.retake,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    TextSpan(
+                      text: '  ${formatLength(t.lengthMs)}',
+                      style: TextStyle(color: c.muted),
+                    ),
+                    if (t.dueOverridden)
+                      TextSpan(
+                        text: '  ${formatDate(t.dueAt)}',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final child = waiting ? Opacity(opacity: 0.45, child: face) : face;
     if (onTap == null && onLongPress == null) return child;
     return InkWell(
       key: Key('cut-${task.id}'),

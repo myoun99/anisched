@@ -60,12 +60,12 @@ void main() {
     expect(app.locale, const Locale('ja'));
   });
 
-  for (final lang in Lang.values) {
-    for (final size in const [
-      Size(390, 844),
-      Size(844, 390),
-      Size(1280, 800),
-    ]) {
+  // Overflow risk grows with word length and shrinks with width: French
+  // and English are the longest tables, phones the narrowest (and
+  // shortest) screens. Korean is laid out by every other widget test;
+  // Japanese and Chinese words are shorter.
+  for (final lang in const [Lang.en, Lang.fr]) {
+    for (final size in const [Size(390, 844), Size(844, 390)]) {
       testWidgets('${lang.name} lays out every view at $size', (t) async {
         appLang.value = lang;
         t.view.physicalSize = size;

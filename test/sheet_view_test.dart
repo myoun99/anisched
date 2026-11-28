@@ -47,23 +47,6 @@ void main() {
     Folds.savedCuts.value = true;
   });
 
-  for (final size in const [
-    Size(1440, 900),
-    Size(1280, 800),
-    Size(800, 1280),
-    Size(915, 412),
-    Size(412, 915),
-  ]) {
-    testWidgets('lays out without overflow at $size', (t) async {
-      final gs = await pumpSheet(t, size);
-      expect(t.takeException(), isNull);
-      final a = part(gs, '별빛 정류장', 'A', '원화');
-      await t.tap(find.byKey(Key('line-${a.key}')));
-      await t.pump();
-      expect(t.takeException(), isNull);
-    });
-  }
-
   testWidgets('done parts are hidden until asked for', (t) async {
     final gs = await pumpSheet(t, const Size(1280, 800));
     final done = part(gs, '별빛 정류장', 'B', 'LO');

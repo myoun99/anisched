@@ -286,8 +286,9 @@ abstract final class ChartPaints {
   static int background = 0;
   static int today = 0;
   static int preview = 0;
+  static int barBuilds = 0;
 
-  static void reset() => background = today = preview = 0;
+  static void reset() => background = today = preview = barBuilds = 0;
 }
 
 /// The colour today's column is washed with, light or dark.
@@ -915,6 +916,7 @@ class _ChartBarState extends State<ChartBar> {
 
   @override
   Widget build(BuildContext context) {
+    ChartPaints.barBuilds++;
     return LayoutBuilder(
       builder: (context, box) {
         _dayWidth = box.maxWidth / widget.window.days;

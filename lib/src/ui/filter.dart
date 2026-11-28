@@ -77,7 +77,7 @@ class ViewFilter {
     if (workId != null && g.workId != workId) return false;
     if (clientId != null && clientOf[g.workId] != clientId) return false;
     if (range == DueRange.all) return true;
-    if (!g.status.isOpen || g.status == TaskStatus.submitted) return false;
+    if (!g.status.isOpen) return false; // handed in: submitted or done
     if (range == DueRange.today) {
       final start = g.planStartAt ?? g.kickoffAt;
       return start != null && !start.isAfter(now);

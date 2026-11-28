@@ -16,12 +16,9 @@ AppView currentView(WidgetTester tester) =>
         .index!];
 
 void main() {
-  const devices = {
-    'desktop': Size(1440, 900),
-    'tablet landscape': Size(1280, 800),
-    'tablet portrait': Size(800, 1280),
-    'phone landscape': Size(915, 412),
-  };
+  // The boundary: a phone held sideways is the narrowest screen that keeps
+  // the switcher on top (size classes themselves: size_class_test).
+  const devices = {'phone landscape': Size(915, 412)};
 
   devices.forEach((name, size) {
     testWidgets('$name puts the view switcher in the top bar', (t) async {
