@@ -204,6 +204,34 @@ INSERT INTO cuts (episode_id, number, sort_key, archived_at) VALUES
     );
   });
 
+  test('v18: every day of a days-off range becomes a global rest event', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    migrate(db, steps: migrations.where((m) => m.version <= 17).toList());
+    db.execute(
+      'INSERT INTO days_off (start_date, end_date, note) VALUES '
+      "('2026-12-30', '2027-01-01', '여행'), ('2026-12-24', '2026-12-24', NULL)",
+    );
+    migrate(db);
+    expect(
+      db
+          .select(
+            'SELECT day, title, episode_id, rest FROM events ORDER BY day',
+          )
+          .map((r) => (r['day'], r['title'], r['episode_id'], r['rest'])),
+      [
+        ('2026-12-24', '', null, 1),
+        ('2026-12-30', '여행', null, 1),
+        ('2026-12-31', '여행', null, 1),
+        ('2027-01-01', '여행', null, 1),
+      ],
+    );
+    expect(
+      db.select("SELECT name FROM sqlite_master WHERE name = 'days_off'"),
+      isEmpty,
+    );
+  });
+
   test('v15: works on the default format write no setting', () {
     final db = sqlite3.openInMemory();
     addTearDown(db.close);

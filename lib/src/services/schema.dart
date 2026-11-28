@@ -53,6 +53,7 @@ CREATE TABLE work_intervals (
   const Migration(15, _v15NumberStylesAndRanks),
   const Migration(16, _v16NumbersAsValues),
   const Migration(17, _v17ColorsAndEvents),
+  const Migration(18, _v18DaysOffAreEvents),
 ];
 
 /// 유저 2026-11-28: done and submitted swap roles. **done** = the work is
@@ -198,6 +199,31 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
       );
     }
   }
+}
+
+/// 유저 2026-11-28: a day off is an event of its own (no episode) marked
+/// `rest`. Every day of every days_off range becomes one such event (its
+/// note as the title, else empty — the view names it), and days_off goes.
+void _v18DaysOffAreEvents(CommonDatabase db) {
+  db.execute('ALTER TABLE events ADD COLUMN rest INTEGER NOT NULL DEFAULT 0;');
+  for (final r in db.select(
+    'SELECT start_date, end_date, note FROM days_off ORDER BY start_date, id;',
+  )) {
+    final start = DateTime.parse(r['start_date'] as String);
+    final end = DateTime.parse(r['end_date'] as String);
+    for (
+      var d = DateTime.utc(start.year, start.month, start.day);
+      !d.isAfter(DateTime.utc(end.year, end.month, end.day));
+      d = d.add(const Duration(days: 1))
+    ) {
+      db.execute(
+        'INSERT INTO events (episode_id, day, time_min, title, note, rest) '
+        'VALUES (NULL, ?, NULL, ?, NULL, 1);',
+        [d.toIso8601String().substring(0, 10), r['note'] ?? ''],
+      );
+    }
+  }
+  db.execute('DROP TABLE days_off;');
 }
 
 /// 유저 2026-11-28: a colour per client (ARGB, null = default grey) and

@@ -351,19 +351,22 @@ void main() {
 
       test('a trip removes its days; a single day off works too', () {
         partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 9); // Sun 12/6
-        store.addDaysOff(DateTime(2026, 11, 30), end: DateTime(2026, 12, 2));
-        store.addDaysOff(DateTime(2026, 12, 4), note: '병원');
+        store
+          ..addRestDays(DateTime(2026, 11, 30), end: DateTime(2026, 12, 2))
+          ..addRestDays(DateTime(2026, 12, 4), title: '병원')
+          // A global event that is not a day off counts as a working day.
+          ..addEvent(date: DateTime(2026, 12, 3), title: '회의');
         final p = store.paceOf(store.partGroups().single)!;
         // 11/27..12/6 is 10 days; minus 11/30, 12/1, 12/2 and 12/4.
         expect(p.workDays, 6);
-        expect(store.daysOff().map((d) => d.note), [null, '병원']);
+        expect(store.restDays().map((d) => d.title), ['', '', '', '병원']);
       });
 
       test(
         'today off asks nothing today; the rest spreads over the others',
         () {
           partWithCuts('B', ['C1', 'C2', 'C3', 'C4'], lo, 3); // Mon 11/30
-          store.addDaysOff(DateTime(2026, 11, 27));
+          store.addRestDays(DateTime(2026, 11, 27));
           final t = store.today();
           expect(t.entries.single.pace!.workDays, 3); // Sat, Sun, Mon
           expect(t.entries.single.pace!.today, 0);
@@ -415,26 +418,40 @@ void main() {
         },
       );
 
-      test('days off must not end before they start', () {
+      test('days off: global rest events, removed like any event', () {
         expect(
           () =>
-              store.addDaysOff(DateTime(2026, 12, 3), end: DateTime(2026, 12)),
+              store.addRestDays(DateTime(2026, 12, 3), end: DateTime(2026, 12)),
           throwsArgumentError,
         );
-        final id = store.addDaysOff(DateTime(2026, 12, 24));
-        store.removeDaysOff(id);
-        expect(store.daysOff(), isEmpty);
+        final ep = store.addEpisode(store.createWork('W'), '#1');
+        expect(
+          () => store.addEvent(
+            episodeId: ep,
+            date: DateTime(2026, 12, 3),
+            title: 'x',
+            rest: true,
+          ),
+          throwsArgumentError,
+        );
+        final id = store.addRestDays(DateTime(2026, 12, 24)).single;
+        expect(
+          store
+              .events(from: DateTime(2026, 12), to: DateTime(2027))[null]!
+              .single
+              .rest,
+          isTrue,
+        );
+        store.deleteEvent(id);
+        expect(store.restDays(), isEmpty);
       });
 
       test('past days off are skipped when listing from a date', () {
         store
-          ..addDaysOff(DateTime(2026, 11, 1), end: DateTime(2026, 11, 3))
-          ..addDaysOff(DateTime(2026, 11, 26), end: DateTime(2026, 11, 28))
-          ..addDaysOff(DateTime(2026, 12, 25));
-        expect(store.daysOff(from: now).map((d) => d.range.start.day), [
-          26,
-          25,
-        ]);
+          ..addRestDays(DateTime(2026, 11, 1), end: DateTime(2026, 11, 3))
+          ..addRestDays(DateTime(2026, 11, 26), end: DateTime(2026, 11, 28))
+          ..addRestDays(DateTime(2026, 12, 25));
+        expect(store.restDays(from: now).map((d) => d.date.day), [27, 28, 25]);
       });
       test('open cuts over working days, today and the end day included', () {
         final part = partWithCuts(
@@ -569,7 +586,7 @@ void main() {
         handed(lo, ep, 'C4', 28); // just outside the 4 weeks
         handed(genga, ep, 'C5', 3);
         store.addTask(genga, cutId: store.addCut(ep, 'C6')); // not handed
-        store.addDaysOff(DateTime(2026, 11, 16), end: DateTime(2026, 11, 20));
+        store.addRestDays(DateTime(2026, 11, 16), end: DateTime(2026, 11, 20));
 
         final paces = {for (final u in store.usualPaces()) u.stageName: u};
         // 10/31..11/27 = 28 days, 8 weekend days, 5 days off → 15.

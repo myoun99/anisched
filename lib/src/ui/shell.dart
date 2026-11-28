@@ -217,11 +217,12 @@ class _AppShellState extends State<AppShell> {
             const {DateTime.saturday, DateTime.sunday},
         daysOff: [
           if (st != null)
-            for (final d in st.daysOff()) d.range,
+            for (final d in st.restDays()) DaysOff(d.date),
         ],
         holidays: st == null || st.settings.showHolidays
             ? {for (final h in holidays) h.date: h.name}
             : const {},
+        events: events[null] ?? const [],
       );
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
@@ -254,9 +255,30 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  /// A new event of no episode on [day] (a long press on the date
+  /// ruler): a day off, or a dated note.
+  Future<void> _newRulerEvent(DateTime day) async {
+    final a = await showEventEditor(context, day: day, global: true);
+    if (a is! EventSave) return;
+    _write(
+      (s) => s.addEvent(
+        date: day,
+        timeMinutes: a.timeMinutes,
+        title: a.title,
+        note: a.note,
+        rest: a.rest,
+      ),
+    );
+  }
+
   /// An event tapped: the same window edits or removes it.
   Future<void> _editEvent(EventRow e) async {
-    final a = await showEventEditor(context, day: e.date, existing: e);
+    final a = await showEventEditor(
+      context,
+      day: e.date,
+      existing: e,
+      global: e.episodeId == null,
+    );
     switch (a) {
       case EventSave():
         _write(
@@ -267,6 +289,7 @@ class _AppShellState extends State<AppShell> {
             timeMinutes: a.timeMinutes,
             title: a.title,
             note: a.note,
+            rest: a.rest,
           ),
         );
       case EventRemove():
@@ -715,6 +738,7 @@ class _AppShellState extends State<AppShell> {
         events: _events,
         onNewEvent: writable ? _newEvent : null,
         onEvent: writable ? _editEvent : null,
+        onRulerPress: writable ? _newRulerEvent : null,
       ),
       AppView.work => WorkView(
         lanes: _lanes,
@@ -723,6 +747,8 @@ class _AppShellState extends State<AppShell> {
         now: now,
         layout: layout,
         days: _days,
+        onRulerPress: writable ? _newRulerEvent : null,
+        onRulerEvent: writable ? _editEvent : null,
         onPin: writable
             ? (key, lane) => _write((s) => s.pinLane(key, lane))
             : null,

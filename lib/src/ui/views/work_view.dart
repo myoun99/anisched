@@ -33,6 +33,8 @@ class WorkView extends StatefulWidget {
     this.onAddLane,
     this.onEditLane,
     this.wiring,
+    this.onRulerPress,
+    this.onRulerEvent,
   });
 
   /// What a tapped bar's opened work acts through (the shell's); null
@@ -65,6 +67,11 @@ class WorkView extends StatefulWidget {
 
   /// Saves a dragged work start and end (local days).
   final void Function(PartGroup group, DateTime start, DateTime end)? onPlan;
+
+  /// The date ruler's long press (a new event of no episode: a day off,
+  /// a note) and its events' taps.
+  final ValueChanged<DateTime>? onRulerPress;
+  final ValueChanged<EventRow>? onRulerEvent;
 
   @override
   State<WorkView> createState() => _WorkViewState();
@@ -180,6 +187,8 @@ class _WorkViewState extends State<WorkView> {
     final red = Theme.of(context).colorScheme.error;
     return ChartBoard(
       window: window,
+      onDayLongPress: widget.onRulerPress,
+      onDayEvent: widget.onRulerEvent,
       today: widget.now,
       days: widget.days,
       labelWidth: _labelWidth,

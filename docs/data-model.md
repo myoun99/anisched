@@ -32,7 +32,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v17)
+## 구조 (v18)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -423,3 +423,11 @@
 - 「자동 정렬」: 라인 = `clearLanePins()`, 순서 = `clearGroupOrder()` — 모두 새로 배치되고 다음 날짜 수정 때 다시 굳음.
 - 예시 데이터는 넣은 뒤 두 가지를 비워 「자동 정렬」 상태로 보임.
 - 비용: 날짜를 바꾸는 쓰기마다 `partGroups` + 레이아웃 한 번(작업 1~2만 건에서 ≈150ms).
+
+## 쉬는 날 = 전역 이벤트 (v18, 유저 2026-11-28)
+
+- 화 없는 이벤트(`episode_id` NULL) = **전역 이벤트**(확정). 그중 `rest` 인 것이 「쉬는 날」. 화에 매단 이벤트는 rest 불가(ArgumentError).
+- `days_off` 테이블 · API(`addDaysOff` · `removeDaysOff` · `daysOff`) 삭제. v18 이 기존 기간을 **날마다 하나씩** rest 이벤트로 옮김(메모 → 제목, 없으면 빈 제목 — UI 가 기본 이름).
+- 쓰기: `addRestDays(start, end:, title:)`(하루씩 이벤트, id 목록) · 지우기는 `deleteEvent(id)` · 일반 `addEvent(rest: true)` 도 됨.
+- 읽기: `restDays(from:)` · `events(from:, to:)` 의 null 키 + `EventRow.rest`.
+- 판정: `isRestDay` 의 `daysOff` = rest 이벤트 날짜(정기 쉬는 요일 · 공휴일과 함께, 함수 하나 그대로).
