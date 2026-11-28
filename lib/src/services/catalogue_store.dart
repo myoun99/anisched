@@ -600,11 +600,253 @@ ORDER BY sort_key, id;''')) {
     [count, partId],
   );
 
-  /// Removes the part's deadline for a stage; its cuts keep their own.
-  void clearPartDue(int partId, int stageId) => db.execute(
-    'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
-    [partId, stageId],
-  );
+  /// Removes the part's deadline for a stage, every revision; its cuts
+  /// keep their own.
+  void clearPartDue(int partId, int stageId) => _transaction(() {
+    _deleteRevisions(DueTarget.part(partId, stageId));
+    db.execute(
+      'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
+      [partId, stageId],
+    );
+  });
+
+  // ---- deadline revisions (1st, 2nd …) ----
+
+  (String, List<Object?>) _dueWhere(DueTarget target) => target.taskId != null
+      ? ('task_id = ?', [target.taskId])
+      : (
+          'task_id IS NULL AND part_id = ? AND stage_id = ?',
+          [target.partId, target.stageId],
+        );
+
+  /// Every revision of [target]'s deadline, first first.
+  List<DueRevision> dueRevisions(DueTarget target) {
+    final (where, args) = _dueWhere(target);
+    return [
+      for (final r in db.select(
+        'SELECT revision, due_at, created_at FROM due_revisions '
+        'WHERE $where ORDER BY revision;',
+        args,
+      ))
+        (
+          revision: r['revision'] as int,
+          dueAt: _utc(r['due_at'] as int),
+          createdAt: _utc(r['created_at'] as int),
+        ),
+    ];
+  }
+
+  /// A new revision of [target]'s deadline (the deadline was extended);
+  /// it becomes the deadline in force. Answers its number.
+  int extendDue(DueTarget target, DateTime dueAt) => _transaction(() {
+    final (where, args) = _dueWhere(target);
+    final next =
+        db
+                .select(
+                  'SELECT COALESCE(MAX(revision), 0) + 1 AS n '
+                  'FROM due_revisions WHERE $where;',
+                  args,
+                )
+                .first['n']
+            as int;
+    db.execute(
+      'INSERT INTO due_revisions (part_id, stage_id, task_id, revision, '
+      'due_at, created_at) VALUES (?, ?, ?, ?, ?, ?);',
+      [target.partId, target.stageId, target.taskId, next, _ms(dueAt), _now()],
+    );
+    _syncDue(target);
+    return next;
+  });
+
+  /// Corrects revision [revision] (e.g. the 1st deadline itself). Throws
+  /// [StateError] when there is no such revision.
+  void editDueRevision(DueTarget target, int revision, DateTime dueAt) =>
+      _transaction(() {
+        final (where, args) = _dueWhere(target);
+        db.execute(
+          'UPDATE due_revisions SET due_at = ? WHERE $where AND revision = ?;',
+          [_ms(dueAt), ...args, revision],
+        );
+        if (db.updatedRows == 0) {
+          throw StateError('No revision $revision of this deadline.');
+        }
+        _syncDue(target);
+      });
+
+  /// Drops revision [revision]; later ones move down a number. Removing
+  /// the only one removes the deadline.
+  void removeDueRevision(DueTarget target, int revision) => _transaction(() {
+    final (where, args) = _dueWhere(target);
+    db.execute('DELETE FROM due_revisions WHERE $where AND revision = ?;', [
+      ...args,
+      revision,
+    ]);
+    if (db.updatedRows == 0) {
+      throw StateError('No revision $revision of this deadline.');
+    }
+    final later = [
+      for (final r in db.select(
+        'SELECT revision FROM due_revisions WHERE $where AND revision > ? '
+        'ORDER BY revision;',
+        [...args, revision],
+      ))
+        r['revision'] as int,
+    ];
+    for (final n in later) {
+      db.execute(
+        'UPDATE due_revisions SET revision = ? WHERE $where AND revision = ?;',
+        [n - 1, ...args, n],
+      );
+    }
+    _syncDue(target);
+  });
+
+  /// Sets the deadline in force: corrects the last revision, or makes the
+  /// first when there is none.
+  void _setCurrentDue(DueTarget target, DateTime dueAt) {
+    final (where, args) = _dueWhere(target);
+    final last =
+        db
+                .select(
+                  'SELECT MAX(revision) AS n FROM due_revisions WHERE $where;',
+                  args,
+                )
+                .first['n']
+            as int?;
+    if (last == null) {
+      extendDue(target, dueAt);
+    } else {
+      editDueRevision(target, last, dueAt);
+    }
+  }
+
+  void _deleteRevisions(DueTarget target) {
+    final (where, args) = _dueWhere(target);
+    db.execute('DELETE FROM due_revisions WHERE $where;', args);
+  }
+
+  /// Copies the last revision into the current-deadline column readers use.
+  void _syncDue(DueTarget target) {
+    final (where, args) = _dueWhere(target);
+    final rows = db.select(
+      'SELECT due_at FROM due_revisions WHERE $where '
+      'ORDER BY revision DESC LIMIT 1;',
+      args,
+    );
+    final due = rows.isEmpty ? null : rows.first['due_at'] as int;
+    if (target.taskId != null) {
+      db.execute('UPDATE tasks SET due_at = ? WHERE id = ?;', [
+        due,
+        target.taskId,
+      ]);
+    } else if (due == null) {
+      db.execute(
+        'DELETE FROM part_stage_dues WHERE part_id = ? AND stage_id = ?;',
+        [target.partId, target.stageId],
+      );
+    } else {
+      db.execute(
+        'INSERT INTO part_stage_dues (part_id, stage_id, due_at) '
+        'VALUES (?, ?, ?) ON CONFLICT (part_id, stage_id) '
+        'DO UPDATE SET due_at = excluded.due_at;',
+        [target.partId, target.stageId, due],
+      );
+    }
+  }
+
+  // ---- waiting (대기) ----
+
+  /// Puts a part × stage on hold ([waiting]) or takes it off; [reason]
+  /// and [until] (expected) are optional. Cuts with their own setting keep
+  /// it (see [setTaskWaiting], [followPartWaiting]).
+  void setPartWaiting(
+    int partId,
+    int stageId, {
+    required bool waiting,
+    String? reason,
+    DateTime? until,
+  }) {
+    if (!waiting) {
+      db.execute(
+        'DELETE FROM part_stage_waits WHERE part_id = ? AND stage_id = ?;',
+        [partId, stageId],
+      );
+      return;
+    }
+    db.execute(
+      'INSERT INTO part_stage_waits (part_id, stage_id, reason, until_at, '
+      'since_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (part_id, stage_id) '
+      'DO UPDATE SET reason = excluded.reason, until_at = excluded.until_at;',
+      [partId, stageId, _blank(reason), _ms(until), _now()],
+    );
+  }
+
+  /// One task's own waiting setting, overriding its part × stage.
+  void setTaskWaiting(
+    int taskId, {
+    required bool waiting,
+    String? reason,
+    DateTime? until,
+  }) =>
+      setWaitingMany([taskId], waiting: waiting, reason: reason, until: until);
+
+  /// [setTaskWaiting] for many tasks in one transaction.
+  void setWaitingMany(
+    Iterable<int> taskIds, {
+    required bool waiting,
+    String? reason,
+    DateTime? until,
+  }) => _transaction(() {
+    final now = _now();
+    final stmt = db.prepare(
+      'UPDATE tasks SET wait_state = ?, wait_reason = ?, wait_until = ?, '
+      'wait_since = CASE WHEN ? = 1 THEN COALESCE(wait_since, ?) END '
+      'WHERE id = ?;',
+    );
+    try {
+      for (final id in taskIds) {
+        final state = waiting ? 1 : 0;
+        final why = waiting ? _blank(reason) : null;
+        final expected = waiting ? _ms(until) : null;
+        stmt.execute([state, why, expected, state, now, id]);
+      }
+    } finally {
+      stmt.close();
+    }
+  });
+
+  /// Drops the tasks' own waiting setting: they follow their part × stage.
+  void followPartWaiting(Iterable<int> taskIds) => _transaction(() {
+    for (final id in taskIds) {
+      db.execute(
+        'UPDATE tasks SET wait_state = NULL, wait_reason = NULL, '
+        'wait_until = NULL, wait_since = NULL WHERE id = ?;',
+        [id],
+      );
+    }
+  });
+
+  /// Open cuts in hand and on hold, over every live unit — the 「보유」
+  /// figure and what waits beside it.
+  ({int inHand, int waiting}) holding() {
+    var inHand = 0;
+    var waiting = 0;
+    for (final t in taskRows()) {
+      if (!t.status.isOpen) continue;
+      if (t.waiting) {
+        waiting++;
+      } else {
+        inHand++;
+      }
+    }
+    return (inHand: inHand, waiting: waiting);
+  }
+
+  static String? _blank(String? s) =>
+      s == null || s.trim().isEmpty ? null : s.trim();
+
+  static DateTime _utc(int ms) =>
+      DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
 
   /// Adds a client; [closingDay] null closes at month end.
   int addClient(String name, {int? closingDay}) {
@@ -883,6 +1125,8 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
             doneAt: at(x['done_at']),
             dueAt: t.dueAt,
             submittedDueAt: at(x['submitted_due_at']),
+            firstDueAt: t.firstDueAt,
+            dueExtensions: t.dueExtensions,
             planStartAt: t.planStartAt,
             planEndAt: t.planEndAt,
             pay: t.pay,
@@ -1161,10 +1405,11 @@ ORDER BY 4 DESC, 1, 2;''');
 
   /// Sets the part's deadline for a stage; its cut tasks follow it unless
   /// they carry their own.
-  void setPartDue(int partId, int stageId, DateTime dueAt) => db.execute(
-    'INSERT INTO part_stage_dues (part_id, stage_id, due_at) VALUES (?, ?, ?) '
-    'ON CONFLICT (part_id, stage_id) DO UPDATE SET due_at = excluded.due_at;',
-    [partId, stageId, dueAt.toUtc().millisecondsSinceEpoch],
+  ///
+  /// Corrects the deadline in force (its last revision; the first when
+  /// there is none). A new revision — an extension — is [extendDue].
+  void setPartDue(int partId, int stageId, DateTime dueAt) => _transaction(
+    () => _setCurrentDue(DueTarget.part(partId, stageId), dueAt),
   );
 
   /// Creates a task for [stageId] on every live cut of the part that does
@@ -1247,6 +1492,13 @@ ORDER BY 4 DESC, 1, 2;''');
       ],
     );
     final id = db.lastInsertRowId;
+    if (dueAt != null) {
+      db.execute(
+        'INSERT INTO due_revisions (task_id, revision, due_at, created_at) '
+        'VALUES (?, 1, ?, ?);',
+        [id, _ms(dueAt), _now()],
+      );
+    }
     _defaultKickoff(id);
     return id;
   }
@@ -1440,6 +1692,11 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        t.plan_start_at AS own_plan_start, t.plan_end_at AS own_plan_end,
        pl.start_at AS part_plan_start, pl.end_at AS part_plan_end,
        t.kickoff_at AS own_kickoff, k.kickoff_at AS part_kickoff,
+       COALESCE(tr.n, 0) AS own_revs, tr.first AS own_first,
+       COALESCE(pr.n, 0) AS part_revs, pr.first AS part_first,
+       t.wait_state, t.wait_reason, t.wait_until,
+       pw.part_id IS NOT NULL AS part_waiting, pw.reason AS part_wait_reason,
+       pw.until_at AS part_wait_until,
        CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
          SELECT 1 FROM cuts m WHERE m.shared_with = c.id
            AND m.archived_at IS NULL)
@@ -1472,6 +1729,17 @@ LEFT JOIN part_stage_kickoffs k
 LEFT JOIN part_stage_plans pl
   ON pl.part_id = c.part_id AND pl.stage_id = t.stage_id
 LEFT JOIN episode_rates r ON r.episode_id = e.id AND r.stage_id = t.stage_id
+LEFT JOIN (SELECT task_id, COUNT(*) AS n,
+                  MIN(CASE WHEN revision = 1 THEN due_at END) AS first
+           FROM due_revisions WHERE task_id IS NOT NULL GROUP BY task_id) tr
+  ON tr.task_id = t.id
+LEFT JOIN (SELECT part_id, stage_id, COUNT(*) AS n,
+                  MIN(CASE WHEN revision = 1 THEN due_at END) AS first
+           FROM due_revisions WHERE task_id IS NULL
+           GROUP BY part_id, stage_id) pr
+  ON pr.part_id = c.part_id AND pr.stage_id = t.stage_id
+LEFT JOIN part_stage_waits pw
+  ON pw.part_id = c.part_id AND pw.stage_id = t.stage_id
 WHERE (?2 IS NULL OR w.id = ?2)
   -- the live_tasks conditions, inlined: these joins are already here
   AND t.archived_at IS NULL AND w.archived_at IS NULL
@@ -1533,6 +1801,16 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
             _rounding(r['seconds_rounding'], rounding),
           ),
           worked: Duration(milliseconds: r['worked_ms'] as int),
+          ownDueRevisions: r['own_revs'] as int,
+          partDueRevisions: r['part_revs'] as int,
+          ownFirstDueAt: utc(r['own_first']),
+          partFirstDueAt: utc(r['part_first']),
+          ownWaitState: r['wait_state'] as int?,
+          ownWaitReason: r['wait_reason'] as String?,
+          ownWaitUntil: utc(r['wait_until']),
+          partWaiting: r['part_waiting'] == 1,
+          partWaitReason: r['part_wait_reason'] as String?,
+          partWaitUntil: utc(r['part_wait_until']),
         ),
     ];
   }
@@ -1892,10 +2170,18 @@ GROUP BY s.name;''',
 
   /// Sets or clears one task's own production deadline (a cut's override
   /// of its part's).
-  void setTaskDue(int taskId, DateTime? dueAt) => db.execute(
-    'UPDATE tasks SET due_at = ? WHERE id = ?;',
-    [_ms(dueAt), taskId],
-  );
+  ///
+  /// Like [setPartDue]: corrects the revision in force; null removes the
+  /// task's own deadline, every revision.
+  void setTaskDue(int taskId, DateTime? dueAt) => _transaction(() {
+    final target = DueTarget.task(taskId);
+    if (dueAt == null) {
+      _deleteRevisions(target);
+      _syncDue(target);
+    } else {
+      _setCurrentDue(target, dueAt);
+    }
+  });
 
   /// Sets or clears (null) when production work began for a part × stage.
   void setPartKickoff(int partId, int stageId, DateTime? kickoffAt) {

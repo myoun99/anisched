@@ -28,6 +28,8 @@ class StatsFact {
     this.doneAt,
     this.dueAt,
     this.submittedDueAt,
+    this.firstDueAt,
+    this.dueExtensions = 0,
     this.planStartAt,
     this.planEndAt,
     this.pay,
@@ -58,6 +60,11 @@ class StatsFact {
   /// The deadline in force when the task was first handed in — what
   /// adherence is measured against (falls back to [dueAt]).
   final DateTime? submittedDueAt;
+
+  /// The first deadline given (revision 1), and how many times it was
+  /// extended since.
+  final DateTime? firstDueAt;
+  final int dueExtensions;
   final DateTime? planStartAt;
   final DateTime? planEndAt;
 
@@ -164,6 +171,24 @@ class Stats {
       .where((e) => e.key > 0)
       .fold(0, (sum, e) => sum + e.value);
 
+  /// The same against the FIRST deadline (revision 1), whatever was
+  /// extended since.
+  final Map<int, int> latenessFirst = {};
+
+  int get onTimeFirst => latenessFirst.entries
+      .where((e) => e.key <= 0)
+      .fold(0, (sum, e) => sum + e.value);
+  int get lateFirst => latenessFirst.entries
+      .where((e) => e.key > 0)
+      .fold(0, (sum, e) => sum + e.value);
+
+  /// Handed cuts by how many times their deadline was extended (0 = never).
+  final Map<int, int> extensions = {};
+
+  /// Handed cuts whose deadline was extended, by work days gained (current
+  /// deadline − first).
+  final Map<int, int> extendedDays = {};
+
   /// Take → handed cuts that reached it (1 = right first time).
   final Map<int, int> takes = {};
 
@@ -262,15 +287,27 @@ Stats computeStats({
       }
       periodOf(f.submittedAt!)?.handed++;
       s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
+      final handedAt = f.submittedAt!;
+      int lateBy(DateTime due) {
+        var days = (day(handedAt).difference(day(due)).inHours / 24).round();
+        if (handedAt.isAfter(due) && days < 1) days = 1;
+        if (!handedAt.isAfter(due) && days > 0) days = 0;
+        return days;
+      }
+
       final due = f.submittedDueAt ?? f.dueAt;
       if (due == null) {
         s.noDue++;
       } else {
-        final handedAt = f.submittedAt!;
-        var days = (day(handedAt).difference(day(due)).inHours / 24).round();
-        if (handedAt.isAfter(due) && days < 1) days = 1;
-        if (!handedAt.isAfter(due) && days > 0) days = 0;
-        s.lateness.update(days, (n) => n + 1, ifAbsent: () => 1);
+        s.lateness.update(lateBy(due), (n) => n + 1, ifAbsent: () => 1);
+        final first = f.firstDueAt ?? due;
+        s.latenessFirst.update(lateBy(first), (n) => n + 1, ifAbsent: () => 1);
+        s.extensions.update(f.dueExtensions, (n) => n + 1, ifAbsent: () => 1);
+        if (f.dueExtensions > 0 && f.dueAt != null) {
+          final gained = (day(f.dueAt!).difference(day(first)).inHours / 24)
+              .round();
+          s.extendedDays.update(gained, (n) => n + 1, ifAbsent: () => 1);
+        }
       }
     }
     if (inRange(f.doneAt)) {

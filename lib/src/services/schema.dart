@@ -45,7 +45,62 @@ CREATE TABLE work_intervals (
   const Migration(9, _v9KickoffAndOrder),
   const Migration(10, _v10RolesPinsSharedCuts),
   const Migration(11, _v11SubmittedDue),
+  const Migration(12, _v12DueRevisionsAndWaits),
 ];
+
+/// Deadlines in revisions (1st, 2nd … — a deadline extended after talking
+/// it over) and the "waiting" flag (유저 2026-11-28).
+///
+/// `due_revisions` keeps every revision of a part × stage deadline or of a
+/// task's own; the existing `part_stage_dues.due_at` / `tasks.due_at`
+/// stay as the CURRENT (last) revision, kept in step by the store, so every
+/// reader keeps working. Existing deadlines become revision 1.
+///
+/// Waiting: a part × stage row in `part_stage_waits` puts its cuts on hold;
+/// a task's `wait_state` overrides it (1 waiting, 0 not, NULL follow).
+void _v12DueRevisionsAndWaits(Database db) {
+  final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+  for (final sql in [
+    '''
+CREATE TABLE due_revisions (
+  id INTEGER PRIMARY KEY,
+  part_id INTEGER REFERENCES parts(id),
+  stage_id INTEGER REFERENCES work_stages(id),
+  task_id INTEGER REFERENCES tasks(id),
+  revision INTEGER NOT NULL CHECK (revision >= 1),
+  due_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK ((task_id IS NULL AND part_id IS NOT NULL AND stage_id IS NOT NULL)
+      OR (task_id IS NOT NULL AND part_id IS NULL AND stage_id IS NULL))
+);''',
+    'CREATE UNIQUE INDEX due_revisions_part ON due_revisions'
+        '(part_id, stage_id, revision) WHERE task_id IS NULL;',
+    'CREATE UNIQUE INDEX due_revisions_task ON due_revisions'
+        '(task_id, revision) WHERE task_id IS NOT NULL;',
+    'INSERT INTO due_revisions (part_id, stage_id, revision, due_at, '
+        'created_at) SELECT part_id, stage_id, 1, due_at, $now '
+        'FROM part_stage_dues;',
+    'INSERT INTO due_revisions (task_id, revision, due_at, created_at) '
+        'SELECT id, 1, due_at, COALESCE(received_at, $now) FROM tasks '
+        'WHERE due_at IS NOT NULL;',
+    '''
+CREATE TABLE part_stage_waits (
+  part_id INTEGER NOT NULL REFERENCES parts(id),
+  stage_id INTEGER NOT NULL REFERENCES work_stages(id),
+  reason TEXT,
+  until_at INTEGER,
+  since_at INTEGER NOT NULL,
+  PRIMARY KEY (part_id, stage_id)
+);''',
+    'ALTER TABLE tasks ADD COLUMN wait_state INTEGER '
+        'CHECK (wait_state IN (0, 1));',
+    'ALTER TABLE tasks ADD COLUMN wait_reason TEXT;',
+    'ALTER TABLE tasks ADD COLUMN wait_until INTEGER;',
+    'ALTER TABLE tasks ADD COLUMN wait_since INTEGER;',
+  ]) {
+    db.execute(sql);
+  }
+}
 
 /// The deadline in force when a task was first handed in, so deadline
 /// adherence does not move when a deadline is edited later. Existing
