@@ -18,7 +18,12 @@ class SelectionBar extends StatelessWidget {
     this.allWaiting,
     this.onHandOff,
     this.allHandedOff,
+    this.onDue,
   });
+
+  /// Gives the picked cuts their own deadline (a new round each); null
+  /// hides it.
+  final VoidCallback? onDue;
 
   /// Takes the picked tasks off the user (引き上げ), or brings back ones
   /// already pulled; null hides it.
@@ -63,6 +68,13 @@ class SelectionBar extends StatelessWidget {
               iconOf(st),
               st.label,
               on ? () => onApply!(st) : null,
+            ),
+          if (onDue != null)
+            _Action(
+              const Key('pick-due'),
+              Icons.event_outlined,
+              S.due.t,
+              n > 0 ? onDue : null,
             ),
           if (onHold != null)
             _Action(

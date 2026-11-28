@@ -143,4 +143,24 @@ void main() {
     expect(latest().planStartAt!.toLocal().day, 28);
     expect(latest().planEndAt!.toLocal().day, 29, reason: 'the end stays');
   });
+
+  testWidgets('picked cuts get their own deadline from the bar', (t) async {
+    final store = await pumpShell(t, AppView.list);
+    final g = store.partGroups().firstWhere((g) => g.partId != null);
+    await t.tap(find.byKey(Key('line-${g.key}')));
+    await t.pump();
+    final task = g.tasks.first;
+    await t.longPress(find.byKey(Key('cut-${task.id}')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('pick-due')));
+    await t.pump();
+    expect(find.text('마감 날짜'), findsOneWidget);
+    await pickDay(t, '26');
+    final row = store
+        .partGroups()
+        .expand((x) => x.tasks)
+        .firstWhere((x) => x.id == task.id);
+    expect(row.ownDueAt!.toLocal().day, 26);
+    expect(row.dueAt!.toLocal().day, 26, reason: 'over the part');
+  });
 }

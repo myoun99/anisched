@@ -179,6 +179,40 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 8: the same cuts at two stages, one line (「LO・原画」).
+  'bundle': (AppView.list, (t, size) async {}),
+  // …opened: its stages, the first one opened too.
+  'bundle-open': (
+    AppView.list,
+    (t, size) async {
+      final bundle = byKeyPrefix('line-bundle:').first;
+      await t.ensureVisible(bundle);
+      await t.pump();
+      await t.tap(bundle);
+      await t.pump();
+      final id = (t.widget(bundle).key! as ValueKey<String>).value.split(
+        ':',
+      )[2];
+      final stage = byKeyPrefix('line-part:$id:').last;
+      await t.ensureVisible(stage);
+      await t.pump();
+      await t.tap(stage);
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Round 8: a work bar tapped open, its panel beside the board.
+  'work-open': (
+    AppView.work,
+    (t, size) async {
+      await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
+      await t.pump();
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // Round 7: the register screen's top (how many rows the roles take).
+  'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
   'stats': (
     AppView.stats,
@@ -247,8 +281,74 @@ final scenarios = <String, (AppView, Scenario)>{
 void main() {
   final out = Directory('build/captures')..createSync(recursive: true);
   setUpAll(loadFonts);
-
   final only = Platform.environment['CAPTURE']?.split(',').toSet();
+
+  // Round 8: bars of 1–6 days, drawn 4× — the label runs edge to edge
+  // (the end grips lie over it), condensing before it is cut.
+  for (final dark in [false, true]) {
+    final name = dark ? 'bar-zoom-dark' : 'bar-zoom';
+    if (only != null && !only.contains('bar-zoom')) continue;
+    testWidgets(name, (t) async {
+      const size = Size(420, 300);
+      t.view.physicalSize = size * 4;
+      t.view.devicePixelRatio = 4;
+      addTearDown(t.view.reset);
+      final shot = GlobalKey();
+      final window = ChartWindow(DateTime(2026, 11, 20), 7);
+      await t.pumpWidget(
+        RepaintBoundary(
+          key: shot,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: dark ? AppTheme.dark() : AppTheme.light(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      for (final days in [1, 2, 3, 4, 6])
+                        SizedBox(
+                          height: ChartBoard.rowExtent,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: AppColors.of(context).line,
+                                ),
+                              ),
+                            ),
+                            child: ChartBar(
+                              window: window,
+                              start: DateTime(2026, 11, 20),
+                              end: DateTime(2026, 11, 19 + days),
+                              color: Theme.of(context).colorScheme.primary,
+                              textColor: Colors.white,
+                              label: '별빛 정류장 #07 · 원화 · 4 cut',
+                              onDates: (a, b) {},
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.pump();
+      final boundary =
+          shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      await t.runAsync(() async {
+        final image = await boundary.toImage(pixelRatio: 4);
+        final png = await image.toByteData(format: ui.ImageByteFormat.png);
+        File('${out.path}/$name.png')
+            .writeAsBytesSync(png!.buffer.asUint8List());
+      });
+    });
+  }
+
   for (final dark in [false, true]) {
     for (final MapEntry(key: base, value: (view, act)) in scenarios.entries) {
       if (only != null && !only.contains(base)) continue;
@@ -270,10 +370,13 @@ void main() {
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
+          if (base.startsWith('bundle')) prepareBundles(store);
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
           }
+          // Real shadows (tests draw them as solid outlines by default).
+          debugDisableShadows = false;
           final shot = GlobalKey();
           await t.pumpWidget(
             RepaintBoundary(
@@ -308,6 +411,7 @@ void main() {
             File('${out.path}/$name-$label.png')
                 .writeAsBytesSync(png!.buffer.asUint8List());
           });
+          debugDisableShadows = true;
         });
       }
     }
@@ -334,4 +438,21 @@ void prepareHolds(CatalogueStore store) {
     until: now.add(const Duration(days: 4)),
   );
   store.setTaskWaiting(a.tasks.last.id, waiting: true, reason: '修正待ち');
+}
+
+/// 별빛 #07 parts B and C get 原画 after their LO: two bundles.
+void prepareBundles(CatalogueStore store) {
+  final lo = [
+    for (final g in store.partGroups())
+      if (g.workTitle == '별빛 정류장' && g.stageName == 'LO') g,
+  ];
+  for (final (i, g) in lo.indexed) {
+    final genga = store.stages(g.workId).firstWhere((s) => s.name == '원화').id;
+    store.addTasksForPart(g.partId!, genga);
+    store.setPartDue(
+      g.partId!,
+      genga,
+      DateTime(now.year, now.month, now.day + 5 + i * 4, 23, 59),
+    );
+  }
 }

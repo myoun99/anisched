@@ -208,7 +208,7 @@ class _TimerBarState extends State<TimerBar> {
                           flex: 2,
                           child: _name(
                             'timer-episode',
-                            episodeLabel(g.episodeNumber),
+                            g.episodeNumber,
                             widget.onPickEpisode,
                             style: TextStyle(color: c.muted, fontSize: 12),
                           ),

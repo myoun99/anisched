@@ -87,16 +87,14 @@ void main() {
     expect(groupTitle(loose), 'C001~C003, C007, C008');
   });
 
-  test('a bare episode number reads in the document style; names stay', () {
+  test('a typed episode number reads as it will once stored', () {
     addTearDown(() => episodeStyle.value = defaultEpisodeStyle);
-    expect(episodeLabel('7'), '#07');
-    expect(episodeLabel('#07'), '#07');
-    expect(episodeLabel('극장판'), '극장판');
+    expect(episodeShown('7'), '#07');
+    expect(episodeShown('#7'), '#07');
+    expect(episodeShown(' 12 '), '#12');
+    expect(episodeShown('SP'), 'SP');
     episodeStyle.value = (prefix: '', digits: 3);
-    expect(episodeLabel('7'), '007');
-    expect(typedEpisodeNumber('#7'), 7);
-    expect(typedEpisodeNumber(' 12 '), 12);
-    expect(typedEpisodeNumber('SP'), isNull);
+    expect(episodeShown('7'), '007');
   });
 
   test('stages read in the user language; typed names stay', () {

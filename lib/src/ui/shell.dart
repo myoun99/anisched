@@ -16,9 +16,11 @@ import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'document_menu.dart';
+import 'empty_start.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
+import 'instant.dart';
 import 'part_line.dart';
 import 'pick_field.dart';
 import 'time_editor.dart';
@@ -66,7 +68,12 @@ class AppShell extends StatefulWidget {
     this.session,
     this.picker = const PlatformPicker(),
     this.remote,
+    this.onSample,
   });
+
+  /// Fills an empty document with example work (the web preview's first
+  /// run); null offers only 등록.
+  final void Function(CatalogueStore store)? onSample;
 
   final AppView initialView;
 
@@ -99,6 +106,9 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
+
+  /// The first read has come back (an empty document is then truly empty).
+  bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
   LaneLayout? _lanes;
@@ -168,6 +178,7 @@ class _AppShellState extends State<AppShell> {
     ).wait;
     if (!mounted) return;
     setState(() {
+      _loaded = true;
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
@@ -330,7 +341,7 @@ class _AppShellState extends State<AppShell> {
             search: (q) async => [
               for (final k in keys)
                 if (q.isEmpty || eps[k]!.contains(q))
-                  (value: k, title: episodeLabel(eps[k]!), note: null),
+                  (value: k, title: eps[k]!, note: null),
             ],
           );
     if (picked == null || picked.value == current) return;
@@ -504,6 +515,29 @@ class _AppShellState extends State<AppShell> {
       );
   }
 
+  /// The picked cuts' own deadline: one date, a new round for each cut
+  /// (their own deadline over the part's).
+  Future<void> _dueForPicked() async {
+    final picked = _pickedTasks;
+    if (picked.isEmpty) return;
+    final now = widget.clock();
+    final d = await showInstantDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 3),
+      initialDate: (picked.first.dueAt ?? now).toLocal(),
+      title: S.pickDue.t,
+    );
+    if (d == null || !mounted) return;
+    final due = DateTime(d.year, d.month, d.day, 23, 59);
+    _write((store) {
+      for (final t in picked) {
+        store.extendDue(DueTarget.task(t.id), due);
+      }
+    });
+    _selection.clear();
+  }
+
   /// The picked tasks, for the selection bar's hold button.
   List<TaskRow> get _pickedTasks {
     final ids = _selection.ids;
@@ -545,6 +579,15 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _viewFor(AppView v, ScreenLayout layout) {
+    const plans = {AppView.list, AppView.timeline, AppView.work};
+    if (_loaded && _works.isEmpty && plans.contains(v)) {
+      final sample = widget.onSample;
+      final store = widget.store;
+      return EmptyStart(
+        onRegister: () => _select(AppView.register),
+        onSample: sample == null || store == null ? null : () => _write(sample),
+      );
+    }
     final now = widget.clock();
     final rest =
         widget.store?.settings.restWeekdays ??
@@ -593,6 +636,7 @@ class _AppShellState extends State<AppShell> {
       ),
       AppView.work => WorkView(
         lanes: _lanes,
+        wiring: wiring,
         parts: {for (final g in _groups) g.key: g},
         now: now,
         layout: layout,
@@ -632,14 +676,8 @@ class _AppShellState extends State<AppShell> {
         onCreateEpisode: writable
             ? (work, typed) {
                 var id = 0;
-                // A typed number is stored in the document's style (#07).
-                final n = typedEpisodeNumber(typed);
-                _write(
-                  (s) => id = s.addEpisode(
-                    work,
-                    n == null ? typed.trim() : s.episodeNumberFor(n),
-                  ),
-                );
+                // The store keeps the typed number's value (#07 → 7).
+                _write((s) => id = s.addEpisode(work, typed));
                 return id;
               }
             : null,
@@ -694,6 +732,7 @@ class _AppShellState extends State<AppShell> {
               ? null
               : () => unawaited(_toggleHold(_pickedTasks)),
           onHandOff: widget.store == null ? null : _handOff,
+          onDue: widget.store == null ? null : () => unawaited(_dueForPicked()),
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);

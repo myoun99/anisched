@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../instant.dart';
 
+import '../../controllers/unit_bundles.dart';
 import '../../core/size_class.dart';
 import '../../models/progress.dart';
 import '../theme.dart';
@@ -97,15 +98,50 @@ class _SheetViewState extends State<SheetView> {
               (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)),
         );
 
-  void _toggle(PartGroup p) => setState(() {
-    _selected = p.key;
-    if (!_expanded.remove(p.key)) _expanded.add(p.key);
+  void _toggle(String key) => setState(() {
+    _selected = key;
+    if (!_expanded.remove(key)) _expanded.add(key);
   });
+
+  /// One unit's line, and its details when open.
+  Widget _unit(PartGroup p, {UnitBundle? bundle}) {
+    final sel = widget.wiring.selection;
+    final key = bundle?.key ?? p.key;
+    final open = _expanded.contains(key);
+    final whole = bundle?.together ?? p;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PartLine(
+          group: p,
+          bundle: bundle,
+          now: widget.now,
+          dayStartMinutes: widget.dayStartMinutes,
+          expanded: open,
+          selected: _selected == key,
+          signals: widget.wiring.signals[p.key],
+          picked: sel?.of(whole) ?? Picked.none,
+          onDue: widget.wiring.onDue == null
+              ? null
+              : (d) => widget.wiring.onDue!(p, d),
+          onLongPress: sel == null ? null : () => sel.toggleGroup(whole),
+          onTap: () => sel != null && !sel.isEmpty
+              ? sel.toggleGroup(whole)
+              : _toggle(key),
+        ),
+        if (open && bundle == null) widget.wiring.details(p),
+        // An open bundle lists its stages, each opening on its own.
+        if (open && bundle != null)
+          for (final s in bundle.stages)
+            Padding(padding: const EdgeInsets.only(left: 16), child: _unit(s)),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final parts = _visible;
+    final bundles = bundleUnits(_visible);
     final narrow = widget.layout.size == SizeClass.narrow;
     return ColoredBox(
       color: c.panel,
@@ -129,38 +165,15 @@ class _SheetViewState extends State<SheetView> {
           Expanded(
             child: ListenableBuilder(
               listenable: widget.wiring.selection ?? const _Never(),
-              builder: (context, _) => _list(parts, (context, i) {
-                final p = parts[i];
-                final sel = widget.wiring.selection;
-                final open = _expanded.contains(p.key);
-                final body = Column(
-                  key: ValueKey(p.key),
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PartLine(
-                      group: p,
-                      now: widget.now,
-                      dayStartMinutes: widget.dayStartMinutes,
-                      expanded: open,
-                      selected: _selected == p.key,
-                      signals: widget.wiring.signals[p.key],
-                      picked: sel?.of(p) ?? Picked.none,
-                      onDue: widget.wiring.onDue == null
-                          ? null
-                          : (d) => widget.wiring.onDue!(p, d),
-                      onLongPress: sel == null
-                          ? null
-                          : () => sel.toggleGroup(p),
-                      onTap: () => sel != null && !sel.isEmpty
-                          ? sel.toggleGroup(p)
-                          : _toggle(p),
-                    ),
-                    if (open) widget.wiring.details(p),
-                  ],
+              builder: (context, _) => _list(bundles, (context, i) {
+                final b = bundles[i];
+                final body = KeyedSubtree(
+                  key: ValueKey(b.key),
+                  child: b.single ? _unit(b.lead) : _unit(b.lead, bundle: b),
                 );
                 if (widget.onReorder == null) return body;
                 return Row(
-                  key: ValueKey(p.key),
+                  key: ValueKey(b.key),
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ReorderableDragStartListener(
@@ -168,7 +181,7 @@ class _SheetViewState extends State<SheetView> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.grab,
                         child: SizedBox(
-                          key: Key('grip-${p.key}'),
+                          key: Key('grip-${b.key}'),
                           width: 22,
                           height: 52,
                           child: Icon(
@@ -190,7 +203,7 @@ class _SheetViewState extends State<SheetView> {
     );
   }
 
-  Widget _list(List<PartGroup> parts, IndexedWidgetBuilder item) {
+  Widget _list(List<UnitBundle> parts, IndexedWidgetBuilder item) {
     final reorder = widget.onReorder;
     if (reorder == null) {
       return ListView.builder(
@@ -207,9 +220,13 @@ class _SheetViewState extends State<SheetView> {
       itemCount: parts.length,
       itemBuilder: item,
       onReorderItem: (from, to) {
-        final keys = [for (final p in parts) p.key];
-        keys.insert(to, keys.removeAt(from));
-        reorder(keys);
+        // A bundle moves all its stages together.
+        final moved = [...parts];
+        moved.insert(to, moved.removeAt(from));
+        reorder([
+          for (final b in moved)
+            for (final s in b.stages) s.key,
+        ]);
       },
     );
   }

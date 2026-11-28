@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Replaced by `flutter build web --base-href /anisched/` for Pages. -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Anisched — schedule and pay for animators.">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1C1F27" media="(prefers-color-scheme: dark)">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Anisched">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+
+  <title>Anisched</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { margin: 0; height: 100%; background: #F4F5F7; }
+    @media (prefers-color-scheme: dark) { html, body { background: #14161C; } }
+    /* Shown until Flutter draws its first frame. */
+    #loading { position: fixed; inset: 0; display: grid; place-items: center;
+      font: 15px system-ui, sans-serif; color: #9CA1AC; }
+  </style>
+</head>
+<body>
+  <div id="loading">Anisched</div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var l = document.getElementById('loading');
+      if (l) l.remove();
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

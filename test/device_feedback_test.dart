@@ -112,7 +112,8 @@ void main() {
     await t.pump();
     expect(FocusManager.instance.primaryFocus?.context?.widget, isNotNull);
     expect(t.testTextInput.isVisible, isTrue);
-    await t.tapAt(t.getTopLeft(count) - const Offset(0, 40));
+    // A sure empty spot beside the field: the plain 「컷 수」 caption.
+    await t.tap(find.textContaining('컷 수', findRichText: true));
     await t.pump();
     expect(t.testTextInput.isVisible, isFalse);
   });
