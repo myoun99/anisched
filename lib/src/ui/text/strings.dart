@@ -91,6 +91,7 @@ enum S {
   // Units of work.
   partTitle('Part {p}', '{p}パート', '{p}파트', 'Partie {p}', '{p}部分'),
   noPart('No part', 'パートなし', '파트 없음', 'Sans partie', '无部分'),
+  noClient('No client', '会社なし', '회사 없음', 'Sans client', '无公司'),
   storyboard('Storyboard', '絵コンテ', '콘티', 'Storyboard', '分镜'),
 
   // Plan signals.
@@ -181,6 +182,54 @@ enum S {
   saved('Saved', '保存済み', '저장됨', 'Enregistré', '已保存'),
   saving('Saving', '保存待ち', '저장 대기', 'À enregistrer', '待保存'),
   notSaved('Not saved', '未保存', '저장 안 됨', 'Non enregistré', '未保存'),
+
+  // A document that would not open, save or read again.
+  troubleUnreachable(
+    'Can\'t reach the file',
+    'ファイルに届きません',
+    '파일에 닿을 수 없음',
+    'Fichier inaccessible',
+    '无法访问文件',
+  ),
+  troubleEmpty(
+    'The file is empty (0 bytes): still downloading, or a save was cut off',
+    'ファイルが空です（0 バイト）：ダウンロード中か、保存が途中で切れました',
+    '파일이 비어 있음(0바이트) — 저장이 중간에 끊겼거나 아직 내려받는 중',
+    'Fichier vide (0 octet) : encore en téléchargement, ou enregistrement interrompu',
+    '文件为空（0 字节）：仍在下载，或保存被中断',
+  ),
+  troubleNotDocument(
+    'Not an Anisched document',
+    'Anisched の文書ではありません',
+    'Anisched 문서가 아님',
+    'Pas un document Anisched',
+    '不是 Anisched 文档',
+  ),
+  troubleNewer(
+    'Made by a newer Anisched: update the app',
+    '新しい Anisched で作られた文書：アプリを更新してください',
+    '더 새 Anisched 로 만든 문서: 앱을 업데이트하세요',
+    'Créé par un Anisched plus récent : mettez l\'app à jour',
+    '由更新版本的 Anisched 创建：请更新应用',
+  ),
+  troubleDamaged(
+    'The file is damaged',
+    'ファイルが壊れています',
+    '파일이 손상됨',
+    'Fichier endommagé',
+    '文件已损坏',
+  ),
+  troubleOther(
+    'Something went wrong with the file',
+    'ファイルで問題が起きました',
+    '파일에 문제가 생겼음',
+    'Un problème est survenu avec le fichier',
+    '文件出现问题',
+  ),
+  troubleDetails('Details', '詳細', '자세히', 'Détails', '详情'),
+  troubleCopy('Copy', 'コピー', '복사', 'Copier', '复制'),
+  troubleCopied('Copied', 'コピーしました', '복사함', 'Copié', '已复制'),
+  troubleRetry('Try again', '再試行', '다시 시도', 'Réessayer', '重试'),
 
   // Work lanes.
   autoPlace('Auto', '自動配置', '자동 배치', 'Auto', '自动排列'),
@@ -315,6 +364,18 @@ enum S {
   resetForm('Reset', 'リセット', '초기화', 'Réinitialiser', '重置'),
   inUse('In use', '使用中', '사용 중', 'Utilisé', '使用中'),
   rulerRows('Ruler', '目盛り', '날짜 줄', 'Règle', '标尺'),
+  statsSummary('Summary', '概要', '요약', 'Résumé', '概要'),
+  statsTable('Table', '明細', '상세 표', 'Tableau', '明细'),
+  colPay('Pay', '金額', '금액', 'Montant', '金额'),
+  colRetakes('Retakes', 'リテイク', '리테이크', 'Retakes', '返修'),
+  timerRuns(
+    '{n} timer runs',
+    'タイマー {n}回',
+    '타이머 구간 {n}',
+    '{n} chronos',
+    '计时 {n} 段',
+  ),
+  retakeRound('Take {n}', 'T{n}', '{n}회차', 'Prise {n}', '第{n}次'),
   rulerYear('Year', '年', '년도', 'Année', '年'),
   rulerMonth('Month', '月', '월', 'Mois', '月'),
   rulerWeekday('Weekday', '曜日', '요일', 'Jour', '星期'),

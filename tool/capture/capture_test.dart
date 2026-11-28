@@ -3,6 +3,7 @@
 //   flutter test tool/capture/capture_test.dart
 // PNGs land in build/captures/<scenario>-<size>.png. CAPTURE=a,b limits
 // the run to those scenarios (light and dark).
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -10,13 +11,16 @@ import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/device_settings.dart';
+import 'package:anisched/src/services/document_rows.dart';
 import 'package:anisched/src/services/undo_history.dart';
 import 'package:anisched/src/services/work_timer.dart';
+import 'package:anisched/src/ui/document_trouble.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
+import 'package:anisched/src/ui/views/stats_view.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/rendering.dart';
@@ -350,6 +354,23 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // A document that would not open: one line, details opened.
+  'doc-trouble': (
+    AppView.list,
+    (t, size) async {
+      final context = t.element(find.byType(AppShell));
+      unawaited(
+        showDocumentTrouble(
+          context,
+          NotADocumentException('일정.anisched', 'not an Anisched document'),
+          retry: () async {},
+        ),
+      );
+      await t.pump();
+      await t.tap(find.byKey(const Key('doc-trouble-details')));
+      await t.pump();
+    },
+  ),
   // Archived work shown by the filter (one card put away), faded.
   'archived-shown': (
     AppView.list,
@@ -428,6 +449,21 @@ final scenarios = <String, (AppView, Scenario)>{
     (t, size) async {
       chartMonthView.value = true;
       await t.pump();
+    },
+  ),
+  // The stats' detail table, the first client opened down to a cut.
+  'stats-table': (
+    AppView.stats,
+    (t, size) async {
+      statsAsTable.value = true;
+      await t.pump();
+      await t.pump();
+      for (var depth = 0; depth < 5; depth++) {
+        final rows = byKeyPrefix('stats-row-');
+        if (rows.evaluate().length <= depth) break;
+        await t.tap(rows.at(depth));
+        await t.pump();
+      }
     },
   ),
   // ③ The register screen's cut grid with its margins.
@@ -542,6 +578,7 @@ void main() {
         testWidgets('$name $label', (t) async {
           Folds.cutsInDetails.value = false;
           chartMonthView.value = false;
+          statsAsTable.value = false;
           rulerRows[RulerTab.timeline]!.value = (
             year: false,
             month: true,

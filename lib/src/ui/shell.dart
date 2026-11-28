@@ -1143,6 +1143,10 @@ class _AppShellState extends State<AppShell> {
                                   session: widget.session!,
                                   picker: widget.picker,
                                   remote: remote,
+                                  recheck: SaveState.recheckOf(
+                                    widget.session!,
+                                    widget.remote,
+                                  ),
                                 ),
                               ),
                         actions: selectionBar,

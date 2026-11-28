@@ -12,6 +12,7 @@ import '../text/strings.dart';
 import '../theme.dart';
 import '../sliding_row.dart';
 import '../widgets.dart';
+import 'stats_tree.dart';
 import '../fit_text.dart';
 import '../client_chip.dart';
 
@@ -68,7 +69,31 @@ class StatsView extends StatefulWidget {
   State<StatsView> createState() => _StatsViewState();
 }
 
+/// The statistics as their summary (cards) or as the detail table — this
+/// device's choice.
+final statsAsTable = ValueNotifier<bool>(false);
+
 class _StatsViewState extends State<StatsView> {
+  /// The detail table's tree (its clients); null while it loads — a
+  /// big document takes a moment.
+  List<StatsNode>? _tree;
+  int _treeAsked = 0;
+
+  Future<void> _loadTree() async {
+    final r = widget.reader;
+    if (r == null) return;
+    final ask = ++_treeAsked;
+    final (from, to) = _span;
+    if (_tree != null) setState(() => _tree = null);
+    final root = await r.statsTree(
+      from: from,
+      to: to,
+      clientId: widget.clientId,
+      workId: widget.workId,
+    );
+    if (mounted && ask == _treeAsked) setState(() => _tree = root.children);
+  }
+
   StatsBucket _bucket = StatsBucket.week;
   StatsRange _range = StatsRange.months3;
   Stats? _stats;
@@ -78,7 +103,27 @@ class _StatsViewState extends State<StatsView> {
   @override
   void initState() {
     super.initState();
+    statsAsTable.addListener(_onTable);
     if (widget.visible) unawaited(_load());
+    _onTable();
+  }
+
+  /// The period shown: the range back from the end of today.
+  (DateTime, DateTime) get _span {
+    final n = widget.now;
+    final to = DateTime(n.year, n.month, n.day + 1);
+    return (DateTime(to.year, to.month, to.day - _range.days), to);
+  }
+
+  @override
+  void dispose() {
+    statsAsTable.removeListener(_onTable);
+    super.dispose();
+  }
+
+  /// The table chosen (here or remembered): its tree loads.
+  void _onTable() {
+    if (statsAsTable.value && widget.visible) unawaited(_loadTree());
   }
 
   @override
@@ -89,6 +134,7 @@ class _StatsViewState extends State<StatsView> {
     if (widget.visible &&
         (_loaded != widget.refresh || _stats == null || refilter)) {
       unawaited(_load());
+      _onTable();
     }
   }
 
@@ -97,9 +143,7 @@ class _StatsViewState extends State<StatsView> {
     if (r == null) return;
     final ask = ++_asked;
     _loaded = widget.refresh;
-    final n = widget.now;
-    final to = DateTime(n.year, n.month, n.day + 1);
-    final from = DateTime(to.year, to.month, to.day - _range.days);
+    final (from, to) = _span;
     final s = await r.stats(
       from: from,
       to: to,
@@ -116,6 +160,7 @@ class _StatsViewState extends State<StatsView> {
       _range = range ?? _range;
     });
     unawaited(_load());
+    _onTable();
   }
 
   @override
@@ -145,6 +190,18 @@ class _StatsViewState extends State<StatsView> {
                     ),
                 ],
               ),
+              ValueListenableBuilder<bool>(
+                valueListenable: statsAsTable,
+                builder: (context, table, _) => ToolbarButton(
+                  key: const Key('stats-table'),
+                  label: table ? S.statsSummary.t : S.statsTable.t,
+                  icon: table
+                      ? Icons.dashboard_outlined
+                      : Icons.table_rows_outlined,
+                  selected: table,
+                  onTap: () => statsAsTable.value = !table,
+                ),
+              ),
               PopupMenuButton<StatsRange>(
                 key: const Key('stats-range'),
                 tooltip: '',
@@ -168,20 +225,35 @@ class _StatsViewState extends State<StatsView> {
             ],
           ),
           Expanded(
-            child: s == null
-                ? const SizedBox.shrink()
-                : OwnScroll(
-                    builder: (controller) => Scrollbar(
-                      controller: controller,
-                      child: LayoutBuilder(
-                        builder: (context, box) => SingleChildScrollView(
-                          controller: controller,
-                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-                          child: _body(context, s, box.maxWidth - 28),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: statsAsTable,
+              builder: (context, table, summary) => table
+                  ? switch (_tree) {
+                      null => const Center(
+                        key: Key('stats-tree-loading'),
+                        child: CircularProgressIndicator(),
+                      ),
+                      final roots => StatsTreeTable(
+                        roots: roots,
+                        clientOf: (id) => widget.clients[id],
+                      ),
+                    }
+                  : summary!,
+              child: s == null
+                  ? const SizedBox.shrink()
+                  : OwnScroll(
+                      builder: (controller) => Scrollbar(
+                        controller: controller,
+                        child: LayoutBuilder(
+                          builder: (context, box) => SingleChildScrollView(
+                            controller: controller,
+                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                            child: _body(context, s, box.maxWidth - 28),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+            ),
           ),
         ],
       ),

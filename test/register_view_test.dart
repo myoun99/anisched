@@ -243,9 +243,7 @@ void main() {
     await t.pumpAndSettle();
   }
 
-  testWidgets('the foot: reset on the left, register on the right', (
-    t,
-  ) async {
+  testWidgets('the foot: reset on the left, register on the right', (t) async {
     await pumpRegister(t, const Size(390, 844));
     final reset = t.getRect(find.byKey(const Key('register-reset')));
     final add = t.getRect(find.byKey(const Key('register')));
