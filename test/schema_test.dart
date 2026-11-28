@@ -115,12 +115,10 @@ void main() {
       ..execute(
         "INSERT INTO cuts (episode_id, number, sort_key) VALUES (1, 'C1', 'c1'), (1, 'C2', 'c2'), (1, 'C3', 'c3')",
       )
-      ..execute(
-        '''
+      ..execute('''
 INSERT INTO tasks (stage_id, cut_id, status, submitted_at, done_at)
         VALUES (1, 1, 'submitted', 100, NULL), (1, 2, 'done', 100, 200),
-               (1, 3, 'in_progress', NULL, NULL)''',
-      );
+               (1, 3, 'in_progress', NULL, NULL)''');
     migrate(db);
     expect(
       db

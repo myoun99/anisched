@@ -192,4 +192,29 @@ void main() {
       expect(lanes.values.toSet(), {0, 1});
     });
   });
+
+  test('lines: add, rename, remove; pins follow the removal', () {
+    final db = openAppDatabase(':memory:');
+    addTearDown(db.close);
+    final store = CatalogueStore(db);
+    expect(store.lanes(), [null, null]);
+    expect(store.addLane(name: 'TV'), 2);
+    store.renameLane(0, 'movie');
+    expect(store.lanes(), ['movie', null, 'TV']);
+    store
+      ..pinLane('a', 0)
+      ..pinLane('b', 1)
+      ..pinLane('c', 2)
+      ..removeLane(1);
+    expect(store.lanes(), ['movie', 'TV']);
+    expect(store.settings.parallelLanes, 2);
+    final pins = {
+      for (final r in db.select('SELECT group_key, lane FROM lane_pins'))
+        r['group_key'] as String: r['lane'] as int,
+    };
+    expect(pins, {'a': 0, 'c': 1}); // b let go, c moved down
+    store.removeLane(0);
+    expect(() => store.removeLane(0), throwsStateError);
+    expect(() => store.renameLane(3, 'x'), throwsRangeError);
+  });
 }

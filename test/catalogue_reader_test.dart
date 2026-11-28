@@ -107,6 +107,7 @@ void main() {
       store.stats(from: from, to: to).total.cuts,
     );
     expect(await reader.holding(), store.holding());
+    expect(await reader.lanes(), store.lanes());
     final due = DueTarget.part(part, lo);
     expect(
       (await reader.dueRevisions(due)).map((r) => r.dueAt),

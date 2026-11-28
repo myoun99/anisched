@@ -1939,6 +1939,47 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// Lets every bar be placed automatically again.
   void clearLanePins() => db.execute('DELETE FROM lane_pins;');
 
+  // ---- lines (the work tab's lanes) ----
+  // The lane count and names live in the settings (parallel_lanes,
+  // lane_names); these keep them, and the pins, in step.
+
+  /// The lanes in order: their names, null for an unnamed one.
+  List<String?> lanes() => settings.laneNames;
+
+  /// Adds a lane at the end; answers its index.
+  int addLane({String? name}) => _transaction(() {
+    final names = [...settings.laneNames, _blank(name)];
+    settings
+      ..parallelLanes = names.length
+      ..laneNames = names;
+    return names.length - 1;
+  });
+
+  /// Removes lane [index]: bars pinned to it are let go, bars pinned to
+  /// later lanes move down one. The last lane cannot go.
+  void removeLane(int index) => _transaction(() {
+    final names = settings.laneNames;
+    RangeError.checkValidIndex(index, names, 'index');
+    if (names.length == 1) throw StateError('The last lane cannot go.');
+    db
+      ..execute('DELETE FROM lane_pins WHERE lane = ?;', [index])
+      ..execute('UPDATE lane_pins SET lane = lane - 1 WHERE lane > ?;', [
+        index,
+      ]);
+    names.removeAt(index);
+    settings
+      ..parallelLanes = names.length
+      ..laneNames = names;
+  });
+
+  /// Names lane [index]; null or blank leaves it unnamed.
+  void renameLane(int index, String? name) {
+    final names = settings.laneNames;
+    RangeError.checkValidIndex(index, names, 'index');
+    names[index] = _blank(name);
+    settings.laneNames = names;
+  }
+
   /// Saves the user's drag order: [groupKeys] (from [PartGroup.key]) in
   /// display order, replacing any earlier order. Units not listed fall
   /// after the listed ones, by deadline.

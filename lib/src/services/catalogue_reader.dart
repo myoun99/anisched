@@ -64,6 +64,9 @@ abstract interface class CatalogueReader {
   /// See [CatalogueStore.holding].
   Future<({int inHand, int waiting})> holding();
 
+  /// See [CatalogueStore.lanes].
+  Future<List<String?>> lanes();
+
   /// See [CatalogueStore.stats].
   Future<Stats> stats({
     required DateTime from,
@@ -194,6 +197,9 @@ class SyncCatalogueReader implements CatalogueReader {
 
   @override
   Future<({int inHand, int waiting})> holding() => _run(store.holding);
+
+  @override
+  Future<List<String?>> lanes() => _run(store.lanes);
 
   @override
   Future<Stats> stats({
@@ -463,6 +469,9 @@ class BackgroundCatalogueReader implements CatalogueReader {
 
   @override
   Future<({int inHand, int waiting})> holding() => _ask((s) => s.holding());
+
+  @override
+  Future<List<String?>> lanes() => _ask((s) => s.lanes());
 
   @override
   Future<Stats> stats({
