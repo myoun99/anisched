@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 
 /// One forward-only schema step. [version] is the `user_version` the
 /// database has after [apply] runs.
@@ -8,7 +8,7 @@ class Migration {
   const Migration(this.version, this.apply);
 
   final int version;
-  final void Function(Database db) apply;
+  final void Function(CommonDatabase db) apply;
 }
 
 /// Every migration, oldest first. Append only — never edit a shipped step;
@@ -65,7 +65,7 @@ CREATE TABLE work_intervals (
 /// dropped: 「LO 작감 수정」 → 「LO/작감」) in works, presets and roles; the
 /// default preset gains 동화 · 동화/동검 · 시아게 · 시아게/셀검 · 리테이크 ·
 /// 캐릭터디자인, and three single-stage roles join.
-void _v14DoneBeforeSubmitted(Database db) {
+void _v14DoneBeforeSubmitted(CommonDatabase db) {
   db
     ..execute('''
 UPDATE tasks SET status = 'submitted',
@@ -148,7 +148,7 @@ WHERE preset_id = ?1
 /// per-work cut format goes. The document keeps the format its works use
 /// most (ties: the newest work's); none of them, or the default, writes
 /// nothing. And more ranks from Anicel's checker axis.
-void _v15NumberStylesAndRanks(Database db) {
+void _v15NumberStylesAndRanks(CommonDatabase db) {
   final used = db.select('''
 SELECT cut_prefix, cut_digits FROM works
 GROUP BY cut_prefix, cut_digits
@@ -206,7 +206,7 @@ ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1;''');
 /// names become one value (`C1` and `C001` in one episode) both stay as
 /// typed. And 감독 · 총감독 also check LO and 원화 (Anicel's checkers per
 /// work allow it).
-void _v16NumbersAsValues(Database db) {
+void _v16NumbersAsValues(CommonDatabase db) {
   String prefixOf(String key, String fallback) {
     final rows = db.select('SELECT value FROM settings WHERE key = ?;', [key]);
     if (rows.isEmpty) return fallback;
@@ -295,7 +295,7 @@ void _v16NumbersAsValues(Database db) {
 /// A task taken off the user's hands (someone else does it now, 유저
 /// 2026-11-28): out of the lists and the pace, still in the time
 /// statistics. Not a delete.
-void _v13HandedOff(Database db) {
+void _v13HandedOff(CommonDatabase db) {
   db
     ..execute('ALTER TABLE tasks ADD COLUMN handed_off_at INTEGER;')
     ..execute('ALTER TABLE tasks ADD COLUMN handed_off_note TEXT;');
@@ -311,7 +311,7 @@ void _v13HandedOff(Database db) {
 ///
 /// Waiting: a part × stage row in `part_stage_waits` puts its cuts on hold;
 /// a task's `wait_state` overrides it (1 waiting, 0 not, NULL follow).
-void _v12DueRevisionsAndWaits(Database db) {
+void _v12DueRevisionsAndWaits(CommonDatabase db) {
   final now = DateTime.now().toUtc().millisecondsSinceEpoch;
   for (final sql in [
     '''
@@ -358,7 +358,7 @@ CREATE TABLE part_stage_waits (
 /// The deadline in force when a task was first handed in, so deadline
 /// adherence does not move when a deadline is edited later. Existing
 /// hand-ins take today's deadline — the best record there is.
-void _v11SubmittedDue(Database db) {
+void _v11SubmittedDue(CommonDatabase db) {
   db
     ..execute('ALTER TABLE tasks ADD COLUMN submitted_due_at INTEGER;')
     ..execute('''
@@ -370,7 +370,7 @@ WHERE submitted_at IS NOT NULL;''');
 /// Conventions: instants are UTC epoch milliseconds; money is an integer
 /// in the currency's smallest unit; rows are soft-deleted via
 /// `archived_at` because finished work must stay countable.
-void _v2Catalogue(Database db) {
+void _v2Catalogue(CommonDatabase db) {
   for (final sql in const [
     // closing_day NULL means the last day of the month.
     '''
@@ -503,13 +503,13 @@ class SchemaTooNewException implements Exception {
 
   @override
   String toString() =>
-      'Database schema v$found is newer than this build supports (v$supported).';
+      'CommonDatabase schema v$found is newer than this build supports (v$supported).';
 }
 
 /// Brings [db] up to the latest version. Each step runs in its own
 /// transaction together with its `user_version` bump, so a crash mid-way
 /// leaves the file at the last completed version, never half-migrated.
-void migrate(Database db, {List<Migration>? steps}) {
+void migrate(CommonDatabase db, {List<Migration>? steps}) {
   final all = steps ?? migrations;
   final target = all.isEmpty ? 0 : all.last.version;
   final current = db.userVersion;
@@ -532,7 +532,7 @@ void migrate(Database db, {List<Migration>? steps}) {
   }
 }
 
-void _v3PartsAndSettings(Database db) {
+void _v3PartsAndSettings(CommonDatabase db) {
   for (final sql in const [
     // A part is the bundle of cuts the user is assigned within an episode
     // ("part B, 11 cuts"). planned_cut_count may be known before the cut
@@ -577,7 +577,7 @@ LEFT JOIN part_stage_dues d
   }
 }
 
-void _v4StagePresets(Database db) {
+void _v4StagePresets(CommonDatabase db) {
   for (final sql in const [
     // A named, editable list of stages. A new work copies one; editing a
     // preset never changes existing works. Exactly one is the default.
@@ -627,14 +627,14 @@ CREATE INDEX stage_preset_items_preset
   }
 }
 
-void _v5WorkRounding(Database db) {
+void _v5WorkRounding(CommonDatabase db) {
   // NULL follows the app-wide setting.
   db.execute('''
 ALTER TABLE works ADD COLUMN seconds_rounding TEXT
   CHECK (seconds_rounding IN ('exact', 'up', 'down', 'nearest'));''');
 }
 
-void _v6PlansAndDefaultUnit(Database db) {
+void _v6PlansAndDefaultUnit(CommonDatabase db) {
   for (final sql in const [
     // Preselected when entering an episode's rates; rates keep their own.
     '''
@@ -660,7 +660,7 @@ CREATE TABLE part_stage_plans (
   }
 }
 
-void _v7DaysOff(Database db) {
+void _v7DaysOff(CommonDatabase db) {
   // Calendar days the user does not work (a trip, a holiday), as local
   // ISO dates — whole days, not instants, so they never shift with the
   // time zone. A single day has start = end.
@@ -675,7 +675,7 @@ CREATE TABLE days_off (
   db.execute('CREATE INDEX days_off_end ON days_off(end_date);');
 }
 
-void _v8LiveTasks(Database db) {
+void _v8LiveTasks(CommonDatabase db) {
   // A task is live only when it and everything above it is: archiving a
   // work, episode, part, cut or storyboard hides what lies beneath without
   // touching it, so restoring brings it all back. Hidden stages do not
@@ -696,7 +696,7 @@ WHERE t.archived_at IS NULL AND w.archived_at IS NULL
   AND (p.id IS NULL OR p.archived_at IS NULL);''');
 }
 
-void _v9KickoffAndOrder(Database db) {
+void _v9KickoffAndOrder(CommonDatabase db) {
   for (final sql in const [
     // When production work really began for a part × stage (a drawing
     // meeting, say): with the deadline, the production schedule. A cut
@@ -721,7 +721,7 @@ CREATE TABLE group_order (
   }
 }
 
-void _v10RolesPinsSharedCuts(Database db) {
+void _v10RolesPinsSharedCuts(CommonDatabase db) {
   for (final sql in const [
     // A role (원화, 작감 …) names the stages the user takes on; choosing it
     // when registering work creates a task for each of them.

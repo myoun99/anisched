@@ -1,4 +1,4 @@
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 
 import '../core/clock.dart';
 import '../models/work_interval.dart';
@@ -30,7 +30,7 @@ class TimerAlreadyRunningException implements Exception {
 class WorkTimerStore {
   WorkTimerStore(this._db, {this.clock = systemClock});
 
-  final Database _db;
+  final CommonDatabase _db;
 
   /// Source of "now"; injectable for tests.
   final Clock clock;

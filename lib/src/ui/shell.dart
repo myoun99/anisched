@@ -93,7 +93,7 @@ class AppShell extends StatefulWidget {
 
   /// The document this app edits (autosave, open, save as); null hides
   /// the file menu.
-  final DocumentSession? session;
+  final DocumentSessionBase? session;
   final DocumentPicker picker;
 
   /// The last resume check, for the save-state icon.

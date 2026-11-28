@@ -140,9 +140,11 @@ List<RecentDocument> touchRecent(
     if (r.ref != ref) r,
 ].take(maxRecentDocuments).toList();
 
-/// FNV-1a 64-bit over [bytes], continuing from [hash].
-int fnv1a64(List<int> bytes, [int hash = fnv1a64Seed]) {
-  var h = hash;
+/// FNV-1a 64-bit over [bytes], continuing from [hash] (default: the seed).
+/// Devices only — the web build's integers are 53-bit, and it never
+/// fingerprints a document.
+int fnv1a64(List<int> bytes, [int? hash]) {
+  var h = hash ?? fnv1a64Seed;
   for (final b in bytes) {
     h ^= b;
     h *= 0x100000001b3; // wraps modulo 2^64 on the VM
@@ -150,5 +152,6 @@ int fnv1a64(List<int> bytes, [int hash = fnv1a64Seed]) {
   return h;
 }
 
-/// The FNV-1a 64-bit offset basis.
-const int fnv1a64Seed = -3750763034362895579; // 0xcbf29ce484222325
+/// The FNV-1a 64-bit offset basis, 0xcbf29ce484222325 (parsed at run time:
+/// a 64-bit literal does not compile for the web).
+final int fnv1a64Seed = int.parse('-3750763034362895579');

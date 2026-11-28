@@ -41,7 +41,7 @@ class SettingsView extends StatefulWidget {
   final ValueListenable<RemoteCheck?>? remote;
 
   /// The document session, for its recovery snapshots; null hides them.
-  final DocumentSession? session;
+  final DocumentSessionBase? session;
 
   final DateTime now;
 

@@ -6,6 +6,7 @@ import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
 import 'package:anisched/src/services/document_codec.dart';
+import 'package:anisched/src/services/document_rows.dart';
 import 'package:anisched/src/services/document_files.dart';
 import 'package:anisched/src/services/document_session.dart';
 import 'package:anisched/src/services/recovery_snapshots.dart';
@@ -77,6 +78,45 @@ void main() {
   setUp(() => Directory('${tmp.path}/cloud').createSync());
 
   group('codec', () {
+    // The web build moves documents with these two between connections
+    // that cannot ATTACH each other (IndexedDB, in-memory files); here they
+    // run on native connections, the same SQL.
+    test('rows copy between connections: every table, nothing seeded', () {
+      final from = openAppDatabase(':memory:');
+      final to = openAppDatabase(':memory:');
+      addTearDown(from.close);
+      addTearDown(to.close);
+      final store = CatalogueStore(from);
+      final w = store.createWork('W');
+      store.addEpisodeWithCuts(w, '#1', 'C1~C3');
+      store.settings.cutStyle = (prefix: '', digits: 4);
+      CatalogueStore(to).createWork('only in the target');
+      copyAllRows(from, to);
+      for (final t in tableNames(from)) {
+        expect(
+          to.select('SELECT * FROM "$t"').map((r) => r.values.toString()),
+          from.select('SELECT * FROM "$t"').map((r) => r.values.toString()),
+          reason: t,
+        );
+      }
+      expect(CatalogueStore(to).works().single.title, 'W');
+    });
+
+    test('only an Anisched document passes the check', () {
+      final stray = sqlite3.openInMemory();
+      addTearDown(stray.close);
+      expect(
+        () => checkAndMigrateDocument(stray, 'stray'),
+        throwsA(isA<NotADocumentException>()),
+      );
+      final other = sqlite3.openInMemory()..execute('CREATE TABLE x (y)');
+      addTearDown(other.close);
+      expect(
+        () => copyAllRows(other, openAppDatabase(':memory:')),
+        throwsA(isA<NotADocumentException>()),
+      );
+    });
+
     test('export is one rollback-journal file stamped as a document', () async {
       final db = openAppDatabase('${tmp.path}/w.db');
       CatalogueStore(db).addClient('Studio A');

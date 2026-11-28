@@ -1,25 +1,17 @@
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../models/document.dart';
+import 'document_rows.dart';
 import 'schema.dart';
+
+export 'document_rows.dart' show NotADocumentException;
 
 /// Size and content hash of a written document file.
 typedef DocumentContent = ({int size, int hash});
-
-/// The file is not an Anisched document (not SQLite, damaged, or another
-/// app's database).
-class NotADocumentException implements Exception {
-  NotADocumentException(this.path, this.reason);
-
-  final String path;
-  final String reason;
-
-  @override
-  String toString() => 'NotADocumentException($path: $reason)';
-}
 
 /// Writes the database at [databasePath] as one self-contained document
 /// file at [outPath], off the main isolate.
@@ -85,20 +77,7 @@ void prepareImportSync(String path) {
     throw NotADocumentException(path, e.message);
   }
   try {
-    final int appId;
-    final String check;
-    try {
-      appId = db.select('PRAGMA application_id').first.columnAt(0) as int;
-      check = db.select('PRAGMA quick_check').first.columnAt(0) as String;
-    } on SqliteException catch (e) {
-      throw NotADocumentException(path, e.message);
-    }
-    if (appId != documentApplicationId) {
-      throw NotADocumentException(path, 'not an Anisched document');
-    }
-    if (check != 'ok') throw NotADocumentException(path, check);
-    db.execute('PRAGMA journal_mode = DELETE');
-    migrate(db);
+    checkAndMigrateDocument(db, path);
   } finally {
     db.close();
   }
@@ -110,7 +89,7 @@ void prepareImportSync(String path) {
 /// The working file is never swapped: connections (the background reader)
 /// stay valid and simply see the new rows. Deletes carry a WHERE so SQLite
 /// reports each row to update hooks (the reader's staleness guard).
-void importDocumentInto(Database writer, String path) {
+void importDocumentInto(CommonDatabase writer, String path) {
   writer.execute('ATTACH DATABASE ? AS doc', [path]);
   try {
     final mine = _tables(writer, 'main');
@@ -143,7 +122,7 @@ void importDocumentInto(Database writer, String path) {
   }
 }
 
-List<String> _tables(Database db, String schema) => [
+List<String> _tables(CommonDatabase db, String schema) => [
   for (final r in db.select(
     "SELECT name FROM $schema.sqlite_master WHERE type = 'table' "
     "AND name NOT LIKE 'sqlite_%' ORDER BY name",

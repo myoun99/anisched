@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-import 'package:sqlite3/sqlite3.dart';
-
-import '../core/clock.dart';
 import '../models/document.dart';
-import 'document_codec.dart';
-import 'document_files.dart';
 import 'recovery_snapshots.dart';
+
+// The device's session (files in the app container); the web build makes
+// a BrowserDocumentSession (document_session_web.dart) instead. Both
+// answer to [DocumentSessionBase], which is what the UI holds.
+export 'document_session_io.dart'
+    if (dart.library.js_interop) 'document_session_none.dart';
 
 /// What changed, for whoever shows it.
 enum DocumentChange {
@@ -61,500 +60,60 @@ final class RemoteUnreachable extends RemoteCheck {
   final Object error;
 }
 
-/// The one owner of "which document is this, and is it saved".
-///
-/// The working database stays in the app container; the document file is
-/// written whole ([exportDocument] → [DocumentFiles.replaceFrom]) and read
-/// whole ([DocumentFiles.readInto] → [importDocumentInto]). Edits are seen
-/// through the writer's update hook and saved [autosaveDelay] after the
-/// last one; [flush] saves now (app going to background or closing).
-/// Untitled = no document bound: the working database is the only copy
-/// until [saveAs].
-///
-/// Jobs run one at a time in call order. Lives below the UI: no widgets.
-class DocumentSession {
-  DocumentSession._(
-    this._writer,
-    this.workingPath,
-    this.folder,
-    this._files,
-    this._clock,
-    this.autosaveDelay,
-    this.snapshots,
-  );
-
-  /// Loads the session state kept in [folder] (the app container), clears
-  /// leftovers from the last run and drops snapshots older than 30 days.
-  static Future<DocumentSession> open({
-    required Database writer,
-    required String workingPath,
-    required String folder,
-    required DocumentFiles files,
-    Clock clock = systemClock,
-    Duration autosaveDelay = const Duration(seconds: 3),
-  }) async {
-    final session = DocumentSession._(
-      writer,
-      workingPath,
-      folder,
-      files,
-      clock,
-      autosaveDelay,
-      RecoverySnapshots(_join(folder, 'recovery'), clock: clock),
-    );
-    session._load();
-    final staging = Directory(session._stagingFolder);
-    if (staging.existsSync()) staging.deleteSync(recursive: true);
-    staging.createSync(recursive: true);
-    session.snapshots.collectGarbage();
-    final ref = session._ref;
-    if (ref != null) {
-      try {
-        session._ref = await files.reopen(ref);
-        session._persist();
-      } on DocumentUnreachableException {
-        // Kept bound: [resume] reports it, the user decides.
-      }
-    }
-    session._writes = writer.updatesSync.listen((_) => session._onWrite());
-    if (session._dirty && session._ref != null) session._scheduleAutosave();
-    return session;
-  }
-
-  final Database _writer;
-
-  /// The working database file in the app container.
-  final String workingPath;
-
-  /// The app container folder holding state, staging and snapshots.
-  final String folder;
-
-  final DocumentFiles _files;
-  final Clock _clock;
-
-  /// How long after the last edit an autosave runs.
-  final Duration autosaveDelay;
-
-  final RecoverySnapshots snapshots;
-
-  DocumentRef? _ref;
-  DocumentFingerprint? _fingerprint;
-  bool _dirty = false;
-  List<RecentDocument> _recents = const [];
-  Object? _lastSaveError;
-
-  int _edits = 0;
-  bool _importing = false;
-  int _staged = 0;
-  Timer? _timer;
-  StreamSubscription<SqliteUpdate>? _writes;
-  Future<void> _tail = Future.value();
-  final _changes = StreamController<DocumentChange>.broadcast(sync: true);
-
+/// What the app asks of the session that owns the open document.
+abstract interface class DocumentSessionBase {
   /// The bound document, or null while untitled.
-  DocumentRef? get document => _ref;
-
-  /// The document as last written or read by this device.
-  DocumentFingerprint? get fingerprint => _fingerprint;
+  DocumentRef? get document;
 
   /// The working database has edits the document does not have yet.
-  bool get dirty => _dirty;
+  bool get dirty;
 
   /// Recently opened or saved documents, newest first.
-  List<RecentDocument> get recents => _recents;
+  List<RecentDocument> get recents;
 
-  /// Why the last autosave failed, cleared by the next successful save.
-  Object? get lastSaveError => _lastSaveError;
+  /// Why the last save failed, cleared by the next successful save.
+  Object? get lastSaveError;
 
-  Stream<DocumentChange> get changes => _changes.stream;
+  Stream<DocumentChange> get changes;
 
-  String get _statePath => _join(folder, 'document.json');
-  String get _stagingFolder => _join(folder, 'staging');
-
-  String _stagingPath(String tag) => _join(
-    _stagingFolder,
-    '${_clock().microsecondsSinceEpoch}-${_staged++}-$tag.$documentExtension',
-  );
-
-  // ---- edits and autosave ----
-
-  void _onWrite() {
-    if (_importing) return;
-    _edits++;
-    if (!_dirty) {
-      _dirty = true;
-      // Outside the update hook, which must not be held up.
-      scheduleMicrotask(() {
-        _persist();
-        _emit(DocumentChange.state);
-      });
-    }
-    _scheduleAutosave();
-  }
-
-  void _scheduleAutosave() {
-    if (_ref == null) return;
-    _timer?.cancel();
-    _timer = Timer(autosaveDelay, () {
-      _timer = null;
-      unawaited(
-        save().catchError((Object e) {
-          _lastSaveError = e;
-          _emit(DocumentChange.state);
-        }),
-      );
-    });
-  }
+  /// Whole-document copies to bring back.
+  SnapshotShelf get snapshots;
 
   /// Saves now if there is anything to save — leaving the app, closing it.
-  Future<void> flush() {
-    _timer?.cancel();
-    _timer = null;
-    return save();
-  }
-
-  // ---- writing ----
+  Future<void> flush();
 
   /// Writes the working database to the bound document when dirty.
-  /// No-op while untitled ([saveAs] picks the place).
-  Future<void> save() => _serial(() async {
-    final ref = _ref;
-    if (ref == null || !_dirty) return;
-    await _writeInPlace(ref);
-  });
+  Future<void> save();
 
   /// Writes to [ref] (a place the user just picked) and binds to it.
-  /// "Save" of an untitled document is this too.
-  Future<void> saveAs(DocumentRef ref) async {
-    await saveAsPlaced((staged, _) async {
-      await _files.replaceFrom(staged, ref);
-      return ref;
-    }, name: ref.name);
-  }
+  Future<void> saveAs(DocumentRef ref);
 
-  /// Save As where the platform picks the place only once the file exists
-  /// (iOS export picker, Android create-document, the macOS save panel
-  /// that must mint its bookmark after the write): the finished document
-  /// is staged under [name] and [place] puts it somewhere and answers
-  /// where, or null when the user backed out. Answers whether it was
-  /// saved; on true the session is bound to the new place.
-  Future<bool> saveAsPlaced(DocumentPlacer place, {required String name}) =>
-      _serial(() async {
-        final ref = await _writeTo(place, name: name);
-        if (ref == null) return false;
-        _ref = ref;
-        _recents = touchRecent(_recents, ref, _clock());
-        _persist();
-        _emit(DocumentChange.state);
-        return true;
-      });
+  /// Save As where the platform picks the place once the file exists;
+  /// false when the user backed out.
+  Future<bool> saveAsPlaced(DocumentPlacer place, {required String name});
 
-  /// Writes the working database and hands it to [place]; null when
-  /// [place] declined (nothing changed).
-  Future<DocumentRef?> _writeTo(DocumentPlacer place, {String? name}) async {
-    final editsAtStart = _edits;
-    final folder = Directory(_stagingPath('out'))..createSync();
-    final out = _join(folder.path, _documentFileName(name ?? 'Untitled'));
-    final DocumentRef? ref;
-    try {
-      final content = await exportDocument(workingPath, out);
-      ref = await place(out, _documentFileName(name ?? 'Untitled'));
-      if (ref == null) return null;
-      final stat = await _files.stat(ref);
-      _fingerprint = DocumentFingerprint(
-        size: content.size,
-        hash: content.hash,
-        // A provider that reports another size has not settled: never trust
-        // its time as ours.
-        modifiedMs: stat != null && stat.size == content.size
-            ? stat.modifiedMs
-            : null,
-      );
-    } catch (e) {
-      _lastSaveError = e;
-      _emit(DocumentChange.state);
-      rethrow;
-    } finally {
-      try {
-        folder.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Staging is cleared at the next start.
-      }
-    }
-    _lastSaveError = null;
-    if (_edits == editsAtStart) {
-      _dirty = false;
-    } else {
-      _scheduleAutosave(); // edited while saving
-    }
-    _persist();
-    _emit(DocumentChange.state);
-    return ref;
-  }
+  /// Opens the document at [ref] into the working database.
+  Future<void> openDocument(DocumentRef ref);
 
-  /// Writes to the bound [ref] in place.
-  Future<void> _writeInPlace(DocumentRef ref) => _writeTo((staged, _) async {
-    await _files.replaceFrom(staged, ref);
-    return ref;
-  }, name: ref.name);
-
-  // ---- reading ----
-
-  /// Opens the document at [ref] into the working database. Unsaved work is
-  /// saved to the current document first, or kept as a snapshot when it
-  /// cannot be. Throws [DocumentUnreachableException],
-  /// [NotADocumentException] or `SchemaTooNewException`; then nothing
-  /// changed.
-  Future<void> openDocument(DocumentRef ref) => _serial(() async {
-    final reopened = await _files.reopen(ref);
-    final incoming = await _fetch(reopened);
-    try {
-      await prepareImport(incoming.path);
-      await _keepUnsavedWork();
-      _replaceContent(incoming.path);
-    } finally {
-      _delete(incoming.path);
-    }
-    _bindClean(reopened, incoming.fingerprint);
-  });
-
-  /// Checks the bound document after the app comes back (or right after
-  /// launch) and reloads it when another device changed it and nothing
-  /// local is unsaved.
-  Future<RemoteCheck> resume() => _serial(() async {
-    final ref = _ref;
-    if (ref == null) return const RemoteUnbound();
-    final DocumentStat? stat;
-    try {
-      stat = await _files.stat(ref);
-    } on Object catch (e) {
-      return RemoteUnreachable(e);
-    }
-    if (stat == null) return const RemoteMissing();
-    final known = _fingerprint;
-    if (known != null && known.sameStat(stat)) return const RemoteSame();
-    final ({String path, DocumentFingerprint fingerprint}) incoming;
-    try {
-      incoming = await _fetch(ref);
-    } on Object catch (e) {
-      return RemoteUnreachable(e);
-    }
-    final fresh = incoming.fingerprint;
-    if (known != null && known.size == fresh.size && known.hash == fresh.hash) {
-      _delete(incoming.path);
-      _fingerprint = known.withModified(fresh.modifiedMs);
-      _persist();
-      return const RemoteSame();
-    }
-    if (_dirty) {
-      final kept = snapshots.keep(incoming.path, SnapshotReason.overwritten);
-      _scheduleAutosave();
-      return RemoteKeptLocal(kept);
-    }
-    try {
-      await prepareImport(incoming.path);
-      _replaceContent(incoming.path);
-    } on Object catch (e) {
-      return RemoteUnreachable(e);
-    } finally {
-      _delete(incoming.path);
-    }
-    _bindClean(ref, fresh);
-    return const RemoteReloaded();
-  });
+  /// Checks the bound document after the app comes back.
+  Future<RemoteCheck> resume();
 
   /// Starts a new untitled document (empty catalogue, seeded presets).
-  Future<void> startUntitled() => _serial(() async {
-    final empty = _stagingPath('new');
-    try {
-      createEmptyDocumentSync(empty);
-      await _keepUnsavedWork();
-      _replaceContent(empty);
-    } finally {
-      _delete(empty);
-    }
-    _ref = null;
-    _fingerprint = null;
-    _dirty = false;
-    _persist();
-    _emit(DocumentChange.state);
-  });
+  Future<void> startUntitled();
 
-  /// Puts a recovery snapshot's content into the working database. It is
-  /// an edit: the bound document gets it at the next save.
-  Future<void> restoreSnapshot(String snapshotPath) => _serial(() async {
-    final copy = _stagingPath('restore');
-    File(snapshotPath).copySync(copy);
-    try {
-      await prepareImport(copy);
-      if (_dirty) {
-        await snapshots.takeOf(workingPath, SnapshotReason.beforeReplace);
-      }
-      _replaceContent(copy);
-    } finally {
-      _delete(copy);
-    }
-    _edits++;
-    _dirty = true;
-    _persist();
-    _emit(DocumentChange.state);
-    _scheduleAutosave();
-  });
+  /// Puts a recovery snapshot's content into the working database.
+  Future<void> restoreSnapshot(String snapshotPath);
 
   /// Drops [ref] from the recent list.
-  void forgetRecent(DocumentRef ref) {
-    _recents = [
-      for (final r in _recents)
-        if (r.ref != ref) r,
-    ];
-    _persist();
-    _emit(DocumentChange.state);
-  }
-
-  Future<({String path, DocumentFingerprint fingerprint})> _fetch(
-    DocumentRef ref,
-  ) async {
-    final path = _stagingPath('in');
-    try {
-      await _files.readInto(ref, path);
-      final stat = await _files.stat(ref);
-      final size = File(path).lengthSync();
-      final hash = await hashFile(path);
-      return (
-        path: path,
-        fingerprint: DocumentFingerprint(
-          size: size,
-          hash: hash,
-          modifiedMs: stat != null && stat.size == size
-              ? stat.modifiedMs
-              : null,
-        ),
-      );
-    } catch (_) {
-      _delete(path);
-      rethrow;
-    }
-  }
-
-  /// Before the working rows are replaced: save them where they belong, or
-  /// keep them as a snapshot when that is not possible.
-  Future<void> _keepUnsavedWork() async {
-    if (!_dirty) return;
-    final ref = _ref;
-    if (ref != null) {
-      try {
-        await _writeInPlace(ref);
-      } on Object {
-        // Falls through to the snapshot.
-      }
-    }
-    if (_dirty) {
-      await snapshots.takeOf(workingPath, SnapshotReason.beforeReplace);
-    }
-  }
-
-  void _replaceContent(String path) {
-    _timer?.cancel();
-    _timer = null;
-    _importing = true;
-    try {
-      importDocumentInto(_writer, path);
-    } finally {
-      _importing = false;
-    }
-    _emit(DocumentChange.content);
-  }
-
-  void _bindClean(DocumentRef ref, DocumentFingerprint fingerprint) {
-    _ref = ref;
-    _fingerprint = fingerprint;
-    _dirty = false;
-    _lastSaveError = null;
-    _recents = touchRecent(_recents, ref, _clock());
-    _persist();
-    _emit(DocumentChange.state);
-  }
-
-  // ---- plumbing ----
-
-  Future<T> _serial<T>(Future<T> Function() job) {
-    final next = _tail.then((_) => job());
-    _tail = next.then<void>((_) {}, onError: (Object _) {});
-    return next;
-  }
-
-  void _emit(DocumentChange change) {
-    if (!_changes.isClosed) _changes.add(change);
-  }
+  void forgetRecent(DocumentRef ref);
 
   /// Stops listening and autosaving. Call [flush] first to save.
-  Future<void> close() async {
-    _timer?.cancel();
-    _timer = null;
-    await _writes?.cancel();
-    await _tail;
-    await _changes.close();
-  }
-
-  void _load() {
-    final file = File(_statePath);
-    if (!file.existsSync()) return;
-    final Object? json;
-    try {
-      json = jsonDecode(file.readAsStringSync());
-    } on FormatException {
-      return;
-    }
-    if (json is! Map) return;
-    _ref = DocumentRef.fromJson(json['document']);
-    _fingerprint = DocumentFingerprint.fromJson(json['fingerprint']);
-    _dirty = json['dirty'] == true;
-    final recents = json['recents'];
-    _recents = [
-      if (recents is List)
-        for (final Object? r in recents)
-          if (r case {'ref': final Object? json, 'openedAt': final int ms})
-            if (DocumentRef.fromJson(json) case final ref?)
-              (
-                ref: ref,
-                openedAt: DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true),
-              ),
-    ];
-  }
-
-  void _persist() {
-    final json = jsonEncode({
-      'document': _ref?.toJson(),
-      'fingerprint': _fingerprint?.toJson(),
-      'dirty': _dirty,
-      'recents': [
-        for (final r in _recents)
-          {
-            'ref': r.ref.toJson(),
-            'openedAt': r.openedAt.millisecondsSinceEpoch,
-          },
-      ],
-    });
-    final temp = File('$_statePath.tmp');
-    temp.writeAsStringSync(json, flush: true);
-    temp.renameSync(_statePath);
-  }
-
-  static void _delete(String path) {
-    try {
-      final f = File(path);
-      if (f.existsSync()) f.deleteSync();
-    } on FileSystemException {
-      // Staging is cleared at the next start.
-    }
-  }
+  Future<void> close();
 }
-
-String _join(String a, String b) => '$a${Platform.pathSeparator}$b';
 
 /// [name] as a document file name: the extension added when missing, path
 /// separators taken out.
-String _documentFileName(String name) {
+String documentFileName(String name) {
   final clean = name.replaceAll(RegExp(r'[/\\:]'), '_').trim();
   final base = clean.isEmpty ? 'Untitled' : clean;
   return base.toLowerCase().endsWith('.$documentExtension')

@@ -19,7 +19,7 @@ abstract interface class DocumentPicker {
   /// Saves [session]'s document under a new place; false if backed out.
   Future<bool> saveAs(
     BuildContext context,
-    DocumentSession session,
+    DocumentSessionBase session,
     String suggestedName,
   );
 }
@@ -35,7 +35,7 @@ class PlatformPicker implements DocumentPicker {
   @override
   Future<bool> saveAs(
     BuildContext context,
-    DocumentSession session,
+    DocumentSessionBase session,
     String suggestedName,
   ) => session.saveAsPlaced(placeNewDocument, name: suggestedName);
 }
@@ -59,7 +59,7 @@ class PathPromptPicker implements DocumentPicker {
   @override
   Future<bool> saveAs(
     BuildContext context,
-    DocumentSession session,
+    DocumentSessionBase session,
     String suggestedName,
   ) async {
     final ref = _ref(
@@ -87,7 +87,7 @@ class DocumentMenu extends StatelessWidget {
   /// file, opening is bringing one in (the words say so).
   final bool browser;
 
-  final DocumentSession session;
+  final DocumentSessionBase session;
   final DocumentPicker picker;
 
   /// The last [DocumentSession.resume] answer, for the state icon.
@@ -220,7 +220,7 @@ class SaveState {
 
   static SaveState of(
     BuildContext context,
-    DocumentSession session,
+    DocumentSessionBase session,
     RemoteCheck? remote,
   ) {
     final c = AppColors.of(context);

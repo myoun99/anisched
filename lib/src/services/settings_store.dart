@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 
 import '../models/catalogue.dart';
 import '../models/number_style.dart';
@@ -11,7 +11,7 @@ import '../models/progress.dart';
 class SettingsStore {
   SettingsStore(this.db);
 
-  final Database db;
+  final CommonDatabase db;
 
   static const _secondsRounding = 'seconds_rounding';
   static const _dayStartMinutes = 'day_start_minutes';

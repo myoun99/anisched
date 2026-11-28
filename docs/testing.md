@@ -31,6 +31,8 @@
 | `document_channel_test` | 플랫폼 채널 계약(답 해석 · 인자) · 놓는 쪽이 파일을 옮기는 다른 이름으로 저장 |
 | `device_settings_test` | 기기 설정 기본값 · 다시 읽기 · 깨진 파일 |
 | `architecture/import_direction_test` | 의존 방향(아래) — 일부러 심은 잘못된 import 를 잡는지도 확인 |
+| `architecture/web_imports_test` | 웹 갈래에서 기기 전용 라이브러리(`dart:io` 등)에 닿는 파일 0개 · 기기 갈래에선 찾아냄(검사가 실패할 수 있음) |
+| `number_style_test` | 번호 값 저장 · 표시(앞 글자 대소문자 · 앞 0 · 꼬리 글자 · 너무 긴 숫자 · 왕복) |
 
 ## 이번 라운드에서 지우거나 옮긴 것
 
