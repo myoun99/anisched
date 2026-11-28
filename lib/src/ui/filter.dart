@@ -33,6 +33,7 @@ class ViewFilter {
     this.clientId,
     this.workId,
     this.showDone = false,
+    this.showHandedOff = false,
   });
 
   final DueRange range;
@@ -40,19 +41,28 @@ class ViewFilter {
   final int? workId;
   final bool showDone;
 
+  /// Also list work pulled from the user (引き上げ).
+  final bool showHandedOff;
+
   bool get isDefault =>
-      range == DueRange.all && clientId == null && workId == null && !showDone;
+      range == DueRange.all &&
+      clientId == null &&
+      workId == null &&
+      !showDone &&
+      !showHandedOff;
 
   ViewFilter copyWith({
     DueRange? range,
     int? Function()? clientId,
     int? Function()? workId,
     bool? showDone,
+    bool? showHandedOff,
   }) => ViewFilter(
     range: range ?? this.range,
     clientId: clientId == null ? this.clientId : clientId(),
     workId: workId == null ? this.workId : workId(),
     showDone: showDone ?? this.showDone,
+    showHandedOff: showHandedOff ?? this.showHandedOff,
   );
 
   /// Whether [g] passes, as of [now]. [clientOf] maps work ids to their
@@ -108,6 +118,10 @@ class _Done extends _Choice {
   const _Done();
 }
 
+class _HandedOff extends _Choice {
+  const _HandedOff();
+}
+
 /// One button for every filter: its face names what is chosen
 /// (「전체」 when nothing is), the menu lists 기간 · 회사 · 작품 · 완료.
 class FilterButton extends StatelessWidget {
@@ -134,6 +148,7 @@ class FilterButton extends StatelessWidget {
       if (filter.clientId != null) clients[filter.clientId] ?? '',
       if (filter.workId != null) works[filter.workId] ?? '',
       if (filter.showDone) S.fWithDone.t,
+      if (filter.showHandedOff) S.dropped.t,
     ];
     return parts.isEmpty ? S.fAll.t : parts.join(' · ');
   }
@@ -186,6 +201,7 @@ class FilterButton extends StatelessWidget {
         _Client(:final id) => filter.copyWith(clientId: () => id),
         _Work(:final id) => filter.copyWith(workId: () => id),
         _Done() => filter.copyWith(showDone: !filter.showDone),
+        _HandedOff() => filter.copyWith(showHandedOff: !filter.showHandedOff),
       }),
       itemBuilder: (_) => [
         head(S.fPeriod.t),
@@ -203,6 +219,7 @@ class FilterButton extends StatelessWidget {
           item(_Work(e.key), e.value, filter.workId == e.key),
         head(S.stDone.t),
         item(const _Done(), S.showDone.t, filter.showDone),
+        item(const _HandedOff(), S.showDropped.t, filter.showHandedOff),
       ],
       child: ToolbarButton(
         label: _label,

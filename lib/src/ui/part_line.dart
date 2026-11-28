@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../models/progress.dart';
 import 'due_button.dart';
 import 'fold.dart';
+import 'hold.dart';
 import 'format.dart';
 import 'selection.dart';
 import 'theme.dart';
@@ -14,7 +15,7 @@ import 'widgets.dart';
 import 'text/strings.dart';
 
 const caretW = 32.0;
-const _progressW = 96.0;
+const _progressW = 112.0;
 const _signalW = 100.0;
 const _tabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
@@ -166,13 +167,22 @@ class PartLine extends StatelessWidget {
                   SizedBox(
                     width: _progressW,
                     child: Row(
-                      spacing: 6,
+                      spacing: 5,
                       children: [
-                        SizedBox(width: 44, child: PartProgress(g, height: 4)),
-                        Text(
-                          '${g.handed}/${g.total}',
-                          style: TextStyle(fontSize: 12, color: c.muted),
+                        SizedBox(width: 40, child: PartProgress(g, height: 4)),
+                        Flexible(
+                          child: Text(
+                            '${g.handed}/${g.total}',
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(fontSize: 12, color: c.muted),
+                          ),
                         ),
+                        if (g.waiting > 0)
+                          HoldMark(
+                            key: Key('hold-mark-${g.key}'),
+                            count: g.waiting,
+                          ),
                       ],
                     ),
                   ),
@@ -183,25 +193,30 @@ class PartLine extends StatelessWidget {
                     child: SizedBox(
                       width: _signalW,
                       height: 40,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child:
-                              signal ??
-                              (signals == null
-                                  ? null
-                                  : SignalLabel(
-                                      due: signals!.due,
-                                      plan: signals!.plan,
-                                    )) ??
-                              DueText(
-                                g.dueAt,
-                                g.status,
-                                now,
-                                dayStartMinutes: dayStartMinutes,
-                              ),
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child:
+                                  signal ??
+                                  (signals == null
+                                      ? null
+                                      : SignalLabel(
+                                          due: signals!.due,
+                                          plan: signals!.plan,
+                                        )) ??
+                                  DueText(
+                                    g.dueAt,
+                                    g.status,
+                                    now,
+                                    dayStartMinutes: dayStartMinutes,
+                                  ),
+                            ),
+                          ),
+                          RoundBadge(g.dueRevision),
+                        ],
                       ),
                     ),
                   ),
@@ -215,6 +230,8 @@ class PartLine extends StatelessWidget {
     );
     final fade =
         dimmed ||
+        (g.waiting > 0 && g.inHand == 0) ||
+        g.tasks.every((t) => t.handedOff) ||
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
@@ -235,7 +252,19 @@ class PartDetails extends StatelessWidget {
     this.isPicked,
     this.onDue,
     this.onTaskDue,
+    this.onHold,
+    this.loadRevisions,
+    this.onEditRevision,
   });
+
+  /// Puts the whole unit on hold or takes it off; null hides the button.
+  final VoidCallback? onHold;
+
+  /// The deadline's rounds, for the folded 「마감 차수」 list; null hides it.
+  final Future<List<DueRevision>> Function()? loadRevisions;
+
+  /// Corrects one round of the deadline.
+  final void Function(int revision, DateTime due)? onEditRevision;
 
   final PartGroup group;
   final Pace? pace;
@@ -313,6 +342,7 @@ class PartDetails extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 10,
             children: [
+              _holdRow(context),
               Wrap(
                 spacing: 20,
                 runSpacing: 6,
@@ -338,12 +368,31 @@ class PartDetails extends StatelessWidget {
                                     )
                                   : null,
                             ),
+                            if (k == S.due.t && g.dueRevision > 1)
+                              WidgetSpan(child: RoundBadge(g.dueRevision)),
                           ],
                         ),
                       ),
                     ),
                 ],
               ),
+              if (loadRevisions != null && g.dueAt != null) ...[
+                FoldToggle(
+                  key: Key('fold-rounds-${g.key}'),
+                  state: Folds.dueRounds,
+                  label: S.dueRounds.t,
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: Folds.dueRounds,
+                  builder: (context, open, _) => !open
+                      ? const SizedBox.shrink()
+                      : DueRevisionList(
+                          load: loadRevisions!,
+                          current: g.dueAt,
+                          onEdit: onEditRevision,
+                        ),
+                ),
+              ],
               if (reason != null)
                 Row(
                   spacing: 8,
@@ -377,6 +426,9 @@ class PartDetails extends StatelessWidget {
                           children: [
                             for (final t in g.tasks)
                               _CutChip(
+                                waiting:
+                                    t.handedOff ||
+                                    (t.waiting && t.status.isOpen),
                                 task: t,
                                 highlighted: t.id == highlighted,
                                 onTap: onTask == null ? null : () => onTask!(t),
@@ -413,14 +465,26 @@ class PartDetails extends StatelessWidget {
                                       spacing: 6,
                                       children: [
                                         Dot(c.of(t.status)),
+                                        if (t.handedOff)
+                                          Icon(
+                                            Icons.person_remove_outlined,
+                                            size: 12,
+                                            color: c.muted,
+                                          )
+                                        else if (t.waiting && t.status.isOpen)
+                                          const HoldMark(),
                                         Flexible(
                                           child: Text.rich(
                                             TextSpan(
                                               children: [
                                                 TextSpan(
                                                   text: taskLabel(t),
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontWeight: FontWeight.w700,
+                                                    decoration: t.handedOff
+                                                        ? TextDecoration
+                                                              .lineThrough
+                                                        : null,
                                                   ),
                                                 ),
                                                 if (t.sharedLabel != null)
@@ -481,6 +545,7 @@ class PartDetails extends StatelessWidget {
 
 class _CutChip extends StatelessWidget {
   const _CutChip({
+    this.waiting = false,
     required this.task,
     required this.highlighted,
     required this.child,
@@ -496,8 +561,14 @@ class _CutChip extends StatelessWidget {
   /// Long press: the cut's own deadline.
   final VoidCallback? onLongPress;
 
+  /// On hold: drawn faint.
+  final bool waiting;
+
   @override
   Widget build(BuildContext context) {
+    final child = waiting
+        ? Opacity(opacity: 0.45, child: this.child)
+        : this.child;
     if (onTap == null && onLongPress == null) return child;
     return InkWell(
       key: Key('cut-${task.id}'),
@@ -505,6 +576,70 @@ class _CutChip extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: child,
+    );
+  }
+}
+
+extension on PartDetails {
+  /// 「보유 n · 대기 m」, the hold's reason and expected day, and the
+  /// hold button.
+  Widget _holdRow(BuildContext context) {
+    final c = AppColors.of(context);
+    final g = group;
+    final waitingTask = g.tasks.where((t) => t.waiting && t.status.isOpen);
+    final note = waitingTask.isEmpty ? null : waitingTask.first;
+    final allWaiting = g.inHand == 0 && g.waiting > 0;
+    return Row(
+      spacing: 10,
+      children: [
+        Flexible(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: S.inHand.f({'n': g.inHand}),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (g.waiting > 0)
+                  TextSpan(
+                    text: '  ·  ${S.onHold.f({'n': g.waiting})}',
+                    style: TextStyle(color: c.submitted),
+                  ),
+                if (note?.waitReason case final r?)
+                  TextSpan(
+                    text: '  $r',
+                    style: TextStyle(color: c.muted),
+                  ),
+                if (note?.waitUntil case final u?)
+                  TextSpan(
+                    text: '  → ${formatDate(u)}',
+                    style: TextStyle(color: c.muted),
+                  ),
+              ],
+            ),
+            key: Key('holding-${g.key}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        if (onHold != null && g.tasks.any((t) => t.status.isOpen))
+          TextButton.icon(
+            key: Key('hold-${g.key}'),
+            onPressed: onHold,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            icon: Icon(
+              allWaiting
+                  ? Icons.play_circle_outline
+                  : Icons.pause_circle_outline,
+              size: 16,
+            ),
+            label: Text(allWaiting ? S.unhold.t : S.hold.t),
+          ),
+      ],
     );
   }
 }

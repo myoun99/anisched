@@ -4,6 +4,7 @@ import '../../core/size_class.dart';
 import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../due_button.dart';
+import '../hold.dart';
 import '../format.dart';
 import '../selection.dart';
 import '../theme.dart';
@@ -113,58 +114,29 @@ class _TimelineViewState extends State<TimelineView> {
             child: ChartViewport(
               days: window.days,
               labelWidth: _labelWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: c.line)),
-                    ),
-                    child: Row(
-                      children: [
-                        SizedBox(width: _labelWidth),
-                        Expanded(
-                          child: ChartHeader(
-                            window: window,
-                            today: widget.now,
-                            restWeekdays: widget.restWeekdays,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: OwnScroll(
-                      builder: (controller) => Scrollbar(
-                        controller: controller,
-                        child: ReorderableListView.builder(
-                          scrollController: controller,
-                          buildDefaultDragHandles: false,
-                          itemCount: rows.length,
-                          itemExtent: 46,
-                          onReorderItem: (from, to) {
-                            final keys = [for (final r in rows) r.key];
-                            keys.insert(to, keys.removeAt(from));
-                            widget.onReorder?.call(keys);
-                          },
-                          itemBuilder: (context, i) => _TimelineRow(
-                            key: ValueKey(rows[i].key),
-                            index: widget.onReorder == null ? null : i,
-                            group: rows[i],
-                            window: window,
-                            now: widget.now,
-                            labelWidth: _labelWidth,
-                            narrow: widget.layout.size == SizeClass.narrow,
-                            restWeekdays: widget.restWeekdays,
-                            onSchedule: widget.onSchedule,
-                            onDue: widget.onDue,
-                            selection: widget.selection,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: ChartBoard(
+                window: window,
+                today: widget.now,
+                restWeekdays: widget.restWeekdays,
+                labelWidth: _labelWidth,
+                rowCount: rows.length,
+                rowKey: (i) => ValueKey(rows[i].key),
+                onReorder: widget.onReorder == null
+                    ? null
+                    : (from, to) {
+                        final keys = [for (final r in rows) r.key];
+                        keys.insert(to, keys.removeAt(from));
+                        widget.onReorder!(keys);
+                      },
+                label: (context, i) => _TimelineLabel(
+                  index: widget.onReorder == null ? null : i,
+                  group: rows[i],
+                  now: widget.now,
+                  narrow: widget.layout.size == SizeClass.narrow,
+                  onDue: widget.onDue,
+                  selection: widget.selection,
+                ),
+                bars: (context, i) => _bars(context, rows[i], window),
               ),
             ),
           ),
@@ -172,19 +144,38 @@ class _TimelineViewState extends State<TimelineView> {
       ),
     );
   }
+
+  List<Widget> _bars(BuildContext context, PartGroup g, ChartWindow window) {
+    final c = AppColors.of(context);
+    final start = g.kickoffAt;
+    final end = g.dueAt;
+    if (start == null || end == null || end.isBefore(start)) return const [];
+    final handed = !g.status.isOpen || g.status == TaskStatus.submitted;
+    final onSchedule = widget.onSchedule;
+    return [
+      ChartBar(
+        key: Key('tl-bar-${g.key}'),
+        window: window,
+        start: start,
+        end: end,
+        color: Color.lerp(
+          Theme.of(context).colorScheme.onSurface,
+          c.panel,
+          0.38,
+        )!,
+        faded: handed || (g.waiting > 0 && g.inHand == 0),
+        onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
+      ),
+    ];
+  }
 }
 
-class _TimelineRow extends StatelessWidget {
-  const _TimelineRow({
-    super.key,
+class _TimelineLabel extends StatelessWidget {
+  const _TimelineLabel({
     this.index,
     required this.group,
-    required this.window,
     required this.now,
-    required this.labelWidth,
     required this.narrow,
-    required this.restWeekdays,
-    this.onSchedule,
     this.selection,
     this.onDue,
   });
@@ -194,13 +185,8 @@ class _TimelineRow extends StatelessWidget {
   /// Row index for the drag grip; null hides it.
   final int? index;
   final PartGroup group;
-  final ChartWindow window;
   final DateTime now;
-  final double labelWidth;
   final bool narrow;
-  final Set<int> restWeekdays;
-  final void Function(PartGroup group, DateTime kickoff, DateTime due)?
-  onSchedule;
   final TaskSelection? selection;
 
   @override
@@ -208,9 +194,6 @@ class _TimelineRow extends StatelessWidget {
     final c = AppColors.of(context);
     final g = group;
     final due = dueLabel(g.dueAt, now, g.status);
-    final handed = !g.status.isOpen || g.status == TaskStatus.submitted;
-    final start = g.kickoffAt;
-    final end = g.dueAt;
     final sel = selection;
     Widget label = Padding(
       padding: EdgeInsets.only(left: index == null ? 10 : 0, right: 10),
@@ -271,15 +254,23 @@ class _TimelineRow extends StatelessWidget {
             onPicked: onDue == null ? null : (d) => onDue!(g, d),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Text(
-                due.text,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: due.tone == DueTone.late
-                      ? Theme.of(context).colorScheme.error
-                      : c.muted,
-                  fontWeight: due.tone == DueTone.late ? FontWeight.w700 : null,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    due.text,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: due.tone == DueTone.late
+                          ? Theme.of(context).colorScheme.error
+                          : c.muted,
+                      fontWeight: due.tone == DueTone.late
+                          ? FontWeight.w700
+                          : null,
+                    ),
+                  ),
+                  RoundBadge(g.dueRevision),
+                ],
               ),
             ),
           ),
@@ -300,45 +291,6 @@ class _TimelineRow extends StatelessWidget {
         child: label,
       );
     }
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.line)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(width: labelWidth, child: label),
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ChartGrid(
-                  window: window,
-                  today: now,
-                  restWeekdays: restWeekdays,
-                ),
-                if (start != null && end != null && !end.isBefore(start))
-                  ChartBar(
-                    key: Key('tl-bar-${g.key}'),
-                    window: window,
-                    start: start,
-                    end: end,
-                    top: 15,
-                    height: 16,
-                    color: Color.lerp(
-                      Theme.of(context).colorScheme.onSurface,
-                      c.panel,
-                      0.38,
-                    )!,
-                    faded: handed,
-                    onDates: onSchedule == null
-                        ? null
-                        : (s, e) => onSchedule!(g, s, e),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    return label;
   }
 }
