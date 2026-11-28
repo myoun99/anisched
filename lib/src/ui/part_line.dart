@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../controllers/unit_bundles.dart';
 import '../models/progress.dart';
 import 'client_chip.dart';
+import 'date_span.dart';
 import 'due_button.dart';
 import 'fit_text.dart';
 import 'fold.dart';
@@ -345,7 +346,13 @@ class PartDetails extends StatelessWidget {
     this.onEditRevision,
     this.client,
     this.onAddCuts,
+    this.now,
+    this.dayStartMinutes = 0,
   });
+
+  /// Now, for the deadline's D-n in the production pill; null hides it.
+  final DateTime? now;
+  final int dayStartMinutes;
 
   /// Adds cuts to the unit (the 「+」 at the end of its cuts); null hides
   /// it.
@@ -433,33 +440,41 @@ class PartDetails extends StatelessWidget {
         ...value,
       ],
     );
-    const dash = Text(' – ');
+    final due = now == null
+        ? null
+        : dueLabel(g.dueAt, now!, g.status, dayStartMinutes: dayStartMinutes);
+    // Production (start → deadline, its D-n and round), then the user's
+    // own work (start → end): one pill each, the start on the left.
     final dates = [
-      fact(S.due.t, [
-        date('details-due', g.dueAt, onDue, S.pickDue.t),
-        RoundBadge(g.dueRevision),
-      ]),
-      fact(S.production.t, [
-        date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
-        dash,
-        Text(formatDate(g.dueAt)),
-      ]),
-      fact(S.ownWork.t, [
-        date(
+      DateSpanPill(
+        key: Key('span-production-${g.key}'),
+        label: S.production.t,
+        start: date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
+        end: date('details-due', g.dueAt, onDue, S.pickDue.t),
+        trailing: [
+          if (due != null && due.tone != DueTone.none)
+            Text(
+              due.text,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: due.tone == DueTone.late ? c.retake : c.muted,
+              ),
+            ),
+          RoundBadge(g.dueRevision),
+        ],
+      ),
+      DateSpanPill(
+        key: Key('span-work-${g.key}'),
+        label: S.ownWork.t,
+        start: date(
           'details-plan-start',
           g.planStartAt,
           onPlanStart,
           S.pickPlanStart.t,
         ),
-        dash,
-        date(
-          'details-plan-end',
-          g.planEndAt,
-          onPlanEnd,
-          S.pickPlanEnd.t,
-          empty: S.due.t,
-        ),
-      ]),
+        end: date('details-plan-end', g.planEndAt, onPlanEnd, S.pickPlanEnd.t),
+      ),
     ];
     final facts = <(String, String)>[
       (S.slack.t, slack == null ? '—' : S.days.f({'n': slack})),
@@ -827,7 +842,13 @@ class UnitWiring {
     this.revisionsOf,
     this.onEditRevision,
     this.onAddCuts,
+    this.now,
+    this.dayStartMinutes = 0,
   });
+
+  /// Now and the day's start, for the deadline's D-n in the details.
+  final DateTime? now;
+  final int dayStartMinutes;
 
   /// Adds cuts to a unit (not a storyboard).
   final void Function(PartGroup group)? onAddCuts;
@@ -887,6 +908,8 @@ class UnitWiring {
       onEditRevision: onEditRevision == null
           ? null
           : (n, d) => onEditRevision!(p, n, d),
+      now: now,
+      dayStartMinutes: dayStartMinutes,
       onAddCuts: onAddCuts == null || p.kind == GroupKind.storyboard
           ? null
           : () => onAddCuts!(p),

@@ -195,7 +195,7 @@ enum S {
   progress('Progress', '進捗', '진행', 'Avancement', '进度'),
   due('Due', '締切', '마감', 'Échéance', '截止'),
   production('Production', '制作', '제작', 'Production', '制作'),
-  ownWork('My work', '作業', '실 작업', 'Mon travail', '实际工作'),
+  ownWork('My work', '作業', '작업', 'Mon travail', '我的工作'),
   slack('Slack', '余裕', '여유', 'Marge', '余量'),
   perDay('Per day', '1日', '하루', 'Par jour', '每天'),
   rate('Rate', '単価', '단가', 'Tarif', '单价'),
