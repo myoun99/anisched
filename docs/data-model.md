@@ -432,3 +432,19 @@
 - 읽기: `restDays(from:)` · `events(from:, to:)` 의 null 키 + `EventRow.rest`.
 - 판정: `isRestDay` 의 `daysOff` = rest 이벤트 날짜(정기 쉬는 요일 · 공휴일과 함께, 함수 하나 그대로).
 - 타이머 대상 기억(유저 2026-11-28): 문서 settings `timer_target`. `setTimerTarget(id?)` · `timerTarget()`(스토어 · 리더) — 지워졌거나(보관) · 빠짐 · 제출된 작업이면 null 로 읽힘.
+
+## 카드 보관 · 완전 삭제 (유저 2026-11-28, 스키마 변경 없음)
+
+선택 단위 = 선택 도구가 고른 task 들(카드 = 파트×공정 묶음의 task).
+
+- **보관** `archiveTasks(ids)` / `restoreTasks(ids)`: 기존 `tasks.archived_at` 그대로. 보관된 task 는 `live_tasks` 판정 하나로
+  모든 뷰·통계·Pace·타이머 대상에서 빠진다. `partGroups(includeArchived: true)` 는 보관된 task 도 묶음으로 읽고
+  행에 `archived`, 묶음에 `archived`(전부 보관일 때) 표시. 되돌릴 때 같은 컷×공정에 살아 있는 task 가 생겼으면 `StateError`, 전부 안 됨.
+- **완전 삭제** `deleteTasks(ids)`, 한 트랜잭션:
+  - 그 task 의 타이머 구간 · 리테이크 · 마감 회차 · timerTarget.
+  - task 가 하나도 안 남은 묶음(파트×공정 등)의 마감 · 회차 · 예정 · 킥오프 · 대기 · 라인 핀 · 순서.
+  - task 가 없는 컷 → 컷 삭제(겸용 표시 `shared_with` 는 풀림) → 컷 없는 파트 → 컷·콘티 없는 화(요율 · 이벤트 함께)
+    → 화 없는 작품(공정 함께). **회사는 남김.** 보관된 task 도 task 로 친다 — 하나라도 남으면 그 컷은 남는다.
+  - 다른 카드는 자리를 지킨다(바꾸기 전 `holdPlaces`).
+- **확인창 요약** `deletionSummary(ids)` → `(tasks, cuts, episodes, works, timerMinutes)`. 삭제와 같은 계획(`_DeletionPlan`)을 읽으므로
+  확인창 숫자 = 실제로 지워지는 것.
