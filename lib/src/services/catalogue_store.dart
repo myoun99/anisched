@@ -1503,6 +1503,182 @@ ORDER BY i.started_at;''',
     }
   }
 
+  /// Puts the tasks [ids] away (보관) — a card or the selection tool's
+  /// pick — out of every view, statistic, pace and timer list, as
+  /// [archive] does for one. [restoreTasks] brings them back. Other units
+  /// keep their lanes and order.
+  void archiveTasks(Iterable<int> ids) => _transaction(() {
+    _holdBeforeDates();
+    db.execute(
+      'UPDATE tasks SET archived_at = ? WHERE archived_at IS NULL '
+      'AND id $_inJson;',
+      [_now(), _idList(ids)],
+    );
+  });
+
+  /// Brings archived tasks [ids] back, all or none. Throws [StateError]
+  /// when a live task now holds the same cut × stage.
+  void restoreTasks(Iterable<int> ids) => _transaction(() {
+    _holdBeforeDates();
+    try {
+      db.execute('UPDATE tasks SET archived_at = NULL WHERE id $_inJson;', [
+        _idList(ids),
+      ]);
+    } on SqliteException catch (e) {
+      if (e.extendedResultCode == 2067 || e.resultCode == 19) {
+        throw StateError('Cannot restore: a live task now uses the place.');
+      }
+      rethrow;
+    }
+  });
+
+  /// What [deleteTasks] of [ids] would take away.
+  DeletionSummary deletionSummary(Iterable<int> ids) {
+    final plan = _DeletionPlan.of(db, _idList(ids));
+    final ms =
+        db.select(
+              'SELECT COALESCE(SUM(MAX(COALESCE(stopped_at, ?) - started_at, '
+              '0)), 0) AS ms FROM work_intervals WHERE task_id $_inJson;',
+              [_now(), plan.tasks],
+            ).first['ms']
+            as int;
+    return (
+      tasks: plan.taskIds.length,
+      cuts: plan.cutCount,
+      episodes: plan.episodeIds.length,
+      works: plan.workIds.length,
+      timerMinutes: ms ~/ Duration.millisecondsPerMinute,
+    );
+  }
+
+  /// Deletes the tasks [ids] for good (완전 삭제), in one transaction, with
+  /// everything that hangs off them: timer stretches, retakes, deadline
+  /// revisions, the timer target; and, for a unit (part × stage, …) left
+  /// with no task, its deadline, plan, kickoff, hold, lane pin and place
+  /// in the order. A cut left with no task goes too, then a part with no
+  /// cut, an episode with no cut or storyboard, a work with no episode —
+  /// no empty shells. Clients stay. Archived tasks count as tasks: what
+  /// still has one stays.
+  void deleteTasks(Iterable<int> ids) => _transaction(() {
+    final plan = _DeletionPlan.of(db, _idList(ids));
+    if (plan.taskIds.isEmpty) return;
+    _holdBeforeDates();
+    if (plan.taskIds.contains(settings.timerTargetId)) {
+      settings.timerTargetId = null;
+    }
+    // The units the tasks belonged to, read before the tasks go.
+    final units = db.select(
+      'SELECT t.id, t.stage_id, t.storyboard_id, c.part_id, c.episode_id '
+      'FROM tasks t LEFT JOIN cuts c ON c.id = t.cut_id WHERE t.id $_inJson;',
+      [plan.tasks],
+    );
+    for (final table in const ['work_intervals', 'retakes', 'due_revisions']) {
+      db.execute('DELETE FROM $table WHERE task_id $_inJson;', [plan.tasks]);
+    }
+    db.execute('DELETE FROM tasks WHERE id $_inJson;', [plan.tasks]);
+    for (final u in units) {
+      final stage = u['stage_id'] as int;
+      final part = u['part_id'] as int?;
+      final episode = u['episode_id'] as int?;
+      if (u['storyboard_id'] != null) {
+        _forgetPlace('storyboard:${u['id']}');
+      } else if (part != null) {
+        if (!_unitHasTasks('c.part_id = ?', part, stage)) {
+          _deletePartStage(part, stage);
+        }
+      } else if (!_unitHasTasks(
+        'c.part_id IS NULL AND c.episode_id = ?',
+        episode!,
+        stage,
+      )) {
+        _forgetPlace('nopart:$episode:$stage');
+      }
+    }
+    db
+      ..execute(
+        'UPDATE cuts SET shared_with = NULL WHERE shared_with $_inJson;',
+        [plan.cuts],
+      )
+      ..execute('DELETE FROM cuts WHERE id $_inJson;', [plan.cuts])
+      ..execute('DELETE FROM storyboards WHERE id $_inJson;', [
+        plan.storyboards,
+      ]);
+    plan.partIds.forEach(_deletePart);
+    for (final episode in plan.episodeIds) {
+      for (final r in db.select('SELECT id FROM parts WHERE episode_id = ?;', [
+        episode,
+      ])) {
+        _deletePart(r['id'] as int);
+      }
+      _forgetPlaces('nopart:$episode:%');
+      db
+        ..execute('DELETE FROM episode_rates WHERE episode_id = ?;', [episode])
+        // Its events go by ON DELETE CASCADE.
+        ..execute('DELETE FROM episodes WHERE id = ?;', [episode]);
+    }
+    for (final work in plan.workIds) {
+      db
+        ..execute('DELETE FROM work_stages WHERE work_id = ?;', [work])
+        ..execute('DELETE FROM works WHERE id = ?;', [work]);
+    }
+  });
+
+  /// Whether the cuts matching [where] (one `?`, [id]) still have a task
+  /// of [stage], archived ones included.
+  bool _unitHasTasks(String where, int id, int stage) => db.select(
+    'SELECT 1 FROM tasks t JOIN cuts c ON c.id = t.cut_id '
+    'WHERE $where AND t.stage_id = ? LIMIT 1;',
+    [id, stage],
+  ).isNotEmpty;
+
+  /// A part left with no cut, and every per-stage row it has.
+  void _deletePart(int part) {
+    for (final table in _partStageTables) {
+      db.execute('DELETE FROM $table WHERE part_id = ?;', [part]);
+    }
+    _forgetPlaces('part:$part:%');
+    db.execute('DELETE FROM parts WHERE id = ?;', [part]);
+  }
+
+  /// A part × stage left with no task: its deadline and revisions, plan,
+  /// kickoff, hold and place.
+  void _deletePartStage(int part, int stage) {
+    for (final table in _partStageTables) {
+      db.execute('DELETE FROM $table WHERE part_id = ? AND stage_id = ?;', [
+        part,
+        stage,
+      ]);
+    }
+    _forgetPlace('part:$part:$stage');
+  }
+
+  static const _partStageTables = [
+    'part_stage_dues',
+    'part_stage_plans',
+    'part_stage_kickoffs',
+    'part_stage_waits',
+    'due_revisions',
+  ];
+
+  /// Drops the lane pin and manual order of the unit [key].
+  void _forgetPlace(String key) {
+    db
+      ..execute('DELETE FROM group_order WHERE group_key = ?;', [key])
+      ..execute('DELETE FROM lane_pins WHERE group_key = ?;', [key]);
+  }
+
+  /// [_forgetPlace] for every unit whose key matches the LIKE [pattern].
+  void _forgetPlaces(String pattern) {
+    db
+      ..execute('DELETE FROM group_order WHERE group_key LIKE ?;', [pattern])
+      ..execute('DELETE FROM lane_pins WHERE group_key LIKE ?;', [pattern]);
+  }
+
+  /// SQL for "in the JSON id list bound here".
+  static const _inJson = 'IN (SELECT value FROM json_each(?))';
+
+  static String _idList(Iterable<int> ids) => '[${ids.join(',')}]';
+
   /// Archived items, newest first, with a label to show: works by title,
   /// episodes by number, parts by label, cuts by number, storyboards by
   /// label, tasks by "cut or storyboard · stage", stages by name.
@@ -1904,11 +2080,13 @@ WHERE t.done_at >= ? AND t.done_at < ?
   /// cut still counts in a part that has open ones ("3/6").
   ///
   /// Tasks handed off to someone else are left out unless
-  /// [includeHandedOff].
+  /// [includeHandedOff]; archived tasks (of live cuts, parts, episodes and
+  /// works) unless [includeArchived], marked `archived`.
   List<TaskRow> taskRows({
     int? workId,
     bool includeDone = false,
     bool includeHandedOff = false,
+    bool includeArchived = false,
   }) {
     final now = _now();
     final rounding = settings.secondsRounding;
@@ -1933,6 +2111,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        pw.part_id IS NOT NULL AS part_waiting, pw.reason AS part_wait_reason,
        pw.until_at AS part_wait_until,
        t.handed_off_at, t.handed_off_note,
+       t.archived_at IS NOT NULL AS archived,
        CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
          SELECT 1 FROM cuts m WHERE m.shared_with = c.id
            AND m.archived_at IS NULL)
@@ -1981,7 +2160,7 @@ LEFT JOIN part_stage_waits pw
 WHERE (?2 IS NULL OR w.id = ?2)
   AND (?4 = 1 OR t.handed_off_at IS NULL)
   -- the live_tasks conditions, inlined: these joins are already here
-  AND t.archived_at IS NULL AND w.archived_at IS NULL
+  AND (?5 = 1 OR t.archived_at IS NULL) AND w.archived_at IS NULL
   AND e.archived_at IS NULL
   AND (c.id IS NULL OR c.archived_at IS NULL)
   AND (sb.id IS NULL OR sb.archived_at IS NULL)
@@ -1994,7 +2173,13 @@ WHERE (?2 IS NULL OR w.id = ?2)
               AND o.loose_episode = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
-      [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
+      [
+        now,
+        workId,
+        if (includeDone) 1 else 0,
+        if (includeHandedOff) 1 else 0,
+        if (includeArchived) 1 else 0,
+      ],
     );
     final sharedLabels = _sharedLabels();
     final cutStyle = settings.cutStyle;
@@ -2063,6 +2248,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           partWaitUntil: _utcOrNull(r['part_wait_until']),
           handedOffAt: _utcOrNull(r['handed_off_at']),
           handedOffNote: r['handed_off_note'] as String?,
+          archived: r['archived'] == 1,
         ),
     ];
   }
@@ -2076,11 +2262,13 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     int? workId,
     bool includeDone = false,
     bool includeHandedOff = false,
+    bool includeArchived = false,
   }) => groupRows(
     taskRows(
       workId: workId,
       includeDone: includeDone,
       includeHandedOff: includeHandedOff,
+      includeArchived: includeArchived,
     ),
     manualOrder: {
       for (final r in db.select('SELECT group_key, position FROM group_order;'))
@@ -2831,4 +3019,92 @@ SELECT NOT EXISTS (
            SELECT 1 FROM lane_pins l WHERE l.group_key = u.key))
 ) AS held;''').first['held'] ==
       1;
+}
+
+/// What deleting a set of tasks takes away: the tasks that exist, and the
+/// cuts, storyboards, parts, episodes and works left empty by them — each
+/// a JSON id list, for `json_each`. One reading serves both
+/// [CatalogueStore.deletionSummary] and [CatalogueStore.deleteTasks], so
+/// the confirmation counts what the deletion does.
+class _DeletionPlan {
+  _DeletionPlan._(
+    this.tasks,
+    this.cuts,
+    this.storyboards,
+    this.parts,
+    this.episodes,
+    this.works,
+  );
+
+  factory _DeletionPlan.of(CommonDatabase db, String ids) {
+    String list(String select, List<Object?> args) =>
+        db
+                .select(
+                  "SELECT COALESCE(json_group_array(id), '[]') AS ids "
+                  'FROM ($select);',
+                  args,
+                )
+                .first['ids']
+            as String;
+    const inList1 = 'IN (SELECT value FROM json_each(?1))';
+    const inList2 = 'IN (SELECT value FROM json_each(?2))';
+    final tasks = list('SELECT id FROM tasks WHERE id $inList1', [ids]);
+    final cuts = list(
+      'SELECT c.id FROM cuts c '
+      'WHERE c.id IN (SELECT cut_id FROM tasks WHERE id $inList1) '
+      'AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.cut_id = c.id '
+      'AND t.id NOT $inList1)',
+      [tasks],
+    );
+    final storyboards = list(
+      'SELECT sb.id FROM storyboards sb '
+      'WHERE sb.id IN (SELECT storyboard_id FROM tasks WHERE id $inList1) '
+      'AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.storyboard_id = sb.id '
+      'AND t.id NOT $inList1)',
+      [tasks],
+    );
+    final parts = list(
+      'SELECT p.id FROM parts p '
+      'WHERE p.id IN (SELECT part_id FROM cuts WHERE id $inList1) '
+      'AND NOT EXISTS (SELECT 1 FROM cuts c WHERE c.part_id = p.id '
+      'AND c.id NOT $inList1)',
+      [cuts],
+    );
+    final episodes = list(
+      'SELECT e.id FROM episodes e '
+      'WHERE e.id IN (SELECT episode_id FROM cuts WHERE id $inList1 '
+      'UNION SELECT episode_id FROM storyboards WHERE id $inList2) '
+      'AND NOT EXISTS (SELECT 1 FROM cuts c WHERE c.episode_id = e.id '
+      'AND c.id NOT $inList1) '
+      'AND NOT EXISTS (SELECT 1 FROM storyboards sb '
+      'WHERE sb.episode_id = e.id AND sb.id NOT $inList2)',
+      [cuts, storyboards],
+    );
+    final works = list(
+      'SELECT w.id FROM works w '
+      'WHERE w.id IN (SELECT work_id FROM episodes WHERE id $inList1) '
+      'AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.work_id = w.id '
+      'AND e.id NOT $inList1)',
+      [episodes],
+    );
+    return _DeletionPlan._(tasks, cuts, storyboards, parts, episodes, works);
+  }
+
+  final String tasks;
+  final String cuts;
+  final String storyboards;
+  final String parts;
+  final String episodes;
+  final String works;
+
+  static List<int> _ids(String json) => [
+    for (final s in json.substring(1, json.length - 1).split(','))
+      if (s.isNotEmpty) int.parse(s),
+  ];
+
+  Set<int> get taskIds => _ids(tasks).toSet();
+  int get cutCount => _ids(cuts).length;
+  List<int> get partIds => _ids(parts);
+  List<int> get episodeIds => _ids(episodes);
+  List<int> get workIds => _ids(works);
 }
