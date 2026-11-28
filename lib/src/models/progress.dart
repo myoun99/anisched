@@ -276,6 +276,13 @@ class TaskRow {
 
   bool get isOpen => status.isOpen;
 
+  /// What counts as one cut in progress, pace and statistics (유저
+  /// 2026-11-28): a shared (겸용) group's tasks of one stage are one; any
+  /// other task is one by itself. Pay stays per task. The SQL counts use
+  /// the same key (`CatalogueStore._unitKeySql`).
+  String get unitKey =>
+      sharedHeadCutId == null ? 't$id' : 'h$stageId:$sharedHeadCutId';
+
   /// The rows that make one schedule unit share this key: a part × stage;
   /// the "no part" cuts of an episode × stage; or a storyboard task alone.
   String get groupKey => storyboardId != null
@@ -361,6 +368,11 @@ class DueTarget {
   int get hashCode => Object.hash(partId, stageId, taskId);
 }
 
+/// How many cuts [rows] make, a shared group counting once
+/// ([TaskRow.unitKey]).
+int unitCount(Iterable<TaskRow> rows) =>
+    {for (final t in rows) t.unitKey}.length;
+
 /// One revision of a deadline: 1 = the first, 2 = after one extension …
 typedef DueRevision = ({int revision, DateTime dueAt, DateTime createdAt});
 
@@ -405,28 +417,32 @@ class PartGroup {
   /// The storyboard's label for [GroupKind.storyboard].
   String? get storyboardLabel => _first.storyboardLabel;
 
-  int get total => tasks.length;
+  /// Cuts in the unit, a shared group counting once ([unitCount]) — as
+  /// do [counts], [handed], [toSubmit], [inHand] and [waiting]. [pay]
+  /// stays per cut.
+  int get total => unitCount(tasks);
 
   Map<TaskStatus, int> get counts {
-    final c = <TaskStatus, int>{};
+    final keys = <TaskStatus, Set<String>>{};
     for (final t in tasks) {
-      c[t.status] = (c[t.status] ?? 0) + 1;
+      (keys[t.status] ??= {}).add(t.unitKey);
     }
-    return c;
+    return {for (final e in keys.entries) e.key: e.value.length};
   }
 
-  /// Tasks submitted or done — the 3 in "3/6".
-  int get handed => tasks.where((t) => t.status.isHanded).length;
+  /// Cuts submitted or done — the 3 in "3/6".
+  int get handed => unitCount(tasks.where((t) => t.status.isHanded));
 
   /// Cuts not handed in yet (done ones included) — the count at the right
   /// end of a timeline row.
-  int get toSubmit => tasks.where((t) => t.status.isOpen).length;
+  int get toSubmit => unitCount(tasks.where((t) => t.status.isOpen));
 
   /// Open cuts in hand (not waiting) — the 「보유」 count.
-  int get inHand => tasks.where((t) => t.inHand).length;
+  int get inHand => unitCount(tasks.where((t) => t.inHand));
 
   /// Open cuts on hold.
-  int get waiting => tasks.where((t) => t.status.isOpen && t.waiting).length;
+  int get waiting =>
+      unitCount(tasks.where((t) => t.status.isOpen && t.waiting));
 
   /// The part × stage itself is on hold (cuts may override).
   bool get partWaiting => _first.partWaiting;
@@ -711,7 +727,7 @@ Pace? paceFor(
     if (!off(d)) workDays++;
   }
   return Pace(
-    remaining: group.tasks.where((t) => t.status.needsWork).length,
+    remaining: unitCount(group.tasks.where((t) => t.status.needsWork)),
     workDays: workDays,
     startsLater: startsLater,
     end: endTime,

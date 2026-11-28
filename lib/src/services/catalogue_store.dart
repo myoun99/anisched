@@ -1416,6 +1416,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               workTitle: t.workTitle,
               currency: t.currency,
               groupKey: t.groupKey,
+              unitKey: t.unitKey,
               clientId: x['client_id'] as int?,
               clientName: x['client'] as String?,
               take: t.take,
@@ -2084,7 +2085,39 @@ UPDATE tasks SET kickoff_at = ? WHERE id = ? AND kickoff_at IS NULL
   /// `submitted_at` when it was FIRST handed in (pace, totals and
   /// statistics count a cut once); handing in a retake stamps that take's
   /// row instead. Submitting work not marked done marks it done too.
-  void setStatus(int taskId, TaskStatus status) {
+  ///
+  /// A shared (겸용) cut is one cut in progress (유저 2026-11-28): the
+  /// status goes to the same stage's task of every live cut in its group.
+  void setStatus(int taskId, TaskStatus status) => _transaction(() {
+    for (final r in db.select(
+      '''
+SELECT t2.id FROM tasks t JOIN cuts c ON c.id = t.cut_id
+JOIN cuts c2 ON c2.archived_at IS NULL
+  AND COALESCE(c2.shared_with, c2.id) = COALESCE(c.shared_with, c.id)
+JOIN live_tasks t2 ON t2.cut_id = c2.id AND t2.stage_id = t.stage_id
+WHERE t.id = ?1 AND t2.id <> ?1;''',
+      [taskId],
+    )) {
+      _setOneStatus(r['id'] as int, status);
+    }
+    _setOneStatus(taskId, status);
+  });
+
+  /// A shared group's head cut (the first) for cut row [c], or NULL when
+  /// the cut is in no group with a live other cut.
+  static String _sharedHeadSql(String c) =>
+      '''
+CASE WHEN $c.shared_with IS NOT NULL OR EXISTS (
+  SELECT 1 FROM cuts m WHERE m.shared_with = $c.id AND m.archived_at IS NULL)
+THEN COALESCE($c.shared_with, $c.id) END''';
+
+  /// `TaskRow.unitKey` in SQL, for task row [t] and its cut row [c]: what
+  /// counts as one cut.
+  static String _unitKeySql(String t, String c) =>
+      "COALESCE('h' || $t.stage_id || ':' || ${_sharedHeadSql(c)}, "
+      "'t' || $t.id)";
+
+  void _setOneStatus(int taskId, TaskStatus status) {
     final now = _now();
     final submitted = status == TaskStatus.submitted ? 1 : 0;
     final done = submitted == 1 || status == TaskStatus.done ? 1 : 0;
@@ -2279,10 +2312,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        pw.until_at AS part_wait_until,
        t.handed_off_at, t.handed_off_note,
        t.archived_at IS NOT NULL AS archived,
-       CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
-         SELECT 1 FROM cuts m WHERE m.shared_with = c.id
-           AND m.archived_at IS NULL)
-       THEN COALESCE(c.shared_with, c.id) END AS shared_head,
+       ${_sharedHeadSql('c')} AS shared_head,
        s.id AS stage_id, s.name AS stage_name, s.position AS stage_position,
        w.id AS work_id, w.title, w.currency, w.seconds_rounding,
        cl.name AS client_name, cl.color AS client_color,
@@ -2652,8 +2682,9 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
     return [
       for (final r in db.select(
         '''
-SELECT s.name AS stage_name, COUNT(*) AS cuts
+SELECT s.name AS stage_name, COUNT(DISTINCT ${_unitKeySql('t', 'c')}) AS cuts
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+LEFT JOIN cuts c ON c.id = t.cut_id
 WHERE t.handed_off_at IS NULL
   AND COALESCE(t.done_at, t.submitted_at) >= ?
   AND COALESCE(t.done_at, t.submitted_at) < ?
@@ -2681,9 +2712,10 @@ GROUP BY s.name ORDER BY s.name;''',
     final overall = <String, UsualPace>{};
     for (final r in db.select(
       '''
-SELECT s.name AS stage_name, COUNT(*) AS cuts,
+SELECT s.name AS stage_name, COUNT(DISTINCT ${_unitKeySql('t', 'c')}) AS cuts,
        MIN(COALESCE(t.done_at, t.submitted_at)) AS first_at
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
+LEFT JOIN cuts c ON c.id = t.cut_id
 WHERE t.handed_off_at IS NULL
   AND COALESCE(t.done_at, t.submitted_at) IS NOT NULL
   AND COALESCE(t.done_at, t.submitted_at) < ?
