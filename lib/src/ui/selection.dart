@@ -66,4 +66,6 @@ const pickPriority = [
   'retake',
   'received',
   'drop',
+  'archive',
+  'delete',
 ];

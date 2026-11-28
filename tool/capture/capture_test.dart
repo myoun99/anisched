@@ -323,6 +323,31 @@ final scenarios = <String, (AppView, Scenario)>{
       }
     },
   ),
+  // The delete confirmation over the list, one line picked.
+  'delete-confirm': (
+    AppView.list,
+    (t, size) async {
+      await t.longPress(byKeyPrefix('line-').at(1));
+      await t.pump();
+      if (find.byKey(const Key('pick-delete')).evaluate().isEmpty) {
+        await t.tap(find.byKey(const Key('pick-more')));
+        await t.pump();
+      }
+      await t.tap(find.byKey(const Key('pick-delete')));
+      await t.pump();
+    },
+  ),
+  // Archived work shown by the filter (one card put away), faded.
+  'archived-shown': (
+    AppView.list,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('filter-button')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('filter-archived')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
@@ -449,6 +474,10 @@ void main() {
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
+          if (base == 'archived-shown') {
+            final g = store.partGroups()[1];
+            store.archiveTasks([for (final x in g.tasks) x.id]);
+          }
           if (base.startsWith('bundle')) prepareBundles(store);
           if (base.startsWith('r9')) prepareClients(store);
           if (base.startsWith('r10')) {

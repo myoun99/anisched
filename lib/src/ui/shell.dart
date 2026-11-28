@@ -16,6 +16,7 @@ import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'client_chip.dart';
+import 'delete_confirm.dart';
 import 'document_menu.dart';
 import 'empty_start.dart';
 import 'event_editor.dart';
@@ -188,8 +189,10 @@ class _AppShellState extends State<AppShell> {
       holidays,
     ) = await (
       reader.partGroups(
-        includeDone: done,
+        // Archived work is often handed in: listed then too.
+        includeDone: done || _filter.showArchived,
         includeHandedOff: _filter.showHandedOff,
+        includeArchived: _filter.showArchived,
       ),
       reader.signals(includeDone: done),
       reader.stagePaces(),
@@ -510,7 +513,8 @@ class _AppShellState extends State<AppShell> {
   void _setFilter(ViewFilter f) {
     final reload =
         f.showDone != _filter.showDone ||
-        f.showHandedOff != _filter.showHandedOff;
+        f.showHandedOff != _filter.showHandedOff ||
+        f.showArchived != _filter.showArchived;
     setState(() => _filter = f);
     if (reload) unawaited(_loadGroups());
   }
@@ -637,6 +641,63 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
       );
+  }
+
+  /// Puts the picked tasks away (보관) at once, with an undo; when every
+  /// one is already put away (shown by the filter), brings them back —
+  /// or says why not, when the same cut × stage is in work again.
+  void _archive() {
+    final picked = _pickedTasks;
+    final ids = [for (final t in picked) t.id];
+    if (widget.store == null || ids.isEmpty) return;
+    final back = picked.every((t) => t.archived);
+    if (back) {
+      _restore(ids);
+      return;
+    }
+    _write((store) => store.archiveTasks(ids));
+    _selection.clear();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('archived-snack'),
+          content: Text('${S.archive.t} · ${S.items.f({'n': ids.length})}'),
+          action: SnackBarAction(
+            key: const Key('archived-undo'),
+            label: S.undoDrop.t,
+            onPressed: () => _restore(ids),
+          ),
+        ),
+      );
+  }
+
+  void _restore(List<int> ids) {
+    try {
+      _write((store) => store.restoreTasks(ids));
+      _selection.clear();
+    } on StateError {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('restore-blocked'),
+            content: Text(S.restoreBlocked.t),
+          ),
+        );
+    }
+  }
+
+  /// Deletes the picked tasks for good, after a confirmation that says
+  /// what goes with them (cuts, emptied episodes and titles, timer time).
+  Future<void> _delete() async {
+    final store = widget.store;
+    final ids = [for (final t in _pickedTasks) t.id];
+    if (store == null || ids.isEmpty) return;
+    final ok = await confirmDelete(context, store.deletionSummary(ids));
+    if (ok != true || !mounted) return;
+    _write((store) => store.deleteTasks(ids));
+    _selection.clear();
   }
 
   /// The picked cuts' own deadline: one date, a new round for each cut
@@ -865,6 +926,12 @@ class _AppShellState extends State<AppShell> {
               : () => unawaited(_toggleHold(_pickedTasks)),
           onHandOff: widget.store == null ? null : _handOff,
           onDue: widget.store == null ? null : () => unawaited(_dueForPicked()),
+          onArchive: widget.store == null ? null : _archive,
+          allArchived: () {
+            final p = _pickedTasks;
+            return p.isNotEmpty && p.every((t) => t.archived);
+          },
+          onDelete: widget.store == null ? null : () => unawaited(_delete()),
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);

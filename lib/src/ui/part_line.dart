@@ -195,6 +195,7 @@ class PartLine extends StatelessWidget {
         dimmed ||
         (g.waiting > 0 && g.inHand == 0) ||
         g.tasks.every((t) => t.handedOff) ||
+        g.archived ||
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
@@ -634,7 +635,9 @@ class _CutChip extends StatelessWidget {
           spacing: 6,
           children: [
             Dot(c.of(t.status)),
-            if (t.handedOff)
+            if (t.archived)
+              Icon(Icons.archive_outlined, size: 12, color: c.muted)
+            else if (t.handedOff)
               Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),

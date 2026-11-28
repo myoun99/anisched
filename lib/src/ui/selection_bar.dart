@@ -22,7 +22,18 @@ class SelectionBar extends StatelessWidget {
     this.onHandOff,
     this.allHandedOff,
     this.onDue,
+    this.onArchive,
+    this.allArchived,
+    this.onDelete,
   });
+
+  /// Puts the picked tasks away (보관), or brings back ones already put
+  /// away; null hides it.
+  final VoidCallback? onArchive;
+  final bool Function()? allArchived;
+
+  /// Deletes the picked tasks for good (asks first); null hides it.
+  final VoidCallback? onDelete;
 
   /// Gives the picked cuts their own deadline (a new round each); null
   /// hides it.
@@ -64,6 +75,8 @@ class SelectionBar extends StatelessWidget {
         final on = n > 0 && onApply != null;
         final waiting = allWaiting?.call() ?? false;
         final pulled = allHandedOff?.call() ?? false;
+        final archived = allArchived?.call() ?? false;
+        final danger = Theme.of(context).colorScheme.error;
         final actions =
             <_Action>[
               for (final st in pickActions)
@@ -100,6 +113,23 @@ class SelectionBar extends StatelessWidget {
                   pulled ? S.undoDrop.t : S.dropped.t,
                   n > 0 ? onHandOff : null,
                 ),
+              if (onArchive != null)
+                _Action(
+                  'archive',
+                  const Key('pick-archive'),
+                  archived ? Icons.unarchive_outlined : Icons.archive_outlined,
+                  archived ? S.unarchive.t : S.archive.t,
+                  n > 0 ? onArchive : null,
+                ),
+              if (onDelete != null)
+                _Action(
+                  'delete',
+                  const Key('pick-delete'),
+                  Icons.delete_outline,
+                  S.deleteForever.t,
+                  n > 0 ? onDelete : null,
+                  color: danger,
+                ),
             ]..sort(
               (a, b) => pickPriority
                   .indexOf(a.id)
@@ -121,6 +151,7 @@ class SelectionBar extends StatelessWidget {
                     icon: a.icon,
                     label: a.label,
                     onTap: a.onTap,
+                    color: a.color,
                   ),
                 if (rest.isNotEmpty) _more(context, rest),
                 _ActionButton(
@@ -189,6 +220,7 @@ class SelectionBar extends StatelessWidget {
                 icon: a.icon,
                 label: a.label,
                 enabled: a.onTap != null,
+                color: a.color,
               ),
             ),
         ],
@@ -221,7 +253,14 @@ class SelectionBar extends StatelessWidget {
 }
 
 class _Action {
-  const _Action(this.id, this.key, this.icon, this.label, this.onTap);
+  const _Action(
+    this.id,
+    this.key,
+    this.icon,
+    this.label,
+    this.onTap, {
+    this.color,
+  });
 
   /// Its place in [pickPriority].
   final String id;
@@ -229,6 +268,9 @@ class _Action {
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+
+  /// A dangerous action's colour.
+  final Color? color;
 }
 
 class _ActionButton extends StatelessWidget {
@@ -239,7 +281,11 @@ class _ActionButton extends StatelessWidget {
     this.onTap,
     this.iconOnly = false,
     this.live = false,
+    this.color,
   });
+
+  /// Icon and words in this colour (a dangerous action), when enabled.
+  final Color? color;
 
   /// Drawn as usable without a tap of its own (⋯: its menu takes the tap).
   final bool live;
@@ -255,6 +301,7 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final enabled = live || onTap != null;
+    final ink = enabled ? color : c.faint;
     final face = DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: c.line),
@@ -271,12 +318,8 @@ class _ActionButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               spacing: 4,
               children: [
-                Icon(icon, size: 16, color: enabled ? null : c.faint),
-                if (!iconOnly)
-                  Text(
-                    label,
-                    style: TextStyle(color: enabled ? null : c.faint),
-                  ),
+                Icon(icon, size: 16, color: ink),
+                if (!iconOnly) Text(label, style: TextStyle(color: ink)),
               ],
             ),
           ),

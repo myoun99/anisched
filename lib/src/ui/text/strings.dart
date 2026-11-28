@@ -492,6 +492,49 @@ enum S {
     '显示已收回',
   ),
 
+  // Put away (보관) and deleted for good (완전 삭제).
+  archive('Archive', 'アーカイブ', '보관', 'Archiver', '归档'),
+  unarchive('Unarchive', 'アーカイブ解除', '되돌리기', 'Désarchiver', '取消归档'),
+  showArchived(
+    'Show archived',
+    'アーカイブも表示',
+    '보관한 것 보기',
+    'Afficher archivés',
+    '显示已归档',
+  ),
+  deleteForever('Delete', '完全に削除', '완전 삭제', 'Supprimer', '彻底删除'),
+  deleteAsk(
+    'Delete for good?',
+    '完全に削除しますか？',
+    '완전히 삭제할까요?',
+    'Supprimer définitivement ?',
+    '要彻底删除吗？',
+  ),
+  deleteCuts('{n} cuts', 'カット {n}', '컷 {n}', '{n} plans', '镜头 {n}'),
+  deleteEpisodes('{n} episodes', '話数 {n}', '화 {n}', '{n} épisodes', '集数 {n}'),
+  deleteWorks('{n} titles', '作品 {n}', '작품 {n}', '{n} titres', '作品 {n}'),
+  deleteTime(
+    'Timer time {t} goes too',
+    '作業時間 {t} も消えます',
+    '작업 시간 {t}도 지워짐',
+    'Le temps chronométré {t} aussi',
+    '计时 {t} 也会删除',
+  ),
+  deleteFinal(
+    'This cannot be undone.',
+    '元に戻せません。',
+    '되돌릴 수 없습니다.',
+    'Action irréversible.',
+    '无法撤销。',
+  ),
+  restoreBlocked(
+    'Cannot unarchive: the same cut and stage is in work again.',
+    '戻せません：同じカット・工程の作業がすでにあります。',
+    '되돌릴 수 없음: 같은 컷·공정의 작업이 이미 있어요.',
+    'Impossible : ce plan et cette étape sont déjà repris.',
+    '无法取消归档：相同镜头和工序已有任务。',
+  ),
+
   // Deadline rounds (1st, 2nd … extensions).
   dueRound('Round {n}', '{n}次', '{n}차', '{n}e échéance', '第{n}次'),
   dueRounds('Deadlines', '締切履歴', '마감 차수', 'Échéances', '截止记录');
