@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/size_class.dart';
@@ -86,23 +87,24 @@ class TimelineView extends StatefulWidget {
 }
 
 class _TimelineViewState extends State<TimelineView> {
-  void _onView() => setState(() {});
-
   /// The unit opened under its row, if any.
   String? _open;
 
   void _toggle(PartGroup g) =>
       setState(() => _open = _open == g.key ? null : g.key);
 
+  /// The running view's days; only the board's date parts follow it.
+  late final _window = RunningWindow(widget.now, widget.layout.size);
+
   @override
-  void initState() {
-    super.initState();
-    chartView.addListener(_onView);
+  void didUpdateWidget(TimelineView old) {
+    super.didUpdateWidget(old);
+    _window.update(widget.now, widget.layout.size);
   }
 
   @override
   void dispose() {
-    chartView.removeListener(_onView);
+    _window.dispose();
     super.dispose();
   }
 
@@ -115,11 +117,6 @@ class _TimelineViewState extends State<TimelineView> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final window = ChartWindow.of(
-      widget.now,
-      widget.layout.size,
-      chartView.value,
-    );
     final rows = widget.parts;
     return ColoredBox(
       color: c.panel,
@@ -133,7 +130,10 @@ class _TimelineViewState extends State<TimelineView> {
                 valueListenable: chartMonthView,
                 builder: (context, month, _) => month
                     ? const SizedBox.shrink()
-                    : ChartPager(days: window.days),
+                    : ValueListenableBuilder<ChartWindow>(
+                        valueListenable: _window,
+                        builder: (context, w, _) => ChartPager(days: w.days),
+                      ),
               ),
               const MonthViewToggle(),
             ],
@@ -145,15 +145,20 @@ class _TimelineViewState extends State<TimelineView> {
                   ? MonthStack(
                       first: _firstMonth,
                       last: _lastMonth,
-                      month: (context, w) => _board(context, w, [
+                      month: (context, w) => _board(context, FixedWindow(w), [
                         for (final g in rows)
                           if (_inWindow(g, w)) g,
                       ], month: true),
                     )
-                  : ChartViewport(
-                      days: window.days,
-                      labelWidth: _labelWidth,
-                      child: _board(context, window, rows, month: false),
+                  : ValueListenableBuilder<ChartWindow>(
+                      valueListenable: _window,
+                      // The viewport only needs the day count (a zoom).
+                      builder: (context, w, board) => ChartViewport(
+                        days: w.days,
+                        labelWidth: _labelWidth,
+                        child: board!,
+                      ),
+                      child: _board(context, _window, rows, month: false),
                     ),
             ),
           ),
@@ -166,7 +171,7 @@ class _TimelineViewState extends State<TimelineView> {
   /// month's in the month view (shrink-wrapped, not reordered).
   Widget _board(
     BuildContext context,
-    ChartWindow window,
+    ValueListenable<ChartWindow> window,
     List<PartGroup> rows, {
     required bool month,
   }) => ChartBoard(
@@ -196,7 +201,7 @@ class _TimelineViewState extends State<TimelineView> {
       open: _open == rows[i].key,
       onOpen: widget.details == null ? null : () => _toggle(rows[i]),
     ),
-    bars: (context, i) => _bars(context, rows[i], window),
+    bars: (context, i, window) => _bars(context, rows[i], window),
     below: widget.details == null
         ? null
         : (context, i) =>

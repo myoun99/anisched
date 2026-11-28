@@ -29,21 +29,6 @@ Future<DateTime?> showInstantDatePicker({
   ),
 );
 
-/// [showDateRangePicker] without the fade.
-Future<DateTimeRange?> showInstantDateRangePicker({
-  required BuildContext context,
-  required DateTime firstDate,
-  required DateTime lastDate,
-  String? title,
-}) => showInstantDialog<DateTimeRange>(
-  context: context,
-  builder: (_) => DateRangePickerDialog(
-    firstDate: firstDate,
-    lastDate: lastDate,
-    helpText: title,
-  ),
-);
-
 /// Every text field ends editing when the user taps anywhere outside it
 /// (the value is already kept by its onChanged); pass to `onTapOutside`.
 void unfocusOutside(PointerDownEvent _) =>

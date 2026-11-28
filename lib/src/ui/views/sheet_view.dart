@@ -74,13 +74,15 @@ class _SheetViewState extends State<SheetView> {
     }
   }
 
-  final _expanded = <String>{};
-  String? _selected;
+  /// Which lines are open and which was tapped last; a toggle rebuilds
+  /// the lines it touches only, not the whole list.
+  final _lines = _LineState();
   final _rows = ScrollController();
 
   @override
   void dispose() {
     _rows.dispose();
+    _lines.dispose();
     super.dispose();
   }
 
@@ -98,16 +100,13 @@ class _SheetViewState extends State<SheetView> {
               (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)),
         );
 
-  void _toggle(String key) => setState(() {
-    _selected = key;
-    if (!_expanded.remove(key)) _expanded.add(key);
-  });
+  void _toggle(String key) => _lines.toggle(key);
 
   /// One unit's line, and its details when open.
   Widget _unit(PartGroup p, {UnitBundle? bundle}) {
     final sel = widget.wiring.selection;
     final key = bundle?.key ?? p.key;
-    final open = _expanded.contains(key);
+    final open = _lines.expanded.contains(key);
     final whole = bundle?.together ?? p;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -119,7 +118,7 @@ class _SheetViewState extends State<SheetView> {
           now: widget.now,
           dayStartMinutes: widget.dayStartMinutes,
           expanded: open,
-          selected: _selected == key,
+          selected: _lines.selected == key,
           signals: widget.wiring.signals[p.key],
           picked: sel?.of(whole) ?? Picked.none,
           onDue: widget.wiring.onDue == null
@@ -168,9 +167,12 @@ class _SheetViewState extends State<SheetView> {
               listenable: widget.wiring.selection ?? const _Never(),
               builder: (context, _) => _list(bundles, (context, i) {
                 final b = bundles[i];
-                final body = KeyedSubtree(
+                final body = _LineItem(
                   key: ValueKey(b.key),
-                  child: b.single ? _unit(b.lead) : _unit(b.lead, bundle: b),
+                  lines: _lines,
+                  keys: {b.key, for (final g in b.stages) g.key},
+                  build: () =>
+                      b.single ? _unit(b.lead) : _unit(b.lead, bundle: b),
                 );
                 if (widget.onReorder == null) return body;
                 return Row(
@@ -253,6 +255,70 @@ class _SheetViewState extends State<SheetView> {
       ),
     );
   }
+}
+
+/// Open lines and the last tapped one, telling which lines changed.
+class _LineState extends ChangeNotifier {
+  final expanded = <String>{};
+  String? selected;
+
+  /// The lines the last change touched.
+  Set<String> changed = const {};
+
+  void toggle(String key) {
+    changed = {key, ?selected};
+    selected = key;
+    if (!expanded.remove(key)) expanded.add(key);
+    notifyListeners();
+  }
+}
+
+/// One item of the list, rebuilt by itself when a toggle touches one of
+/// its [keys] (its line, or a bundle's stage lines).
+class _LineItem extends StatefulWidget {
+  const _LineItem({
+    super.key,
+    required this.lines,
+    required this.keys,
+    required this.build,
+  });
+
+  final _LineState lines;
+  final Set<String> keys;
+  final Widget Function() build;
+
+  @override
+  State<_LineItem> createState() => _LineItemState();
+}
+
+class _LineItemState extends State<_LineItem> {
+  @override
+  void initState() {
+    super.initState();
+    widget.lines.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(_LineItem old) {
+    super.didUpdateWidget(old);
+    if (old.lines != widget.lines) {
+      old.lines.removeListener(_changed);
+      widget.lines.addListener(_changed);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.lines.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (widget.lines.changed.any(widget.keys.contains)) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.build();
 }
 
 /// A listenable that never fires, for views used without a selection.

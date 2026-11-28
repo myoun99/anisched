@@ -93,4 +93,49 @@ void main() {
     expect(find.byKey(const Key('event-title')), findsOneWidget);
     expect(allEvents(store), hasLength(before));
   });
+
+  testWidgets('an event on a bar\'s day sits inside it; others do not', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(1280, 800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    chartView.value = const ChartView();
+    final store = sampleCatalogue(now);
+    // A unit with a bar: one event inside its days, one a week past.
+    final g = store.partGroups().firstWhere(
+      (g) => g.kickoffAt != null && g.dueAt != null && g.dueAt!.isAfter(now),
+    );
+    final inside = store.addEvent(
+      episodeId: g.episodeId,
+      date: g.dueAt!,
+      title: '안',
+    );
+    final outside = store.addEvent(
+      episodeId: g.episodeId,
+      date: g.dueAt!.add(const Duration(days: 7)),
+      title: '밖',
+    );
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          initialView: AppView.timeline,
+          reader: SyncCatalogueReader(store),
+          store: store,
+          clock: () => now,
+        ),
+      ),
+    );
+    await t.pump();
+    // The marks on this unit's own row.
+    EventMark markOf(int id) => t.widget<EventMark>(
+      find.descendant(
+        of: find.byKey(Key('tl-event-${g.key}-$id')),
+        matching: find.byType(EventMark),
+      ),
+    );
+    expect(markOf(inside).onBar, isTrue);
+    expect(markOf(outside).onBar, isFalse);
+  });
 }

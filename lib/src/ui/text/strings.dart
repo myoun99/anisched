@@ -247,7 +247,6 @@ enum S {
   countryFrance('France', 'フランス', '프랑스', 'France', '法国'),
   countryChina('China', '中国', '중국', 'Chine', '中国'),
   countryNone('None', 'なし', '없음', 'Aucun', '无'),
-  event('Event', '予定', '일정', 'Événement', '日程'),
   eventTitle('Title', 'タイトル', '제목', 'Titre', '标题'),
   eventTime('Time', '時刻', '시각', 'Heure', '时间'),
   allDay('All day', '終日', '하루 종일', 'Toute la journée', '全天'),

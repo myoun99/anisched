@@ -14,6 +14,16 @@ const t = TaskStatus.retake;
 const d = TaskStatus.done;
 
 void main() {
+  test('cuts left are the ones not yet submitted', () {
+    final store = sampleCatalogue(DateTime(2026, 11, 27, 14));
+    // 별빛 #07 part C: 5 cuts, one submitted.
+    final c = store.partGroups().firstWhere(
+      (g) => g.workTitle == '별빛 정류장' && g.partLabel == 'C',
+    );
+    expect(c.total, 5);
+    expect(cutsLeftLabel(c), '4 cut');
+  });
+
   group('dueLabel', () {
     final now = DateTime(2026, 11, 27, 15);
     DateTime on(int day) => DateTime(2026, 11, day, 23, 59);
