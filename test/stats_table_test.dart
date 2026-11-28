@@ -46,9 +46,13 @@ Future<void> open(WidgetTester t, StatsNode n) async {
   await t.pump();
 }
 
-/// The store's own tree, as the table shows it (3 months to now).
-StatsNode treeOf(CatalogueStore s) =>
-    s.statsTree(from: DateTime(2026, 8, 27), to: now);
+/// The store's own tree, as the table shows it (the default range back
+/// from the end of today).
+StatsNode treeOf(CatalogueStore s) {
+  final to = DateTime(now.year, now.month, now.day + 1);
+  final from = DateTime(to.year, to.month, to.day - StatsRange.months3.days);
+  return s.statsTree(from: from, to: to);
+}
 
 void main() {
   testWidgets('the toolbar turns summary into the table and back', (t) async {
@@ -106,5 +110,30 @@ void main() {
       find.descendant(of: line, matching: find.textContaining('금액')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a table chosen before the tab opens loads its tree', (t) async {
+    t.view.physicalSize = const Size(1280, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    statsAsTable.value = true;
+    addTearDown(() => statsAsTable.value = false);
+    final store = sampleCatalogue(now);
+    await t.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AppShell(
+          initialView: AppView.stats,
+          reader: SyncCatalogueReader(store),
+          store: store,
+          clock: () => now,
+        ),
+      ),
+    );
+    await t.pump();
+    await t.pump();
+    expect(find.byKey(const Key('stats-tree-loading')), findsNothing);
+    final first = treeOf(store).children.first;
+    expect(find.byKey(Key('stats-row-${keyOf(first)}')), findsOneWidget);
   });
 }

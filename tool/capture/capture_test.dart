@@ -17,6 +17,7 @@ import 'package:anisched/src/ui/hold.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
+import 'package:anisched/src/ui/views/stats_view.dart';
 import 'package:anisched/src/ui/theme.dart';
 import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/rendering.dart';
@@ -430,6 +431,21 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // The stats' detail table, the first client opened down to a cut.
+  'stats-table': (
+    AppView.stats,
+    (t, size) async {
+      statsAsTable.value = true;
+      await t.pump();
+      await t.pump();
+      for (var depth = 0; depth < 5; depth++) {
+        final rows = byKeyPrefix('stats-row-');
+        if (rows.evaluate().length <= depth) break;
+        await t.tap(rows.at(depth));
+        await t.pump();
+      }
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
@@ -542,6 +558,7 @@ void main() {
         testWidgets('$name $label', (t) async {
           Folds.cutsInDetails.value = false;
           chartMonthView.value = false;
+          statsAsTable.value = false;
           rulerRows[RulerTab.timeline]!.value = (
             year: false,
             month: true,
