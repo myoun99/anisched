@@ -330,7 +330,7 @@ class _StatsViewState extends State<StatsView> {
     final hourly = money(s.hourly);
     return [
       _Kpi(
-        label: S.kDone.t,
+        label: S.kHanded.t,
         value: '${t.handed} cut',
         note: _delta(context, t.handed, p?.total.handed),
       ),
@@ -432,7 +432,7 @@ class _StatsViewState extends State<StatsView> {
     final better = (diff < 0) == lowerIsBetter;
     return FitText(
       '${diff > 0 ? '▲' : '▼'} ${diff.abs()}${points ? 'pt' : '%'} · ${S.vsPrev.t}',
-      style: TextStyle(color: better ? c.done : c.retake),
+      style: TextStyle(color: better ? c.good : c.retake),
     );
   }
 
@@ -450,7 +450,7 @@ class _StatsViewState extends State<StatsView> {
         ? 0.0
         : values.reduce((a, b) => a + b) / values.length;
     return _Card(
-      title: S.cDoneCuts.t,
+      title: S.cHandedCuts.t,
       note: S.cAvgLine.t,
       child: SizedBox(
         height: 160,
@@ -527,7 +527,7 @@ class _StatsViewState extends State<StatsView> {
             valueWidth: 120,
             bar: _Track(
               parts: [
-                (w.finished / _nz(top), c.done),
+                (w.finished / _nz(top), c.good),
                 ((w.cuts - w.finished) / _nz(top), c.line),
               ],
             ),
@@ -567,8 +567,8 @@ class _StatsViewState extends State<StatsView> {
         .where((e) => f(e.key))
         .fold(0, (n, e) => n + e.value);
     final rows = [
-      (S.early.t, sum((d) => d < 0), c.done),
-      (S.onDay.t, sum((d) => d == 0), c.done),
+      (S.early.t, sum((d) => d < 0), c.good),
+      (S.onDay.t, sum((d) => d == 0), c.good),
       (S.late1.t, sum((d) => d == 1), c.retake),
       (S.late2to3.t, sum((d) => d >= 2 && d <= 3), c.retake),
       (S.late4.t, sum((d) => d >= 4), c.retake),
@@ -622,7 +622,7 @@ class _StatsViewState extends State<StatsView> {
                     for (var t = 1; t <= shown; t++)
                       if (t == shown && most > shown) 'T$t+' else 'T$t',
                   ],
-                  colors: [c.done, for (var t = 2; t <= shown; t++) c.retake],
+                  colors: [c.good, for (var t = 2; t <= shown; t++) c.retake],
                   colors2: c,
                   text: DefaultTextStyle.of(context).style,
                   showValues: true,

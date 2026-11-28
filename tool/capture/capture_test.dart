@@ -156,6 +156,14 @@ final scenarios = <String, (AppView, Scenario)>{
     },
   ),
   'settings': (AppView.settings, (t, size) async {}),
+  // 표기: digit counts typed in a pill, like the register's cut fields.
+  'notation': (
+    AppView.settings,
+    (t, size) async {
+      await t.ensureVisible(find.byKey(const Key('notation-preview')));
+      await t.pump();
+    },
+  ),
   'timeline': (AppView.timeline, (t, size) async {}),
   // Mid-drag: the days slid by part of a day, bars cut at the edges.
   'timeline-slide': (
@@ -287,7 +295,13 @@ final scenarios = <String, (AppView, Scenario)>{
   'work-open': (
     AppView.work,
     (t, size) async {
-      await t.tap(byKeyPrefix('work-open-').at(1), warnIfMissed: false);
+      await t.tap(
+        find.descendant(
+          of: byKeyPrefix('work-bar-').at(1),
+          matching: find.byKey(const Key('bar-tap')),
+        ),
+        warnIfMissed: false,
+      );
       await t.pump();
       await t.pump();
       await t.pump();
@@ -307,7 +321,13 @@ final scenarios = <String, (AppView, Scenario)>{
   'r9-work-open': (
     AppView.work,
     (t, size) async {
-      await t.tap(byKeyPrefix('work-open-').at(0), warnIfMissed: false);
+      await t.tap(
+        find.descendant(
+          of: byKeyPrefix('work-bar-').at(0),
+          matching: find.byKey(const Key('bar-tap')),
+        ),
+        warnIfMissed: false,
+      );
       await t.pump();
       await t.pump();
     },

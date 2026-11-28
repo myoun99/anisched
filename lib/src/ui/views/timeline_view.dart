@@ -169,7 +169,7 @@ class _TimelineViewState extends State<TimelineView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ViewToolbar(
-            basis: ToolbarBasis(Icons.factory_outlined, S.basisProduction.t),
+            basis: ToolbarBasis(Icons.factory_outlined, S.plannedDates.t),
             children: [
               ...?widget.toolbar,
               ValueListenableBuilder<bool>(
@@ -566,6 +566,7 @@ class _TimelineLabel extends StatelessWidget {
                     key: Key('tl-due-${g.key}'),
                     title: S.pickDue.t,
                     due: g.dueAt,
+                    near: g.kickoffAt,
                     onPicked: onDue == null ? null : (d) => onDue!(g, d),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

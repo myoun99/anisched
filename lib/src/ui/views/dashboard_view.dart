@@ -289,9 +289,7 @@ class _DashboardViewState extends State<DashboardView> {
         key: Key('dash-due-days-$k'),
         width: 64,
         child: FitText(
-          due.daysLeft < 0
-              ? S.daysLate.f({'n': -due.daysLeft})
-              : (due.daysLeft == 0 ? 'D-day' : 'D-${due.daysLeft}'),
+          dueDaysText(due.daysLeft),
           textAlign: TextAlign.right,
           style: TextStyle(
             fontWeight: FontWeight.w700,
@@ -494,7 +492,7 @@ class _DashboardViewState extends State<DashboardView> {
                 ? Icons.arrow_upward
                 : (diff < 0 ? Icons.arrow_downward : Icons.remove),
             size: 14,
-            color: diff > 0 ? c.done : (diff < 0 ? c.retake : c.faint),
+            color: diff > 0 ? c.good : (diff < 0 ? c.retake : c.faint),
           ),
           SizedBox(
             width: 64,

@@ -91,8 +91,8 @@ void main() {
       expect(left, greaterThan(size.width / 2), reason: 'not on the left');
       // The charts say what they are drawn by, on the left.
       final basis = switch (view) {
-        AppView.timeline => '제작 일정',
-        AppView.work => '내 작업 일정',
+        AppView.timeline => '스케줄',
+        AppView.work => '작업 예상',
         _ => null,
       };
       final label = find.byKey(const Key('toolbar-basis'));

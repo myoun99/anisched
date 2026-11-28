@@ -1,6 +1,7 @@
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/theme.dart';
+import 'package:anisched/src/ui/cut_add_tools.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -90,13 +91,32 @@ void main() {
     );
     await t.pump();
     expect(find.text('C001 · #07'), findsOneWidget);
-    await t.ensureVisible(find.byKey(const Key('cut-digits-4')));
-    await t.tap(find.byKey(const Key('cut-digits-4')));
+    final field = find.byKey(const Key('cut-digits-field'));
+    await t.ensureVisible(field);
+    // Typed like the register's first-cut field: digits in a pill.
+    expect(
+      find.ancestor(of: field, matching: find.byType(CutToolPill)),
+      findsOneWidget,
+    );
+    await t.enterText(field, '4');
+    await t.testTextInput.receiveAction(TextInputAction.done);
     await t.pump();
+    await t.ensureVisible(find.byKey(const Key('episode-prefix-none')));
     await t.tap(find.byKey(const Key('episode-prefix-none')));
     await t.pump();
     expect(store.settings.cutStyle, (prefix: 'C', digits: 4));
     expect(store.settings.episodeStyle.prefix, '');
     expect(find.text('C0001 · 07'), findsOneWidget);
+    // Out of 1–6: back to what it was, nothing saved.
+    await t.enterText(field, '9');
+    await t.testTextInput.receiveAction(TextInputAction.done);
+    await t.pump();
+    expect(store.settings.cutStyle.digits, 4);
+    expect(t.widget<TextField>(field).controller!.text, '4');
+    await t.enterText(field, '0');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await t.pump();
+    expect(store.settings.cutStyle.digits, 4);
+    expect(t.widget<TextField>(field).controller!.text, '4');
   });
 }

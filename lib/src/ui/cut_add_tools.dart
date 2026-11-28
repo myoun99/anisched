@@ -81,8 +81,6 @@ class _CutAddToolsState extends State<CutAddTools> {
     _after(enter: enter, first: _nameFocus);
   }
 
-  /// A field inside a pill: no box of its own (the pill is the box), the
-  /// notation's prefix before it, always shown.
   Widget _field(
     Key key,
     TextEditingController ctl, {
@@ -91,44 +89,17 @@ class _CutAddToolsState extends State<CutAddTools> {
     VoidCallback? onSubmit,
     bool digits = true,
     String? hint,
-  }) {
-    final c = AppColors.of(context);
-    const bare = InputBorder.none;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(widget.draft.prefix, style: TextStyle(color: c.faint)),
-        SizedBox(
-          width: width,
-          child: TextField(
-            key: key,
-            controller: ctl,
-            focusNode: focus,
-            onTapOutside: unfocusOutside,
-            keyboardType: digits ? TextInputType.number : null,
-            inputFormatters: [
-              if (digits) FilteringTextInputFormatter.digitsOnly,
-            ],
-            onChanged: (_) => setState(() {}),
-            onSubmitted: onSubmit == null ? null : (_) => onSubmit(),
-            decoration: InputDecoration(
-              isDense: true,
-              filled: false,
-              border: bare,
-              enabledBorder: bare,
-              focusedBorder: bare,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 2,
-                vertical: 8,
-              ),
-              hintText: hint,
-              hintStyle: TextStyle(color: c.faint),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  }) => PillField(
+    fieldKey: key,
+    controller: ctl,
+    width: width,
+    prefix: widget.draft.prefix,
+    focus: focus,
+    digits: digits,
+    hint: hint,
+    onChanged: (_) => setState(() {}),
+    onSubmit: onSubmit,
+  );
 
   static final _compact = FilledButton.styleFrom(
     padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -226,6 +197,80 @@ class CutToolPill extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A field inside a [CutToolPill]: no box of its own (the pill is the
+/// box), [prefix] before it, always shown. The register's cut fields and
+/// the settings' digit counts use this one.
+class PillField extends StatelessWidget {
+  const PillField({
+    super.key,
+    required this.fieldKey,
+    required this.controller,
+    required this.width,
+    this.prefix = '',
+    this.focus,
+    this.digits = true,
+    this.hint,
+    this.onChanged,
+    this.onSubmit,
+    this.maxLength,
+  });
+
+  final Key fieldKey;
+  final TextEditingController controller;
+  final double width;
+  final String prefix;
+  final FocusNode? focus;
+
+  /// Digits only, with a number keyboard.
+  final bool digits;
+  final String? hint;
+  final ValueChanged<String>? onChanged;
+  final VoidCallback? onSubmit;
+  final int? maxLength;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    const bare = InputBorder.none;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (prefix.isNotEmpty) Text(prefix, style: TextStyle(color: c.faint)),
+        SizedBox(
+          width: width,
+          child: TextField(
+            key: fieldKey,
+            controller: controller,
+            focusNode: focus,
+            onTapOutside: unfocusOutside,
+            keyboardType: digits ? TextInputType.number : null,
+            inputFormatters: [
+              if (digits) FilteringTextInputFormatter.digitsOnly,
+              if (maxLength != null)
+                LengthLimitingTextInputFormatter(maxLength),
+            ],
+            onChanged: onChanged,
+            onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: false,
+              border: bare,
+              enabledBorder: bare,
+              focusedBorder: bare,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 2,
+                vertical: 8,
+              ),
+              hintText: hint,
+              hintStyle: TextStyle(color: c.faint),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

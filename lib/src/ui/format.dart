@@ -23,7 +23,7 @@ extension TaskStatusLabel on TaskStatus {
 enum DueTone { none, quiet, late }
 
 /// The production deadline as one short label as of [now]: 「D-3」,
-/// 「D-day」, or 「2일 지남」 once it has passed. The user's own plan never
+/// 「D-day」, or 「D+2」 once it has passed. The user's own plan never
 /// changes this label. Handed-over work never looks late.
 ({String text, DueTone tone}) dueLabel(
   DateTime? dueAt,
@@ -35,15 +35,18 @@ enum DueTone { none, quiet, late }
   status,
 );
 
+/// Days to a deadline as one token: 「D-3」, 「D-day」, past it 「D+2」.
+/// Every deadline on screen is written by this.
+String dueDaysText(int days) =>
+    days < 0 ? 'D+${-days}' : (days == 0 ? 'D-day' : 'D-$days');
+
 /// [dueLabel] from days already counted (negative = late, null = none).
 ({String text, DueTone tone}) dueLabelFromDays(int? days, TaskStatus status) {
   // Handed in: no deadline to watch any more.
   if (days == null || status.isHanded) {
     return (text: '—', tone: DueTone.none);
   }
-  final text = days < 0
-      ? S.daysLate.f({'n': -days})
-      : (days == 0 ? 'D-day' : 'D-$days');
+  final text = dueDaysText(days);
   final late = days < 0 && status.isOpen;
   return (text: text, tone: late ? DueTone.late : DueTone.quiet);
 }
@@ -145,12 +148,12 @@ String taskLabel(TaskRow t) => t.cutNumber ?? t.storyboardLabel ?? '';
       DueSubmitted() => (text: S.stSubmitted.t, late: false, quiet: true),
       DueNone() => (text: '—', late: false, quiet: true),
       DueLate(:final days) => (
-        text: S.daysLate.f({'n': days}),
+        text: dueDaysText(-days),
         late: true,
         quiet: false,
       ),
       DueDaysLeft(:final days) => (
-        text: days == 0 ? 'D-day' : 'D-$days',
+        text: dueDaysText(days),
         late: false,
         quiet: false,
       ),
