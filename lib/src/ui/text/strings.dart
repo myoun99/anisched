@@ -159,7 +159,6 @@ enum S {
   saved('Saved', '保存済み', '저장됨', 'Enregistré', '已保存'),
   saving('Saving', '保存待ち', '저장 대기', 'À enregistrer', '待保存'),
   notSaved('Not saved', '未保存', '저장 안 됨', 'Non enregistré', '未保存'),
-  recentFiles('Recent', '最近', '최근 파일', 'Récents', '最近'),
 
   // Work lanes.
   autoPlace('Auto', '自動配置', '자동 배치', 'Auto', '自动排列'),
@@ -193,7 +192,6 @@ enum S {
   themeDark('Dark', 'ダーク', '다크', 'Sombre', '深色'),
   language('Language', '言語', '언어', 'Langue', '语言'),
   langDevice('Device', '端末', '기기', 'Appareil', '设备'),
-  workTime('Work time', '作業時間', '작업 시간', 'Temps de travail', '工作时间'),
   timerAuto(
     'Start timing when a cut is picked',
     'カットを選ぶとすぐ計測',
@@ -231,7 +229,6 @@ enum S {
     'Rythme habituel (cut/jour)',
     '平时速度(每天 cut)',
   ),
-  restore('Restore', '復元', '복구', 'Restaurer', '恢复'),
   overwritten(
     'Overwritten copy',
     '上書きされた版',
@@ -309,7 +306,6 @@ enum S {
   hours('{n}h', '{n}時間', '{n}시간', '{n} h', '{n}小时'),
   minutes('{n} min', '{n}分', '{n}분', '{n} min', '{n}分钟'),
   extendedN('{n} extended', '延長 {n}', '연장 {n}', '{n} prolongés', '延期 {n}'),
-  comingSoon('Coming', '準備中', '준비 중', 'Bientôt', '即将'),
   cDoneCuts('Done cuts', '完了 cut', '완료 cut', 'Cuts terminés', '完成 cut'),
   cAvgLine(
     'dashed = average',
@@ -398,8 +394,7 @@ enum S {
 
   // Deadline rounds (1st, 2nd … extensions).
   dueRound('Round {n}', '{n}次', '{n}차', '{n}e échéance', '第{n}次'),
-  dueRounds('Deadlines', '締切履歴', '마감 차수', 'Échéances', '截止记录'),
-  addDueRound('New round', '次の締切', '새 차수', 'Nouvelle échéance', '新一次截止');
+  dueRounds('Deadlines', '締切履歴', '마감 차수', 'Échéances', '截止记录');
 
   const S(this.en, this.ja, this.ko, this.fr, this.zh);
 
