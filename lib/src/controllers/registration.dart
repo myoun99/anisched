@@ -162,6 +162,7 @@ class RegistrationDraft {
     required this.cuts,
     this.kickoffAt,
     this.dueAt,
+    this.schedules = const {},
   });
 
   final int workId;
@@ -176,6 +177,14 @@ class RegistrationDraft {
   final CutDraft cuts;
   final DateTime? kickoffAt;
   final DateTime? dueAt;
+
+  /// Each stage's own production start and deadline (LO and 原画 rarely
+  /// share them), by stage name; a stage missing here, or a date left
+  /// null, takes [kickoffAt] / [dueAt].
+  final Map<String, ({DateTime? kickoffAt, DateTime? dueAt})> schedules;
+
+  DateTime? kickoffOf(String stage) => schedules[stage]?.kickoffAt ?? kickoffAt;
+  DateTime? dueOf(String stage) => schedules[stage]?.dueAt ?? dueAt;
 }
 
 /// Thrown when cut names clash with each other or with the episode.
@@ -224,15 +233,17 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
 
   final tasks = <int>[];
   final stageIds = <int>[];
+  final tasksOf = <String, List<int>>{};
   for (final name in d.stages) {
     final found = store.stages(d.workId).where((s) => s.name == name);
     final stage = found.isEmpty
         ? store.addStage(d.workId, name)
         : found.first.id;
     stageIds.add(stage);
-    for (final c in added) {
-      tasks.add(store.addTask(stage, cutId: c));
-    }
+    final own = tasksOf[name] = [
+      for (final c in added) store.addTask(stage, cutId: c),
+    ];
+    tasks.addAll(own);
   }
   for (final MapEntry(key: c, value: parts) in d.cuts.splits.entries) {
     final id = cellId[c];
@@ -246,18 +257,27 @@ List<int> register(CatalogueStore store, RegistrationDraft d) {
     final ib = cellId[b];
     if (ia != null && ib != null) store.linkSharedCuts([ia, ib]);
   }
-  final kickoff = d.kickoffAt ?? store.clock();
-  if (partId != null) {
-    for (final s in stageIds) {
-      store.setPartSchedule(partId, s, kickoffAt: kickoff, dueAt: d.dueAt);
+  // Each stage's own dates: on its part × stage, or on each of its tasks
+  // for cuts outside a part.
+  for (final (i, name) in d.stages.indexed) {
+    final kickoff = d.kickoffOf(name) ?? store.clock();
+    final due = d.dueOf(name);
+    if (partId != null) {
+      store.setPartSchedule(
+        partId,
+        stageIds[i],
+        kickoffAt: kickoff,
+        dueAt: due,
+      );
+      continue;
     }
-  } else {
-    final mine = tasks.toSet();
+    final mine = tasksOf[name]!.toSet();
     for (final g in store.partGroups()) {
+      if (g.stageId != stageIds[i]) continue;
       for (final t in g.tasks) {
         if (!mine.contains(t.id)) continue;
         store.setTaskKickoff(t.id, kickoff);
-        if (d.dueAt != null) store.setTaskDue(t.id, d.dueAt);
+        if (due != null) store.setTaskDue(t.id, due);
       }
     }
   }

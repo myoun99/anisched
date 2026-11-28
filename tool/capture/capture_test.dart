@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:anisched/src/models/progress.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
+import 'package:anisched/src/services/undo_history.dart';
 import 'package:anisched/src/services/work_timer.dart';
 import 'package:anisched/src/ui/fold.dart';
 import 'package:anisched/src/ui/hold.dart';
@@ -16,7 +17,7 @@ import 'package:anisched/src/ui/shell.dart';
 import 'package:anisched/src/ui/text/strings.dart';
 import 'package:anisched/src/ui/views/chart.dart';
 import 'package:anisched/src/ui/theme.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -99,6 +100,17 @@ final scenarios = <String, (AppView, Scenario)>{
     AppView.timeline,
     (t, size) async {
       chartView.value = chartView.value.scrolled(2.45);
+      await t.pump();
+    },
+  ),
+
+  // A bundle's row (LO and 原画 of one part): both bars on it, named.
+  'bundle-timeline': (AppView.timeline, (t, size) async {}),
+  // Zoomed all the way out: the grips stay 16 px, outside short bars.
+  'bundle-timeline-zoomout': (
+    AppView.timeline,
+    (t, size) async {
+      chartView.value = const ChartView(days: ChartView.maxDays);
       await t.pump();
     },
   ),
@@ -323,6 +335,62 @@ final scenarios = <String, (AppView, Scenario)>{
       }
     },
   ),
+  // The delete confirmation over the list, one line picked.
+  'delete-confirm': (
+    AppView.list,
+    (t, size) async {
+      await t.longPress(byKeyPrefix('line-').at(1));
+      await t.pump();
+      if (find.byKey(const Key('pick-delete')).evaluate().isEmpty) {
+        await t.tap(find.byKey(const Key('pick-more')));
+        await t.pump();
+      }
+      await t.tap(find.byKey(const Key('pick-delete')));
+      await t.pump();
+    },
+  ),
+  // Archived work shown by the filter (one card put away), faded.
+  'archived-shown': (
+    AppView.list,
+    (t, size) async {
+      await t.tap(find.byKey(const Key('filter-button')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('filter-archived')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // The edit dialog for one picked bundle.
+  'bundle-edit': (
+    AppView.list,
+    (t, size) async {
+      await t.longPress(byKeyPrefix('line-').at(1));
+      await t.pump();
+      if (find.byKey(const Key('pick-edit')).evaluate().isEmpty) {
+        await t.tap(find.byKey(const Key('pick-more')));
+        await t.pump();
+      }
+      await t.tap(find.byKey(const Key('pick-edit')));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  // An opened unit's 「+」 and the add-cuts dialog, count 3.
+  'add-cuts': (
+    AppView.list,
+    (t, size) async {
+      Folds.cutsInDetails.value = true;
+      await t.tap(byKeyPrefix('line-').at(1));
+      await t.pump();
+      final add = byKeyPrefix('cut-add-').first;
+      await Scrollable.ensureVisible(t.element(add), alignment: 0.5);
+      await t.pump();
+      await t.tap(add);
+      await t.pump();
+      await t.enterText(find.byKey(const Key('add-count')), '3');
+      await t.pump();
+    },
+  ),
   // ③ The register screen's cut grid with its margins.
   'register-grid': (
     AppView.register,
@@ -448,7 +516,13 @@ void main() {
           t.view.devicePixelRatio = 2;
           addTearDown(t.view.reset);
           final store = sampleCatalogue(now);
+          // As the app runs: every write can be undone (↶ ↷ shown).
+          UndoHistory.attach(store.db);
           if (base == 'holds') prepareHolds(store);
+          if (base == 'archived-shown') {
+            final g = store.partGroups()[1];
+            store.archiveTasks([for (final x in g.tasks) x.id]);
+          }
           if (base.startsWith('bundle')) prepareBundles(store);
           if (base.startsWith('r9')) prepareClients(store);
           if (base.startsWith('r10')) {
@@ -537,6 +611,12 @@ void prepareBundles(CatalogueStore store) {
       if (g.workTitle == '별빛 정류장' && g.stageName == 'LO') g,
   ];
   for (final (i, g) in lo.indexed) {
+    // LO from a week back, so its bar shows beside 原画's.
+    store.setPartKickoff(
+      g.partId!,
+      g.stageId,
+      DateTime(now.year, now.month, now.day - 8),
+    );
     final genga = store.stages(g.workId).firstWhere((s) => s.name == '원화').id;
     store.addTasksForPart(g.partId!, genga);
     store.setPartDue(

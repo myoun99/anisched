@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 
 import '../../controllers/registration.dart';
 import '../../core/size_class.dart';
@@ -11,9 +10,11 @@ import '../../models/catalogue.dart';
 import '../../models/progress.dart';
 import '../../services/catalogue_reader.dart';
 import '../../services/catalogue_store.dart';
-import '../client_chip.dart';
+import '../client_pick.dart';
+import '../count_stepper.dart';
+import '../date_span.dart';
+import '../sliding_row.dart';
 import '../fold.dart';
-import '../palette.dart';
 import '../format.dart';
 import '../instant.dart';
 import '../pick_field.dart';
@@ -88,13 +89,17 @@ class _RegisterViewState extends State<RegisterView> {
   List<CutRow> _saved = const [];
   final _pickedSaved = <int>{};
   final _picked = <String>{};
-  late DateTime _kickoff = DateTime(
+
+  /// The first stage's start until set: the day of registering.
+  late final DateTime _kickoff = DateTime(
     widget.now.year,
     widget.now.month,
     widget.now.day,
   );
-  DateTime? _due;
-  String? _done;
+
+  /// Dates set on one stage's row, by stage name; a stage without its own
+  /// takes the stage above's (the first: [_kickoff], no deadline).
+  final _ownDates = <String, ({DateTime? kickoff, DateTime? due})>{};
 
   /// While dragging across the grid: true picks, false drops.
   bool? _paint;
@@ -187,12 +192,6 @@ class _RegisterViewState extends State<RegisterView> {
     _picked.retainWhere(cells.contains);
   }
 
-  void _step(TextEditingController c, int by) {
-    final v = (int.tryParse(c.text) ?? 0) + by;
-    c.text = '${v < 1 ? 1 : v}';
-    setState(_rebuildCuts);
-  }
-
   // ---- grid picking ----
 
   String? _cellAt(Offset global) {
@@ -261,7 +260,7 @@ class _RegisterViewState extends State<RegisterView> {
   void _register() {
     final cb = widget.onRegister;
     if (cb == null || !_ready) return;
-    final n = cb(
+    cb(
       RegistrationDraft(
         workId: _work!.value,
         episodeId: _episode!.value,
@@ -272,35 +271,157 @@ class _RegisterViewState extends State<RegisterView> {
         ],
         cuts: _cuts,
         kickoffAt: _kickoff,
-        dueAt: _due == null
-            ? null
-            : DateTime(_due!.year, _due!.month, _due!.day, 23, 59),
+        schedules: {
+          for (final s in _checked)
+            s: (kickoffAt: _datesOf(s).kickoff, dueAt: _endOf(_datesOf(s).due)),
+        },
       ),
     );
-    setState(() {
-      _done = S.registered.f({'n': n});
-      _picked.clear();
-      _cuts = CutDraft(
-        start: _cuts.start + _cuts.count,
-        count: _cuts.count,
-        prefix: _cuts.prefix,
-        width: _cuts.width,
-      );
-      _start.text = '${_cuts.start}';
-    });
-    unawaited(_loadTaken());
+    final cuts = _cuts.total;
+    // Saved: the form starts over, as when the screen first opened.
+    setState(_clear);
+    _snack('${S.register.t} · $cuts cut', key: 'registered-snack');
   }
 
-  Future<void> _pickDate(bool due) async {
+  /// Everything typed and picked, to put back after a reset.
+  ({
+    PickOption<int>? client,
+    PickOption<int>? work,
+    PickOption<int>? episode,
+    String? part,
+    Set<String> stages,
+    CutDraft cuts,
+    String start,
+    String count,
+    Map<String, ({DateTime? kickoff, DateTime? due})> dates,
+  })
+  _snapshot() => (
+    client: _client,
+    work: _work,
+    episode: _episode,
+    part: _part,
+    stages: {..._stages},
+    cuts: _cuts,
+    start: _start.text,
+    count: _count.text,
+    dates: {..._ownDates},
+  );
+
+  /// The form as the screen first opens it: nothing picked, the first
+  /// role's stages, cuts 1-100, starting today.
+  void _clear() {
+    _client = null;
+    _work = null;
+    _episode = null;
+    _part = null;
+    _stages
+      ..clear()
+      ..addAll(widget.roles.isEmpty ? const [] : widget.roles.first.stages);
+    _start.text = '1';
+    _count.text = '100';
+    _cuts = CutDraft(prefix: _cuts.prefix, width: _cuts.width);
+    _ownDates.clear();
+    _picked.clear();
+    _pickedSaved.clear();
+    _taken = const {};
+    _saved = const [];
+  }
+
+  /// 「초기화」: the form empties at once; the snack bar's undo puts back
+  /// what was there (no confirmation first).
+  void _reset() {
+    final was = _snapshot();
+    setState(_clear);
+    _snack(
+      S.resetForm.t,
+      key: 'reset-snack',
+      undo: () {
+        setState(() {
+          _client = was.client;
+          _work = was.work;
+          _episode = was.episode;
+          _part = was.part;
+          _stages
+            ..clear()
+            ..addAll(was.stages);
+          _cuts = was.cuts;
+          _start.text = was.start;
+          _count.text = was.count;
+          _ownDates
+            ..clear()
+            ..addAll(was.dates);
+        });
+        unawaited(_loadTaken());
+      },
+    );
+  }
+
+  void _snack(String text, {required String key, VoidCallback? undo}) =>
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: Key(key),
+            content: Text(text),
+            action: undo == null
+                ? null
+                : SnackBarAction(
+                    key: const Key('reset-undo'),
+                    label: S.undoDrop.t,
+                    onPressed: undo,
+                  ),
+          ),
+        );
+
+  /// The checked stages, in order.
+  List<String> get _checked => [
+    for (final s in _allStages)
+      if (_stages.contains(s)) s,
+  ];
+
+  /// A deadline day's end.
+  static DateTime? _endOf(DateTime? d) =>
+      d == null ? null : DateTime(d.year, d.month, d.day, 23, 59);
+
+  /// [stage]'s dates: its own, else the stage above's — copied down, so
+  /// LO's dates start 原画's until 原画 gets its own.
+  ({DateTime kickoff, DateTime? due, bool ownKickoff, bool ownDue}) _datesOf(
+    String stage,
+  ) {
+    var kickoff = _kickoff;
+    DateTime? due;
+    for (final s in _checked) {
+      final own = _ownDates[s];
+      kickoff = own?.kickoff ?? kickoff;
+      due = own?.due ?? due;
+      if (s == stage) {
+        return (
+          kickoff: kickoff,
+          due: due,
+          ownKickoff: own?.kickoff != null,
+          ownDue: own?.due != null,
+        );
+      }
+    }
+    return (kickoff: kickoff, due: due, ownKickoff: false, ownDue: false);
+  }
+
+  Future<void> _pickDate(String stage, {required bool due}) async {
+    final now = _datesOf(stage);
     final d = await showInstantDatePicker(
       context: context,
       firstDate: DateTime(widget.now.year - 1),
       lastDate: DateTime(widget.now.year + 2),
-      initialDate: due ? (_due ?? _kickoff) : _kickoff,
+      initialDate: due ? (now.due ?? now.kickoff) : now.kickoff,
       title: due ? S.pickDue.t : S.pickKickoff.t,
     );
     if (d == null || !mounted) return;
-    setState(() => due ? _due = d : _kickoff = d);
+    setState(() {
+      final own = _ownDates[stage];
+      _ownDates[stage] = due
+          ? (kickoff: own?.kickoff, due: d)
+          : (kickoff: d, due: own?.due);
+    });
   }
 
   // ---- build ----
@@ -318,91 +439,98 @@ class _RegisterViewState extends State<RegisterView> {
     final clashes = _clashes;
     return ColoredBox(
       color: c.panel,
-      child: Listener(
-        onPointerUp: (_) {
-          if (_paint != null) setState(() => _paint = null);
-        },
-        onPointerCancel: (_) {
-          if (_paint != null) setState(() => _paint = null);
-        },
-        child: OwnScroll(
-          builder: (controller) => Scrollbar(
-            controller: controller,
-            child: CustomScrollView(
-              key: _scrollKey,
-              controller: controller,
-              physics: _paint == null
-                  ? null
-                  : const NeverScrollableScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                  sliver: SliverToBoxAdapter(child: _form(context)),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                  sliver: SliverToBoxAdapter(child: _summary(context)),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
-                  sliver: SliverToBoxAdapter(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FoldToggle(
-                        key: const Key('fold-new-cuts'),
-                        state: Folds.newCuts,
-                        label: '${cells.length} cut',
+      child: Column(
+        children: [
+          Expanded(
+            child: Listener(
+              onPointerUp: (_) {
+                if (_paint != null) setState(() => _paint = null);
+              },
+              onPointerCancel: (_) {
+                if (_paint != null) setState(() => _paint = null);
+              },
+              child: OwnScroll(
+                builder: (controller) => Scrollbar(
+                  controller: controller,
+                  child: CustomScrollView(
+                    key: _scrollKey,
+                    controller: controller,
+                    physics: _paint == null
+                        ? null
+                        : const NeverScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                        sliver: SliverToBoxAdapter(child: _form(context)),
                       ),
-                    ),
-                  ),
-                ),
-                if (Folds.newCuts.value)
-                  SliverPadding(
-                    padding: _gridPadding,
-                    sliver: SliverGrid.builder(
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 60,
-                            mainAxisExtent: 24,
-                            mainAxisSpacing: 2,
-                            crossAxisSpacing: 2,
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        sliver: SliverToBoxAdapter(child: _summary(context)),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(10, 4, 14, 0),
+                        sliver: SliverToBoxAdapter(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FoldToggle(
+                              key: const Key('fold-new-cuts'),
+                              state: Folds.newCuts,
+                              label: '${cells.length} cut',
+                            ),
                           ),
-                      itemCount: cells.length + 1,
-                      itemBuilder: (context, i) => i == cells.length
-                          ? _plusCell(context)
-                          : _cell(
-                              context,
-                              cells[i],
-                              clashes.contains(cells[i]),
-                            ),
-                    ),
-                  ),
-                if (_saved.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-                    sliver: SliverToBoxAdapter(child: _savedBar(context)),
-                  ),
-                  if (Folds.savedCuts.value)
-                    SliverPadding(
-                      padding: _gridPadding,
-                      sliver: SliverGrid.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 60,
-                              mainAxisExtent: 24,
-                              mainAxisSpacing: 2,
-                              crossAxisSpacing: 2,
-                            ),
-                        itemCount: _saved.length,
-                        itemBuilder: (context, i) =>
-                            _savedCell(context, _saved[i]),
+                        ),
                       ),
-                    ),
-                ],
-              ],
+                      if (Folds.newCuts.value)
+                        SliverPadding(
+                          padding: _gridPadding,
+                          sliver: SliverGrid.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 60,
+                                  mainAxisExtent: 24,
+                                  mainAxisSpacing: 2,
+                                  crossAxisSpacing: 2,
+                                ),
+                            itemCount: cells.length + 1,
+                            itemBuilder: (context, i) => i == cells.length
+                                ? _plusCell(context)
+                                : _cell(
+                                    context,
+                                    cells[i],
+                                    clashes.contains(cells[i]),
+                                  ),
+                          ),
+                        ),
+                      if (_saved.isNotEmpty) ...[
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                          sliver: SliverToBoxAdapter(child: _savedBar(context)),
+                        ),
+                        if (Folds.savedCuts.value)
+                          SliverPadding(
+                            padding: _gridPadding,
+                            sliver: SliverGrid.builder(
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 60,
+                                    mainAxisExtent: 24,
+                                    mainAxisSpacing: 2,
+                                    crossAxisSpacing: 2,
+                                  ),
+                              itemCount: _saved.length,
+                              itemBuilder: (context, i) =>
+                                  _savedCell(context, _saved[i]),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+          _actions(context),
+        ],
       ),
     );
   }
@@ -421,47 +549,25 @@ class _RegisterViewState extends State<RegisterView> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            PickField<int>(
-              key: const Key('pick-client'),
-              current: _client?.value,
-              label: S.client.t,
+            ClientPick(
+              picked: _client,
+              reader: r,
+              colors: _clientColors,
               width: fw,
-              value: _client?.title,
-              search: (q) async {
-                if (r == null) return const [];
-                final found = await r.searchClients(q);
-                for (final x in found) {
-                  _clientColors[x.id] = x.color;
-                }
-                return [
-                  for (final x in found)
-                    (value: x.id, title: x.name, note: null),
-                ];
-              },
               onPicked: (x) => setState(() {
                 _client = x;
                 _work = null;
                 _episode = null;
                 _part = null;
               }),
-              onCreate: widget.onCreateClient == null
+              onCreate: widget.onCreateClient,
+              onColor: widget.onClientColor == null
                   ? null
-                  : (name) async => (
-                      value: widget.onCreateClient!(name),
-                      title: name,
-                      note: null,
-                    ),
+                  : (id, argb) {
+                      widget.onClientColor!(id, argb);
+                      setState(() {});
+                    },
             ),
-            if (_client case final cl? when widget.onClientColor != null)
-              ClientColorButton(
-                color: clientColorOf(cl.value, _clientColors[cl.value]),
-                swatches: clientSwatches,
-                tooltip: S.client.t,
-                onPicked: (col) {
-                  widget.onClientColor!(cl.value, col.toARGB32());
-                  setState(() => _clientColors[cl.value] = col.toARGB32());
-                },
-              ),
             PickField<int>(
               key: const Key('pick-work'),
               current: _work?.value,
@@ -537,29 +643,23 @@ class _RegisterViewState extends State<RegisterView> {
         Text(S.roles.t, style: TextStyle(fontSize: 12, color: c.muted)),
         // One row the finger slides along: a role is a shortcut, most
         // people use one or two.
-        SingleChildScrollView(
+        SlidingRow(
           key: const Key('roles-row'),
-          scrollDirection: Axis.horizontal,
-          // Room for the scrollbar under the chips.
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            spacing: 6,
-            children: [
-              for (final role in widget.roles)
-                ToolbarButton(
-                  key: Key('role-${role.name}'),
-                  label: role.name,
-                  selected:
-                      _stages.length == role.stages.length &&
-                      role.stages.every(_stages.contains),
-                  onTap: () => setState(
-                    () => _stages
-                      ..clear()
-                      ..addAll(role.stages),
-                  ),
+          children: [
+            for (final role in widget.roles)
+              ToolbarButton(
+                key: Key('role-${role.name}'),
+                label: role.name,
+                selected:
+                    _stages.length == role.stages.length &&
+                    role.stages.every(_stages.contains),
+                onTap: () => setState(
+                  () => _stages
+                    ..clear()
+                    ..addAll(role.stages),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
         // Folded, only the checked stages show.
         ValueListenableBuilder<bool>(
@@ -584,22 +684,25 @@ class _RegisterViewState extends State<RegisterView> {
           runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
-            _stepper(
-              S.firstCut.t,
-              _cuts.number(_cuts.start),
-              _start,
-              'reg-start',
+            CountStepper(
+              label: S.firstCut.t,
+              preview: _cuts.number(_cuts.start),
+              controller: _start,
+              fieldKey: const Key('reg-start'),
+              onChanged: () => setState(_rebuildCuts),
             ),
-            _stepper(
-              S.cutCount.t,
-              '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
-              _count,
-              'reg-count',
+            CountStepper(
+              label: S.cutCount.t,
+              preview: '~ ${_cuts.number(_cuts.start + _cuts.count - 1)}',
+              controller: _count,
+              fieldKey: const Key('reg-count'),
+              onChanged: () => setState(_rebuildCuts),
             ),
-            _dateButton(S.kickoff.t, _kickoff, () => _pickDate(false)),
-            _dateButton(S.due.t, _due, () => _pickDate(true)),
           ],
         ),
+        // Each card the register makes (one per stage) with its own
+        // production dates, the stage above's until set.
+        for (final s in _checked) _stageDates(s),
       ],
     );
   }
@@ -677,16 +780,47 @@ class _RegisterViewState extends State<RegisterView> {
           selected: false,
           onTap: any ? () => setState(_picked.clear) : null,
         ),
-        FilledButton(
-          key: const Key('register'),
-          onPressed: _ready ? _register : null,
-          child: Text(S.register.t),
-        ),
-        SizedBox(
-          width: 80,
-          child: Text(_done ?? '', style: TextStyle(color: c.muted)),
-        ),
       ],
+    );
+  }
+
+  /// The screen's foot, fixed above the tabs (and the keyboard): 「초기화」
+  /// on the left, quiet; 「등록」 on the right, the main action.
+  Widget _actions(BuildContext context) {
+    final c = AppColors.of(context);
+    return DecoratedBox(
+      key: const Key('register-actions'),
+      decoration: BoxDecoration(
+        color: c.panel,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // The quiet one gives way first on a narrow screen.
+            Flexible(
+              child: TextButton.icon(
+                key: const Key('register-reset'),
+                onPressed: widget.onRegister == null ? null : _reset,
+                style: TextButton.styleFrom(foregroundColor: c.muted),
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: Text(
+                  S.resetForm.t,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            FilledButton(
+              key: const Key('register'),
+              onPressed: _ready ? _register : null,
+              child: Text(S.register.t),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -943,81 +1077,47 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _stepper(
-    String label,
-    String preview,
-    TextEditingController ctl,
-    String key,
-  ) {
+  /// One stage's row: its name, then 「제작」 [start → deadline]; a date
+  /// copied from the stage above shows faint until set here.
+  Widget _stageDates(String stage) {
     final c = AppColors.of(context);
-    Widget btn(IconData icon, int by) => InkWell(
-      onTap: () => _step(ctl, by),
-      child: SizedBox(width: 34, height: 36, child: Icon(icon, size: 18)),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: 4,
-      children: [
-        Text.rich(
-          TextSpan(
-            text: '$label ',
-            children: [
-              TextSpan(
-                text: preview,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          style: TextStyle(fontSize: 12, color: c.muted),
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: c.line),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              btn(Icons.remove, -1),
-              SizedBox(
-                width: 64,
-                child: TextField(
-                  onTapOutside: unfocusOutside,
-                  key: Key(key),
-                  controller: ctl,
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                  onChanged: (_) => setState(_rebuildCuts),
-                ),
-              ),
-              btn(Icons.add, 1),
-            ],
+    final d = _datesOf(stage);
+    final can = widget.onRegister != null;
+    Widget date(String key, DateTime? day, bool own, bool due) => InkWell(
+      key: Key('$key-$stage'),
+      onTap: can ? () => _pickDate(stage, due: due) : null,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Text(
+          day == null ? '—' : formatDate(day),
+          style: TextStyle(
+            color: own ? null : c.muted,
+            decoration: can ? TextDecoration.underline : null,
+            decorationColor: c.faint,
           ),
         ),
-      ],
+      ),
     );
-  }
-
-  Widget _dateButton(String label, DateTime? d, VoidCallback onTap) {
-    final c = AppColors.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: 4,
+    return Row(
+      key: Key('reg-stage-dates-$stage'),
+      spacing: 10,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: c.muted)),
-        ToolbarButton(
-          key: Key('reg-date-$label'),
-          label: d == null ? '—' : formatDate(d),
-          selected: false,
-          onTap: widget.onRegister == null ? null : onTap,
+        SizedBox(
+          width: 56,
+          child: Text(
+            stageText(stage),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Flexible(
+          child: DateSpanPill(
+            label: S.production.t,
+            start: date('reg-kickoff', d.kickoff, d.ownKickoff, false),
+            end: date('reg-due', d.due, d.ownDue, true),
+          ),
         ),
       ],
     );

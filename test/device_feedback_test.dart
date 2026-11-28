@@ -67,7 +67,15 @@ void main() {
     await t.tapAt(const Offset(5, 5));
     await t.pump();
     expect(find.byKey(const Key('pick-search')), findsNothing);
-    await t.tap(find.byKey(const Key('reg-date-마감')));
+    await t.tap(
+      find
+          .byWidgetPredicate(
+            (w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith('reg-due-'),
+          )
+          .first,
+    );
     await t.pump();
     expect(settled(t, find.byType(DatePickerDialog)), isTrue);
   });

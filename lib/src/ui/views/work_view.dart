@@ -82,7 +82,8 @@ class _WorkViewState extends State<WorkView> {
   /// The work whose bar was tapped open.
   String? _open;
 
-  void _toggle(String key) => setState(() => _open = _open == key ? null : key);
+  /// Opens [key]'s details (another bar's switch over).
+  void _show(String key) => setState(() => _open = key);
 
   void _close() => setState(() => _open = null);
 
@@ -274,6 +275,14 @@ class _WorkViewState extends State<WorkView> {
     if (g == null || widget.wiring == null) {
       return board;
     }
+    // A tap on the board off every bar (bars take their own taps first:
+    // the deepest tap wins) closes the details.
+    board = GestureDetector(
+      key: const Key('work-blank'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _close,
+      child: board,
+    );
     final c = AppColors.of(context);
     return LayoutBuilder(
       builder: (context, box) {
@@ -475,13 +484,9 @@ class _WorkViewState extends State<WorkView> {
           childWhenDragging: Opacity(opacity: 0.4, child: face),
           child: ring,
         );
-        if (g == null || widget.wiring == null) return body;
-        return GestureDetector(
-          key: Key('work-open-${s.key}'),
-          onTap: () => _toggle(s.key),
-          child: body,
-        );
+        return body;
       },
+      onTap: g == null || widget.wiring == null ? null : () => _show(s.key),
     );
   }
 }

@@ -10,6 +10,7 @@ import '../format.dart';
 import '../instant.dart';
 import '../text/strings.dart';
 import '../theme.dart';
+import '../sliding_row.dart';
 import '../widgets.dart';
 import '../fit_text.dart';
 import '../client_chip.dart';
@@ -208,17 +209,13 @@ class _StatsViewState extends State<StatsView> {
         // Short screens (a phone held sideways) keep the numbers to one
         // row that scrolls sideways, so the charts start on screen.
         if (MediaQuery.sizeOf(context).height < 500)
-          SingleChildScrollView(
+          SlidingRow(
             key: const Key('stats-kpi-row'),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: 8,
-              children: [
-                for (final k in _kpis(context, s))
-                  SizedBox(width: 150, child: k),
-              ],
-            ),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 8,
+            children: [
+              for (final k in _kpis(context, s)) SizedBox(width: 150, child: k),
+            ],
           )
         else
           Wrap(

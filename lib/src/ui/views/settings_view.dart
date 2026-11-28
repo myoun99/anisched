@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../undo.dart';
 
 import '../../models/holidays.dart';
 
@@ -435,7 +438,28 @@ class _SettingsViewState extends State<SettingsView> {
                 ),
             ],
           );
-    final groups = [display, restDays, workLines, notation, pay, ?storage];
+    // Keys for undo and redo: this device's, editable; on a device with
+    // no keyboard the group shows and does no harm.
+    final keys = _Group(
+      icon: Icons.keyboard_outlined,
+      title: S.shortcuts.t,
+      children: [
+        for (final (action, label) in [
+          (ShortcutAction.undo, S.undo.t),
+          (ShortcutAction.redo, S.redo.t),
+        ])
+          _ShortcutRow(action: action, label: label),
+      ],
+    );
+    final groups = [
+      display,
+      restDays,
+      workLines,
+      notation,
+      pay,
+      keys,
+      ?storage,
+    ];
     return ColoredBox(
       color: c.panel,
       child: OwnScroll(
@@ -468,7 +492,7 @@ class _SettingsViewState extends State<SettingsView> {
                           spacing: gap,
                           children: [
                             column([display, restDays, workLines]),
-                            column([notation, pay, ?storage]),
+                            column([notation, pay, keys, ?storage]),
                           ],
                         )
                       : column(groups),
@@ -644,6 +668,83 @@ class _Group extends StatelessWidget {
             ],
           ),
           ...children,
+        ],
+      ),
+    );
+  }
+}
+
+/// One action's keys: what they are now; a tap waits for the next key
+/// combination and keeps it (Esc cancels); ↺ goes back to the default.
+class _ShortcutRow extends StatefulWidget {
+  const _ShortcutRow({required this.action, required this.label});
+
+  final String action;
+  final String label;
+
+  @override
+  State<_ShortcutRow> createState() => _ShortcutRowState();
+}
+
+class _ShortcutRowState extends State<_ShortcutRow> {
+  bool _waiting = false;
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    if (!_waiting || e is! KeyDownEvent) return KeyEventResult.ignored;
+    if (e.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _waiting = false);
+      return KeyEventResult.handled;
+    }
+    final keys = keysOf(e.logicalKey);
+    if (keys == null) return KeyEventResult.handled; // a modifier: wait on
+    saveShortcut(widget.action, [keys]);
+    setState(() => _waiting = false);
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return ValueListenableBuilder<Map<String, List<String>>>(
+      valueListenable: shortcutKeys,
+      builder: (context, all, _) => Row(
+        spacing: 8,
+        children: [
+          Expanded(child: Text(widget.label)),
+          Flexible(
+            flex: 2,
+            child: Focus(
+              focusNode: _focus,
+              onKeyEvent: _onKey,
+              child: OutlinedButton(
+                key: Key('keys-${widget.action}'),
+                onPressed: () {
+                  setState(() => _waiting = true);
+                  _focus.requestFocus();
+                },
+                child: Text(
+                  _waiting
+                      ? S.pressKeys.t
+                      : (all[widget.action] ?? const []).join(' / '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _waiting ? c.muted : null),
+                ),
+              ),
+            ),
+          ),
+          _IconAction(
+            icon: Icons.restart_alt,
+            tooltip: S.keysDefault.t,
+            onTap: () => saveShortcut(widget.action, null),
+          ),
         ],
       ),
     );

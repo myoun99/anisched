@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide UndoHistory;
 import 'package:flutter/services.dart';
 
 import '../controllers/registration.dart';
@@ -14,8 +14,12 @@ import '../models/catalogue.dart';
 import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
+import '../services/undo_history.dart';
 import '../services/work_timer.dart';
+import 'add_cuts.dart';
+import 'bundle_editor.dart';
 import 'client_chip.dart';
+import 'delete_confirm.dart';
 import 'document_menu.dart';
 import 'empty_start.dart';
 import 'event_editor.dart';
@@ -31,6 +35,7 @@ import 'selection.dart';
 import 'selection_bar.dart';
 import 'theme.dart';
 import 'timer_bar.dart';
+import 'undo.dart';
 import 'widgets.dart';
 import 'views/chart.dart';
 import 'views/register_view.dart';
@@ -117,6 +122,9 @@ class _AppShellState extends State<AppShell> {
   /// Dated events by episode, for the timeline.
   Map<int?, List<EventRow>> _events = const {};
 
+  /// Events of one card, by its key (a long press on its bar).
+  Map<String, List<EventRow>> _cardEvents = const {};
+
   /// The first read has come back (an empty document is then truly empty).
   bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
@@ -176,6 +184,11 @@ class _AppShellState extends State<AppShell> {
     if (reader == null) return;
     final done = _filter.showDone;
     final today = widget.clock();
+    // Events of one card (its bar), by card key: loaded alongside.
+    final cardsLoading = reader.cardEvents(
+      from: today.subtract(const Duration(days: 120)),
+      to: today.add(const Duration(days: 240)),
+    );
     final (
       groups,
       signals,
@@ -188,8 +201,10 @@ class _AppShellState extends State<AppShell> {
       holidays,
     ) = await (
       reader.partGroups(
-        includeDone: done,
+        // Archived work is often handed in: listed then too.
+        includeDone: done || _filter.showArchived,
         includeHandedOff: _filter.showHandedOff,
+        includeArchived: _filter.showArchived,
       ),
       reader.signals(includeDone: done),
       reader.stagePaces(),
@@ -207,10 +222,12 @@ class _AppShellState extends State<AppShell> {
         to: today.add(const Duration(days: 240)),
       ),
     ).wait;
+    final cards = await cardsLoading;
     if (!mounted) return;
     setState(() {
       _loaded = true;
       _events = events;
+      _cardEvents = cards;
       final st = widget.store;
       _days = ChartDays(
         restWeekdays:
@@ -245,9 +262,10 @@ class _AppShellState extends State<AppShell> {
   Future<void> _newEvent(PartGroup g, DateTime day) async {
     final a = await showEventEditor(context, day: day);
     if (a is! EventSave) return;
+    // On that card alone (its bar), not the whole episode.
     _write(
       (s) => s.addEvent(
-        episodeId: g.episodeId,
+        card: g.key,
         date: day,
         timeMinutes: a.timeMinutes,
         title: a.title,
@@ -501,16 +519,37 @@ class _AppShellState extends State<AppShell> {
   void _write(void Function(CatalogueStore store) body) {
     final store = widget.store;
     if (store == null) return;
-    body(store);
-    episodeStyle.value = store.settings.episodeStyle;
+    // All or nothing, and one undo step.
+    store.batch(() => body(store));
+    _reloadAll();
+  }
+
+  /// Every view reads the document again.
+  void _reloadAll() {
+    final store = widget.store;
+    if (store != null) episodeStyle.value = store.settings.episodeStyle;
     setState(() => _refresh++);
     unawaited(_loadGroups());
+  }
+
+  /// The document's undo history (every write is a step), if recorded.
+  UndoHistory? get _history =>
+      widget.store == null ? null : UndoHistory.of(widget.store!.db);
+
+  /// Takes back the last write (the keys and ↶), then reloads the views.
+  void _undo() {
+    if (_history?.undo() ?? false) _reloadAll();
+  }
+
+  void _redo() {
+    if (_history?.redo() ?? false) _reloadAll();
   }
 
   void _setFilter(ViewFilter f) {
     final reload =
         f.showDone != _filter.showDone ||
-        f.showHandedOff != _filter.showHandedOff;
+        f.showHandedOff != _filter.showHandedOff ||
+        f.showArchived != _filter.showArchived;
     setState(() => _filter = f);
     if (reload) unawaited(_loadGroups());
   }
@@ -639,6 +678,112 @@ class _AppShellState extends State<AppShell> {
       );
   }
 
+  /// Puts the picked tasks away (보관) at once, with an undo; when every
+  /// one is already put away (shown by the filter), brings them back —
+  /// or says why not, when the same cut × stage is in work again.
+  void _archive() {
+    final picked = _pickedTasks;
+    final ids = [for (final t in picked) t.id];
+    if (widget.store == null || ids.isEmpty) return;
+    final back = picked.every((t) => t.archived);
+    if (back) {
+      _restore(ids);
+      return;
+    }
+    _write((store) => store.archiveTasks(ids));
+    _selection.clear();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('archived-snack'),
+          content: Text('${S.archive.t} · ${S.items.f({'n': ids.length})}'),
+          action: SnackBarAction(
+            key: const Key('archived-undo'),
+            label: S.undoDrop.t,
+            onPressed: () => _restore(ids),
+          ),
+        ),
+      );
+  }
+
+  void _restore(List<int> ids) {
+    try {
+      _write((store) => store.restoreTasks(ids));
+      _selection.clear();
+    } on StateError {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('restore-blocked'),
+            content: Text(S.restoreBlocked.t),
+          ),
+        );
+    }
+  }
+
+  /// Edits the picked bundle's names: its client, the work's title (all
+  /// its episodes), the episode's number and subtitle, the part's label.
+  Future<void> _edit() async {
+    final picked = _pickedTasks;
+    if (widget.store == null || picked.isEmpty || !oneBundle(picked)) return;
+    final t = picked.first;
+    final episodes = await widget.reader?.episodes(t.workId) ?? const [];
+    if (!mounted) return;
+    final clientId = _works[t.workId]?.clientId;
+    final e = await editBundle(
+      context,
+      initial: (
+        clientId: clientId,
+        workTitle: t.workTitle,
+        episodeNumber: t.episodeNumber,
+        episodeTitle: episodes
+            .where((x) => x.id == t.episodeId)
+            .firstOrNull
+            ?.title,
+        partLabel: t.partId == null ? null : t.partLabel,
+      ),
+      clientName: clientId == null ? null : _clients[clientId]?.name,
+      reader: widget.reader,
+      onCreateClient: (name) {
+        var id = 0;
+        _write((s) => id = s.addClient(name));
+        return id;
+      },
+      onClientColor: (id, argb) => _write((s) => s.setClientColor(id, argb)),
+    );
+    if (e == null || !mounted) return;
+    _write((store) => applyBundleEdit(store, t, e));
+    _selection.clear();
+  }
+
+  /// Adds cuts to unit [g] (its 「+」): numbers picked as on the register
+  /// screen, then cuts with [g]'s stage task under its deadline.
+  Future<void> _addCuts(PartGroup g) async {
+    final store = widget.store;
+    if (store == null) return;
+    final names = await askNewCuts(
+      context,
+      style: store.settings.cutStyle,
+      taken: {for (final c in store.cuts(g.episodeId)) c.number},
+    );
+    if (names == null || !mounted) return;
+    _write((store) => addCutsToUnit(store, g, names));
+  }
+
+  /// Deletes the picked tasks for good, after a confirmation that says
+  /// what goes with them (cuts, emptied episodes and titles, timer time).
+  Future<void> _delete() async {
+    final store = widget.store;
+    final ids = [for (final t in _pickedTasks) t.id];
+    if (store == null || ids.isEmpty) return;
+    final ok = await confirmDelete(context, store.deletionSummary(ids));
+    if (ok != true || !mounted) return;
+    _write((store) => store.deleteTasks(ids));
+    _selection.clear();
+  }
+
   /// The picked cuts' own deadline: one date, a new round for each cut
   /// (their own deadline over the part's).
   Future<void> _dueForPicked() async {
@@ -718,6 +863,8 @@ class _AppShellState extends State<AppShell> {
     final toolbar = _toolbar();
     // One wiring for every view that opens a unit's details.
     final wiring = UnitWiring(
+      now: now,
+      dayStartMinutes: widget.store?.settings.dayStartMinutes ?? 0,
       signals: _signals,
       paces: _paces,
       selection: _selection,
@@ -728,6 +875,7 @@ class _AppShellState extends State<AppShell> {
       onPlan: writable ? _plan : null,
       revisionsOf: widget.reader == null ? null : _revisions,
       onEditRevision: writable ? _editRevision : null,
+      onAddCuts: writable ? (g) => unawaited(_addCuts(g)) : null,
       onTaskTap: widget.timer == null
           ? null
           : (t) => _selection.isEmpty
@@ -756,6 +904,7 @@ class _AppShellState extends State<AppShell> {
         onSchedule: writable ? _schedule : null,
         details: (g) => wiring.details(g, client: true),
         events: _events,
+        cardEvents: _cardEvents,
         onNewEvent: writable ? _newEvent : null,
         onEvent: writable ? _editEvent : null,
         onRulerPress: writable ? _newRulerEvent : null,
@@ -865,6 +1014,14 @@ class _AppShellState extends State<AppShell> {
               : () => unawaited(_toggleHold(_pickedTasks)),
           onHandOff: widget.store == null ? null : _handOff,
           onDue: widget.store == null ? null : () => unawaited(_dueForPicked()),
+          onArchive: widget.store == null ? null : _archive,
+          allArchived: () {
+            final p = _pickedTasks;
+            return p.isNotEmpty && p.every((t) => t.archived);
+          },
+          onDelete: widget.store == null ? null : () => unawaited(_delete()),
+          onEdit: widget.store == null ? null : () => unawaited(_edit()),
+          canEdit: () => oneBundle(_pickedTasks),
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);
@@ -880,49 +1037,61 @@ class _AppShellState extends State<AppShell> {
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
               .copyWith(statusBarColor: Colors.transparent),
-          child: Scaffold(
-            body: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  ListenableBuilder(
-                    listenable: _selection,
-                    builder: (context, _) => _TopBar(
-                      picking: !_selection.isEmpty,
-                      narrow: narrow,
-                      title: widget.session == null
-                          ? null
-                          : ValueListenableBuilder<RemoteCheck?>(
-                              valueListenable:
-                                  widget.remote ??
-                                  ValueNotifier<RemoteCheck?>(null),
-                              builder: (context, remote, _) => DocumentMenu(
-                                session: widget.session!,
-                                picker: widget.picker,
-                                remote: remote,
+          child: UndoKeys(
+            onUndo: _undo,
+            onRedo: _redo,
+            child: Scaffold(
+              body: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    ListenableBuilder(
+                      listenable: _selection,
+                      builder: (context, _) => _TopBar(
+                        picking: !_selection.isEmpty,
+                        narrow: narrow,
+                        title: widget.session == null
+                            ? null
+                            : ValueListenableBuilder<RemoteCheck?>(
+                                valueListenable:
+                                    widget.remote ??
+                                    ValueNotifier<RemoteCheck?>(null),
+                                builder: (context, remote, _) => DocumentMenu(
+                                  session: widget.session!,
+                                  picker: widget.picker,
+                                  remote: remote,
+                                ),
                               ),
-                            ),
-                      actions: selectionBar,
+                        actions: selectionBar,
+                        undo: switch (_history) {
+                          final h? => UndoButtons(
+                            history: h,
+                            onUndo: _undo,
+                            onRedo: _redo,
+                          ),
+                          null => null,
+                        },
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: _view.index,
-                      sizing: StackFit.expand,
-                      children: [
-                        for (final v in AppView.values) _viewFor(v, layout),
-                      ],
+                    Expanded(
+                      child: IndexedStack(
+                        index: _view.index,
+                        sizing: StackFit.expand,
+                        children: [
+                          for (final v in AppView.values) _viewFor(v, layout),
+                        ],
+                      ),
                     ),
-                  ),
-                  _timerBar(),
-                ],
+                    _timerBar(),
+                  ],
+                ),
               ),
-            ),
-            bottomNavigationBar: _BottomBar(
-              child: ViewSwitcher(
-                key: const Key('view-switch'),
-                current: _view,
-                onSelect: _select,
+              bottomNavigationBar: _BottomBar(
+                child: ViewSwitcher(
+                  key: const Key('view-switch'),
+                  current: _view,
+                  onSelect: _select,
+                ),
               ),
             ),
           ),
@@ -938,7 +1107,11 @@ class _TopBar extends StatelessWidget {
     required this.actions,
     this.picking = false,
     this.narrow = false,
+    this.undo,
   });
+
+  /// ↶ ↷ beside the document's menu, picking or not.
+  final Widget? undo;
 
   /// Something is picked: the actions show (only then; with nothing picked
   /// every one of them would do nothing).
@@ -980,6 +1153,7 @@ class _TopBar extends StatelessWidget {
       ),
       const SizedBox(width: 10),
       if (title != null && !(picking && narrow)) Flexible(child: title!),
+      ?undo,
       const SizedBox(width: 10),
       Expanded(
         child: picking

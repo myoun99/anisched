@@ -34,6 +34,7 @@ class ViewFilter {
     this.workId,
     this.showDone = false,
     this.showHandedOff = false,
+    this.showArchived = false,
   });
 
   final DueRange range;
@@ -44,12 +45,16 @@ class ViewFilter {
   /// Also list work pulled from the user (引き上げ).
   final bool showHandedOff;
 
+  /// Also list work put away (보관), faded.
+  final bool showArchived;
+
   bool get isDefault =>
       range == DueRange.all &&
       clientId == null &&
       workId == null &&
       !showDone &&
-      !showHandedOff;
+      !showHandedOff &&
+      !showArchived;
 
   ViewFilter copyWith({
     DueRange? range,
@@ -57,12 +62,14 @@ class ViewFilter {
     int? Function()? workId,
     bool? showDone,
     bool? showHandedOff,
+    bool? showArchived,
   }) => ViewFilter(
     range: range ?? this.range,
     clientId: clientId == null ? this.clientId : clientId(),
     workId: workId == null ? this.workId : workId(),
     showDone: showDone ?? this.showDone,
     showHandedOff: showHandedOff ?? this.showHandedOff,
+    showArchived: showArchived ?? this.showArchived,
   );
 
   /// Whether [g] passes, as of [now]. [clientOf] maps work ids to their
@@ -74,7 +81,8 @@ class ViewFilter {
     int dayStartMinutes = 0,
   }) {
     // Handed in (submitted) work leaves the list unless asked for.
-    if (!showDone && g.status.isHanded) return false;
+    // Put away work, when shown, shows whatever its state.
+    if (!showDone && g.status.isHanded && !g.archived) return false;
     if (workId != null && g.workId != workId) return false;
     if (clientId != null && clientOf[g.workId] != clientId) return false;
     if (range == DueRange.all) return true;
@@ -119,6 +127,10 @@ class _Done extends _Choice {
   const _Done();
 }
 
+class _Archived extends _Choice {
+  const _Archived();
+}
+
 class _HandedOff extends _Choice {
   const _HandedOff();
 }
@@ -150,6 +162,7 @@ class FilterButton extends StatelessWidget {
       if (filter.workId != null) works[filter.workId] ?? '',
       if (filter.showDone) S.fWithDone.t,
       if (filter.showHandedOff) S.dropped.t,
+      if (filter.showArchived) S.archive.t,
     ];
     return parts.isEmpty ? S.fAll.t : parts.join(' · ');
   }
@@ -164,7 +177,9 @@ class FilterButton extends StatelessWidget {
       String text,
       bool on, {
       ClientTag? client,
+      IconData? icon,
     }) => PopupMenuItem<_Choice>(
+      key: icon == null ? null : const Key('filter-archived'),
       value: v,
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -175,6 +190,7 @@ class FilterButton extends StatelessWidget {
             width: 14,
             child: on ? const Icon(Icons.check, size: 14) : null,
           ),
+          if (icon != null) Icon(icon, size: 14, color: c.muted),
           Flexible(
             child: client != null
                 ? ClientChip(client, fitName: false)
@@ -209,6 +225,7 @@ class FilterButton extends StatelessWidget {
         _Work(:final id) => filter.copyWith(workId: () => id),
         _Done() => filter.copyWith(showDone: !filter.showDone),
         _HandedOff() => filter.copyWith(showHandedOff: !filter.showHandedOff),
+        _Archived() => filter.copyWith(showArchived: !filter.showArchived),
       }),
       itemBuilder: (_) => [
         head(S.fPeriod.t),
@@ -232,6 +249,12 @@ class FilterButton extends StatelessWidget {
         head(S.stDone.t),
         item(const _Done(), S.showDone.t, filter.showDone),
         item(const _HandedOff(), S.showDropped.t, filter.showHandedOff),
+        item(
+          const _Archived(),
+          S.showArchived.t,
+          filter.showArchived,
+          icon: Icons.archive_outlined,
+        ),
       ],
       child: ToolbarButton(
         label: _label,

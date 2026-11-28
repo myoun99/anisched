@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../controllers/unit_bundles.dart';
 import '../models/progress.dart';
 import 'client_chip.dart';
+import 'date_span.dart';
 import 'due_button.dart';
 import 'fit_text.dart';
 import 'fold.dart';
@@ -195,6 +196,7 @@ class PartLine extends StatelessWidget {
         dimmed ||
         (g.waiting > 0 && g.inHand == 0) ||
         g.tasks.every((t) => t.handedOff) ||
+        g.archived ||
         (signals?.plan is PlanNotStarted &&
             planTone(signals!.plan) == PlanTone.none);
     return fade ? Opacity(opacity: 0.5, child: line) : line;
@@ -343,7 +345,18 @@ class PartDetails extends StatelessWidget {
     this.loadRevisions,
     this.onEditRevision,
     this.client,
+    this.onAddCuts,
+    this.now,
+    this.dayStartMinutes = 0,
   });
+
+  /// Now, for the deadline's D-n in the production pill; null hides it.
+  final DateTime? now;
+  final int dayStartMinutes;
+
+  /// Adds cuts to the unit (the 「+」 at the end of its cuts); null hides
+  /// it.
+  final VoidCallback? onAddCuts;
 
   /// Puts the whole unit on hold or takes it off; null hides the button.
   final VoidCallback? onHold;
@@ -427,33 +440,41 @@ class PartDetails extends StatelessWidget {
         ...value,
       ],
     );
-    const dash = Text(' – ');
+    final due = now == null
+        ? null
+        : dueLabel(g.dueAt, now!, g.status, dayStartMinutes: dayStartMinutes);
+    // Production (start → deadline, its D-n and round), then the user's
+    // own work (start → end): one pill each, the start on the left.
     final dates = [
-      fact(S.due.t, [
-        date('details-due', g.dueAt, onDue, S.pickDue.t),
-        RoundBadge(g.dueRevision),
-      ]),
-      fact(S.production.t, [
-        date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
-        dash,
-        Text(formatDate(g.dueAt)),
-      ]),
-      fact(S.ownWork.t, [
-        date(
+      DateSpanPill(
+        key: Key('span-production-${g.key}'),
+        label: S.production.t,
+        start: date('details-kickoff', g.kickoffAt, onKickoff, S.pickKickoff.t),
+        end: date('details-due', g.dueAt, onDue, S.pickDue.t),
+        trailing: [
+          if (due != null && due.tone != DueTone.none)
+            Text(
+              due.text,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: due.tone == DueTone.late ? c.retake : c.muted,
+              ),
+            ),
+          RoundBadge(g.dueRevision),
+        ],
+      ),
+      DateSpanPill(
+        key: Key('span-work-${g.key}'),
+        label: S.ownWork.t,
+        start: date(
           'details-plan-start',
           g.planStartAt,
           onPlanStart,
           S.pickPlanStart.t,
         ),
-        dash,
-        date(
-          'details-plan-end',
-          g.planEndAt,
-          onPlanEnd,
-          S.pickPlanEnd.t,
-          empty: S.due.t,
-        ),
-      ]),
+        end: date('details-plan-end', g.planEndAt, onPlanEnd, S.pickPlanEnd.t),
+      ),
     ];
     final facts = <(String, String)>[
       (S.slack.t, slack == null ? '—' : S.days.f({'n': slack})),
@@ -577,11 +598,45 @@ class PartDetails extends StatelessWidget {
                                     t.id == highlighted ||
                                     (isPicked?.call(t) ?? false),
                               ),
+                            if (onAddCuts != null)
+                              _AddCutChip(
+                                key: Key('cut-add-${g.key}'),
+                                onTap: onAddCuts!,
+                              ),
                           ],
                         ),
                 ),
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The 「+」 after a unit's cuts: adds cuts to it.
+class _AddCutChip extends StatelessWidget {
+  const _AddCutChip({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Tooltip(
+      message: S.addCut.t,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: c.line),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Icon(Icons.add, size: 16, color: c.muted),
           ),
         ),
       ),
@@ -634,7 +689,9 @@ class _CutChip extends StatelessWidget {
           spacing: 6,
           children: [
             Dot(c.of(t.status)),
-            if (t.handedOff)
+            if (t.archived)
+              Icon(Icons.archive_outlined, size: 12, color: c.muted)
+            else if (t.handedOff)
               Icon(Icons.person_remove_outlined, size: 12, color: c.muted)
             else if (t.waiting && t.status.isOpen)
               const HoldMark(),
@@ -784,7 +841,17 @@ class UnitWiring {
     this.onHold,
     this.revisionsOf,
     this.onEditRevision,
+    this.onAddCuts,
+    this.now,
+    this.dayStartMinutes = 0,
   });
+
+  /// Now and the day's start, for the deadline's D-n in the details.
+  final DateTime? now;
+  final int dayStartMinutes;
+
+  /// Adds cuts to a unit (not a storyboard).
+  final void Function(PartGroup group)? onAddCuts;
 
   /// Deadline and plan signals by group key (reader.signals).
   final Map<String, GroupSignals> signals;
@@ -841,6 +908,11 @@ class UnitWiring {
       onEditRevision: onEditRevision == null
           ? null
           : (n, d) => onEditRevision!(p, n, d),
+      now: now,
+      dayStartMinutes: dayStartMinutes,
+      onAddCuts: onAddCuts == null || p.kind == GroupKind.storyboard
+          ? null
+          : () => onAddCuts!(p),
     );
   }
 }

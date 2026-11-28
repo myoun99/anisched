@@ -229,7 +229,13 @@ abstract final class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          // The app's fonts named again: a button's own text style
+          // replaces the theme's, family and fallbacks included.
+          textStyle: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontFamily: AppFonts.familyFor(l),
+            fontFamilyFallback: AppFonts.fallbackFor(l),
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
