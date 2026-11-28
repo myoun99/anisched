@@ -115,6 +115,7 @@ class _SheetViewState extends State<SheetView> {
         PartLine(
           group: p,
           bundle: bundle,
+          client: widget.wiring.clientOf?.call(p),
           now: widget.now,
           dayStartMinutes: widget.dayStartMinutes,
           expanded: open,

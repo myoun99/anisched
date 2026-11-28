@@ -15,12 +15,14 @@ import '../services/catalogue_reader.dart';
 import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
+import 'client_chip.dart';
 import 'document_menu.dart';
 import 'empty_start.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
 import 'instant.dart';
+import 'palette.dart';
 import 'part_line.dart';
 import 'pick_field.dart';
 import 'time_editor.dart';
@@ -114,7 +116,7 @@ class _AppShellState extends State<AppShell> {
   LaneLayout? _lanes;
   ViewFilter _filter = const ViewFilter();
   Map<int, ({String title, int? clientId})> _works = const {};
-  Map<int, String> _clients = const {};
+  Map<int, ClientTag> _clients = const {};
   List<({int id, String name, List<String> stages})> _roles = const [];
   final _selection = TaskSelection();
   int _refresh = 0;
@@ -182,13 +184,22 @@ class _AppShellState extends State<AppShell> {
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
-      _clients = {for (final c in clients) c.id: c.name};
+      _clients = {
+        for (final c in clients)
+          c.id: (name: c.name, color: clientColorOf(c.id)),
+      };
       _roles = roles;
       _groups = groups;
       _signals = signals;
       _paces = {for (final p in paces) p.stageName: p};
       _lanes = lanes.layout;
     });
+  }
+
+  /// A unit's client: its work's, with the client's colour.
+  ClientTag? _clientOf(PartGroup g) {
+    final id = _works[g.workId]?.clientId;
+    return id == null ? null : _clients[id];
   }
 
   /// The task the timer last ran on, for resume.
@@ -600,6 +611,7 @@ class _AppShellState extends State<AppShell> {
       signals: _signals,
       paces: _paces,
       selection: _selection,
+      clientOf: _clientOf,
       onDue: writable ? _setDue : null,
       onHold: writable ? (g) => unawaited(_toggleHold(g.tasks)) : null,
       onKickoff: writable ? _setKickoff : null,
@@ -632,7 +644,7 @@ class _AppShellState extends State<AppShell> {
         restWeekdays: rest,
         selection: _selection,
         onSchedule: writable ? _schedule : null,
-        details: wiring.details,
+        details: (g) => wiring.details(g, client: true),
       ),
       AppView.work => WorkView(
         lanes: _lanes,
@@ -698,6 +710,7 @@ class _AppShellState extends State<AppShell> {
         refresh: _refresh,
         clientId: _filter.clientId,
         workId: _filter.workId,
+        clients: _clients,
         filter: _filterButton(),
       ),
       AppView.settings => SettingsView(

@@ -211,6 +211,25 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 9: clients on works; bars in their stage's colour.
+  'r9-list': (AppView.list, (t, size) async {}),
+  'r9-timeline': (AppView.timeline, (t, size) async {}),
+  'r9-timeline-open': (
+    AppView.timeline,
+    (t, size) async {
+      await t.tap(byKeyPrefix('tl-label-').at(1));
+      await t.pump();
+      await t.pump();
+    },
+  ),
+  'r9-work-open': (
+    AppView.work,
+    (t, size) async {
+      await t.tap(byKeyPrefix('work-open-').at(0), warnIfMissed: false);
+      await t.pump();
+      await t.pump();
+    },
+  ),
   // Round 7: the register screen's top (how many rows the roles take).
   'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
@@ -379,6 +398,7 @@ void main() {
           final store = sampleCatalogue(now);
           if (base == 'holds') prepareHolds(store);
           if (base.startsWith('bundle')) prepareBundles(store);
+          if (base.startsWith('r9')) prepareClients(store);
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
@@ -463,4 +483,14 @@ void prepareBundles(CatalogueStore store) {
       DateTime(now.year, now.month, now.day + 5 + i * 4, 23, 59),
     );
   }
+}
+
+/// Clients on three of the works (round 9's chips).
+void prepareClients(CatalogueStore store) {
+  final a = store.addClient('스튜디오 아침');
+  final b = store.addClient('Studio Kumo');
+  final works = {for (final g in store.partGroups()) g.workTitle: g.workId};
+  store.setWorkClient(works['별빛 정류장']!, a);
+  store.setWorkClient(works['마법소녀 리코']!, b);
+  store.setWorkClient(works['여름 끝에서']!, a);
 }

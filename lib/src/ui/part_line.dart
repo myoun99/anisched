@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/unit_bundles.dart';
 import '../models/progress.dart';
+import 'client_chip.dart';
 import 'due_button.dart';
 import 'fit_text.dart';
 import 'fold.dart';
@@ -19,6 +20,13 @@ import 'text/strings.dart';
 const caretW = 32.0;
 const _progressW = 112.0;
 const _signalW = 100.0;
+
+/// The client column: a chip on wide lines, its square on narrow ones.
+const _clientW = 104.0;
+const _clientNarrowW = 28.0;
+
+/// Lines narrower than this show the client as its square only.
+const _narrowLine = 560.0;
 const _tabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
 class PartHeader extends StatelessWidget {
@@ -38,10 +46,14 @@ class PartHeader extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: caretW),
-            Expanded(child: Text(S.part.t, style: style)),
+            Expanded(child: Text(S.title.t, style: style)),
             SizedBox(
               width: _progressW,
               child: Text(S.progress.t, style: style),
+            ),
+            SizedBox(
+              width: _clientW,
+              child: Text(S.client.t, style: style),
             ),
             SizedBox(
               width: _signalW,
@@ -72,7 +84,11 @@ class PartLine extends StatelessWidget {
     this.picked = Picked.none,
     this.onLongPress,
     this.onDue,
+    this.client,
   });
+
+  /// The work's client, shown as a chip just left of the deadline.
+  final ClientTag? client;
 
   /// Sets the unit's deadline (tap on the D label); null keeps it fixed.
   final ValueChanged<DateTime>? onDue;
@@ -115,7 +131,7 @@ class PartLine extends StatelessWidget {
       Picked.some => Color.lerp(c.panel, c.selected, 0.5)!,
       Picked.none => selected ? c.hover : c.panel,
     };
-    final line = Material(
+    Widget lineOf(bool wide) => Material(
       color: fill,
       child: InkWell(
         key: Key('line-${b?.key ?? g.key}'),
@@ -152,7 +168,7 @@ class PartLine extends StatelessWidget {
                           TextSpan(
                             children: [
                               TextSpan(
-                                text: groupTitle(g),
+                                text: '${g.workTitle} ${g.episodeNumber}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -179,20 +195,21 @@ class PartLine extends StatelessWidget {
                           ),
                           tooltip: false,
                         ),
-                        FitText(
-                          '${g.workTitle} ${g.episodeNumber}',
-                          style: TextStyle(fontSize: 12, color: c.muted),
-                          tooltip: false,
-                        ),
+                        if (partCutsLine(g).isNotEmpty)
+                          FitText(
+                            partCutsLine(g),
+                            style: TextStyle(fontSize: 12, color: c.muted),
+                            tooltip: false,
+                          ),
                       ],
                     ),
                   ),
                   SizedBox(
-                    width: _progressW,
+                    width: wide ? _progressW : 70,
                     child: Row(
                       spacing: 5,
                       children: [
-                        SizedBox(width: 40, child: _progress(b)),
+                        SizedBox(width: wide ? 40 : 26, child: _progress(b)),
                         Flexible(
                           child: Text(
                             b == null
@@ -211,10 +228,23 @@ class PartLine extends StatelessWidget {
                       ],
                     ),
                   ),
+                  SizedBox(
+                    width: wide ? _clientW : _clientNarrowW,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: client == null
+                          ? null
+                          : ClientChip(
+                              client!,
+                              key: Key('client-${b?.key ?? g.key}'),
+                              compact: !wide,
+                            ),
+                    ),
+                  ),
                   // Only the D label opens the date picker; the rest of the
                   // slot belongs to the line (open / pick).
                   SizedBox(
-                    width: _signalW,
+                    width: wide ? _signalW : 66,
                     height: 40,
                     child: Align(
                       alignment: Alignment.centerRight,
@@ -265,6 +295,9 @@ class PartLine extends StatelessWidget {
         ),
       ),
     );
+    final line = LayoutBuilder(
+      builder: (context, box) => lineOf(box.maxWidth >= _narrowLine),
+    );
     final fade =
         dimmed ||
         (g.waiting > 0 && g.inHand == 0) ||
@@ -308,6 +341,7 @@ class PartDetails extends StatelessWidget {
     this.onHold,
     this.loadRevisions,
     this.onEditRevision,
+    this.client,
   });
 
   /// Puts the whole unit on hold or takes it off; null hides the button.
@@ -352,6 +386,10 @@ class PartDetails extends StatelessWidget {
 
   /// Long press on a cut: picks it for the bar's actions.
   final ValueChanged<TaskRow>? onTaskLongPress;
+
+  /// The work's client, first among the facts (views whose rows do not
+  /// show it themselves).
+  final ClientTag? client;
 
   @override
   Widget build(BuildContext context) {
@@ -455,7 +493,12 @@ class PartDetails extends StatelessWidget {
               Wrap(
                 spacing: 20,
                 runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (client != null)
+                    fact(S.client.t, [
+                      ClientChip(client!, key: Key('details-client-${g.key}')),
+                    ]),
                   ...dates,
                   for (final (k, v) in facts)
                     Text.rich(
@@ -732,6 +775,7 @@ class UnitWiring {
     this.paces = const {},
     this.paceOf,
     this.selection,
+    this.clientOf,
     this.onTaskTap,
     this.onDue,
     this.onKickoff,
@@ -753,6 +797,9 @@ class UnitWiring {
   /// Tasks picked for an action, shared by every view.
   final TaskSelection? selection;
 
+  /// A unit's client (its work's), for the list's chip and the details.
+  final ClientTag? Function(PartGroup group)? clientOf;
+
   /// A cut tapped in the details (starts the timer, or picks it while
   /// picking); null: taps pick.
   final ValueChanged<TaskRow>? onTaskTap;
@@ -765,11 +812,13 @@ class UnitWiring {
   final void Function(PartGroup group, int revision, DateTime due)?
   onEditRevision;
 
-  /// The details of [p], opened under its line or row.
-  Widget details(PartGroup p) {
+  /// The details of [p], opened under its line or row; [client] adds its
+  /// client (where the row itself does not show it).
+  Widget details(PartGroup p, {bool client = false}) {
     final sel = selection;
     return PartDetails(
       group: p,
+      client: client ? clientOf?.call(p) : null,
       pace: signals[p.key]?.pace ?? paceOf?.call(p),
       plan: signals[p.key]?.plan,
       usual: paces[p.stageName],

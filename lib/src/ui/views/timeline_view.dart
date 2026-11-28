@@ -9,6 +9,7 @@ import '../selection.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'chart.dart';
+import '../palette.dart';
 import '../text/strings.dart';
 import '../fit_text.dart';
 
@@ -158,7 +159,6 @@ class _TimelineViewState extends State<TimelineView> {
   }
 
   List<Widget> _bars(BuildContext context, PartGroup g, ChartWindow window) {
-    final c = AppColors.of(context);
     final start = g.kickoffAt;
     final end = g.dueAt;
     if (start == null || end == null || end.isBefore(start)) return const [];
@@ -171,11 +171,8 @@ class _TimelineViewState extends State<TimelineView> {
         window: window,
         start: start,
         end: end,
-        color: Color.lerp(
-          Theme.of(context).colorScheme.onSurface,
-          c.panel,
-          0.38,
-        )!,
+        color: stageColor(g.stageName),
+        textColor: barInk,
         faded: handed || (g.waiting > 0 && g.inHand == 0),
         onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
       ),
@@ -243,65 +240,75 @@ class _TimelineLabel extends StatelessWidget {
                   tooltip: false,
                   TextSpan(
                     children: [
-                      if (!narrow)
-                        TextSpan(
-                          text: '${g.workTitle} ',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
                       TextSpan(
-                        text: g.episodeNumber,
-                        style: TextStyle(
-                          color: narrow ? null : c.muted,
-                          fontWeight: narrow ? FontWeight.w700 : null,
-                        ),
+                        text: '${g.workTitle} ${g.episodeNumber} ',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      TextSpan(
+                        text: stageText(g.stageName),
+                        style: TextStyle(color: c.muted),
                       ),
                     ],
                   ),
                   style: const TextStyle(fontSize: 13),
                 ),
-                FitText(
-                  '${stageText(g.stageName)} · ${groupTitle(g)}',
-                  tooltip: false,
-                  style: TextStyle(fontSize: 11, color: c.muted),
-                ),
+                if (partCutsLine(g).isNotEmpty)
+                  FitText(
+                    partCutsLine(g),
+                    tooltip: false,
+                    style: TextStyle(fontSize: 11, color: c.muted),
+                  ),
               ],
             ),
           ),
-          // At most half the label; long words (6 j de retard) shrink.
+          // Two lines: days left (to the production deadline) over cuts
+          // left. At most 72 wide; long words (6 j de retard) shrink.
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 72),
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
-              child: DueButton(
-                key: Key('tl-due-${g.key}'),
-                title: S.pickDue.t,
-                due: g.dueAt,
-                onPicked: onDue == null ? null : (d) => onDue!(g, d),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        due.text,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: due.tone == DueTone.late
-                              ? Theme.of(context).colorScheme.error
-                              : c.muted,
-                          fontWeight: due.tone == DueTone.late
-                              ? FontWeight.w700
-                              : null,
-                        ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  DueButton(
+                    key: Key('tl-due-${g.key}'),
+                    title: S.pickDue.t,
+                    due: g.dueAt,
+                    onPicked: onDue == null ? null : (d) => onDue!(g, d),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
                       ),
-                      RoundBadge(g.dueRevision),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            due.text,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: due.tone == DueTone.late
+                                  ? Theme.of(context).colorScheme.error
+                                  : null,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          RoundBadge(g.dueRevision),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(
+                      cutsLeftLabel(g),
+                      key: Key('tl-left-${g.key}'),
+                      style: TextStyle(fontSize: 11, color: c.muted),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -110,6 +110,21 @@ String groupTitle(PartGroup g) => switch (g.kind) {
   GroupKind.storyboard => g.storyboardLabel ?? S.storyboard.t,
 };
 
+/// The small line under a unit's name: its part and cut range (「A파트 ·
+/// C012~C021」); a part-less unit's cut range alone; a storyboard's label.
+String partCutsLine(PartGroup g) => switch (g.kind) {
+  GroupKind.part =>
+    g.cutsLabel.isEmpty ? groupTitle(g) : '${groupTitle(g)} · ${g.cutsLabel}',
+  GroupKind.noPart => g.cutsLabel,
+  GroupKind.storyboard => groupTitle(g),
+};
+
+/// What is left to work on: 「3 cut」, or 「1건」 for a storyboard.
+String cutsLeftLabel(PartGroup g) {
+  final n = g.tasks.where((t) => t.status.needsWork).length;
+  return g.kind == GroupKind.storyboard ? S.items.f({'n': n}) : '$n cut';
+}
+
 /// 「4컷」 for cuts, 「1건」 for a storyboard.
 String groupCount(PartGroup g) =>
     g.kind == GroupKind.storyboard ? S.items.f({'n': 1}) : '${g.total} cut';

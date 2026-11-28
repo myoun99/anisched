@@ -944,10 +944,12 @@ ShortBarGrips shortBarGrips = ShortBarGrips.outside;
 /// whole of it the place to drag. Only bars whose dates can be dragged
 /// have them ([ChartBar.onDates]).
 class BarGrip extends StatelessWidget {
-  const BarGrip({super.key, required this.edge, required this.barColor});
+  const BarGrip({super.key, required this.edge, required this.ink});
 
   final BarEdge edge;
-  final Color barColor;
+
+  /// The bar's ink: the grip's border and arrow.
+  final Color ink;
 
   /// The grip's width, which is also its drag area.
   static const width = 16.0;
@@ -957,22 +959,22 @@ class BarGrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     return SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.all(2),
         child: DecoratedBox(
+          // Bars are light in both themes: a near-white face reads on them.
           decoration: BoxDecoration(
-            color: c.panel,
-            border: Border.all(color: barColor),
+            color: const Color(0xF2FFFFFF),
+            border: Border.all(color: ink.withValues(alpha: 0.55)),
             borderRadius: BorderRadius.circular(3),
           ),
           child: Center(
             child: Icon(
               edge == BarEdge.start ? Icons.chevron_left : Icons.chevron_right,
               size: 12,
-              color: barColor,
+              color: ink,
             ),
           ),
         ),
@@ -998,7 +1000,11 @@ class ChartBar extends StatefulWidget {
     this.faded = false,
     this.wrapBody,
     this.selected = false,
+    this.outline,
   });
+
+  /// A border round the bar (e.g. red for work past the lanes).
+  final Color? outline;
 
   /// The bar is the one opened or picked (its short-bar grips may show).
   final bool selected;
@@ -1092,7 +1098,10 @@ class _ChartBarState extends State<ChartBar> {
     },
     child: MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
-      child: BarGrip(edge: edge, barColor: widget.color),
+      child: BarGrip(
+        edge: edge,
+        ink: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
+      ),
     ),
   );
 
@@ -1145,6 +1154,9 @@ class _ChartBarState extends State<ChartBar> {
             decoration: BoxDecoration(
               color: widget.color,
               borderRadius: BorderRadius.circular(4),
+              border: widget.outline == null
+                  ? null
+                  : Border.all(color: widget.outline!, width: 1.5),
             ),
             // The label takes every pixel between the grips.
             child: grips && inside
