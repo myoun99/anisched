@@ -915,7 +915,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _viewFor(AppView v, ScreenLayout layout) {
-    const plans = {AppView.list, AppView.timeline, AppView.work};
+    const plans = {
+      AppView.dashboard,
+      AppView.list,
+      AppView.timeline,
+      AppView.work,
+    };
     if (_loaded && _works.isEmpty && plans.contains(v)) {
       final sample = widget.onSample;
       final store = widget.store;

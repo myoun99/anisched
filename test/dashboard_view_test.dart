@@ -33,7 +33,10 @@ Future<CatalogueStore> pumpDash(WidgetTester t, Size size) async {
 
 String textIn(WidgetTester t, String key) => t
     .widgetList<RichText>(
-      find.descendant(of: find.byKey(Key(key)), matching: find.byType(RichText)),
+      find.descendant(
+        of: find.byKey(Key(key)),
+        matching: find.byType(RichText),
+      ),
     )
     .map((w) => w.text.toPlainText())
     .join(' ');
@@ -88,4 +91,23 @@ void main() {
     await t.pump();
     expect(find.byKey(Key('fold-cuts-${due.group.key}')), findsOneWidget);
   });
+
+  for (final (size, two) in const [
+    (Size(390, 844), true),
+    (Size(1280, 800), false),
+  ]) {
+    testWidgets('a due card: ${two ? 'two lines' : 'one line'} at $size', (
+      t,
+    ) async {
+      final store = await pumpDash(t, size);
+      final k = store.dashboard().dueSoon.first.group.key;
+      final name = t.getRect(find.byKey(Key('dash-due-name-$k')));
+      final days = t.getRect(find.byKey(Key('dash-due-days-$k')));
+      if (two) {
+        expect(days.top, greaterThanOrEqualTo(name.bottom), reason: 'below');
+      } else {
+        expect((days.center.dy - name.center.dy).abs(), lessThan(2));
+      }
+    });
+  }
 }

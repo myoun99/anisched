@@ -36,7 +36,8 @@ void main() {
 
   testWidgets('tapping a view button switches the view', (t) async {
     await pumpAt(t, const Size(1280, 800));
-    expect(currentView(t), AppView.list);
+    // The app opens on the dashboard (유저 2026-11-28).
+    expect(currentView(t), AppView.dashboard);
     for (final v in AppView.values.reversed) {
       await t.tap(find.byKey(Key('view-tab-${v.name}')));
       await t.pump();
