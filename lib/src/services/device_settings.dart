@@ -55,7 +55,7 @@ enum RulerTab { timeline, work }
 
 /// A row of a chart's date ruler.
 enum RulerRow {
-  year(false),
+  year(true),
   month(true),
   weekday(true);
 
@@ -183,7 +183,7 @@ class DeviceSettings {
   }
 
   /// The ruler rows [tab] shows: this device's choices over the defaults
-  /// (year off, month and weekday on).
+  /// (all on).
   RulerRows rulerRows(RulerTab tab) {
     bool on(RulerRow r) => _ruler[tab]?[r] ?? r.shownByDefault;
     return (
