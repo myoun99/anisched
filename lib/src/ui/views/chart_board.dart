@@ -138,11 +138,7 @@ class ChartBoard extends StatefulWidget {
   State<ChartBoard> createState() => _ChartBoardState();
 }
 
-final _defaultRows = ValueNotifier<RulerRows>((
-  year: false,
-  month: true,
-  weekday: true,
-));
+final _defaultRows = ValueNotifier<RulerRows>(defaultRulerRows);
 
 class _ChartBoardState extends State<ChartBoard> {
   /// A running window's part day ([RunningWindow.slide]): the date areas
