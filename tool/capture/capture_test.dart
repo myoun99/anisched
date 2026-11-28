@@ -20,6 +20,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../test/support/sample_catalogue.dart';
+import 'rich_stats.dart';
 
 final now = DateTime(2026, 11, 27, 14);
 
@@ -112,6 +113,14 @@ final scenarios = <String, (AppView, Scenario)>{
     AppView.work,
     (t, size) async {
       await t.tap(find.byKey(const Key('chart-zoom-in')));
+      await t.pump();
+    },
+  ),
+  // Round 4: the statistics tab, loaded.
+  'stats': (
+    AppView.stats,
+    (t, size) async {
+      await t.pump();
       await t.pump();
     },
   ),
@@ -213,7 +222,9 @@ void main() {
                 scrollBehavior: const AlwaysScrollbarBehavior(),
                 home: AppShell(
                   initialView: view,
-                  reader: SyncCatalogueReader(store),
+                  reader: base.startsWith('stats')
+                      ? RichStatsReader(store, now)
+                      : SyncCatalogueReader(store),
                   store: store,
                   timer: WorkTimerStore(store.db, clock: () => now),
                   clock: () => now,

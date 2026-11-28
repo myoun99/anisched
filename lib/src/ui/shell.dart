@@ -24,6 +24,7 @@ import 'widgets.dart';
 import 'views/register_view.dart';
 import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
+import 'views/stats_view.dart';
 import 'views/timeline_view.dart';
 import 'views/work_view.dart';
 import 'text/strings.dart';
@@ -35,6 +36,7 @@ enum AppView {
   timeline(S.viewTimeline),
   work(S.viewWork),
   register(S.viewRegister),
+  stats(S.viewStats),
   settings(S.viewSettings);
 
   const AppView(this.word);
@@ -411,6 +413,13 @@ class _AppShellState extends State<AppShell> {
                 return n;
               }
             : null,
+      ),
+      AppView.stats => StatsView(
+        now: now,
+        layout: layout,
+        reader: widget.reader,
+        visible: _view == AppView.stats,
+        refresh: _refresh,
       ),
       AppView.settings => SettingsView(
         now: now,
