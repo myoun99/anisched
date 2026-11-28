@@ -80,6 +80,13 @@ void main() {
     expect(t.getSize(find.byType(FitText)).width, 20);
   });
 
+  testWidgets('under 8 px between the grips, the label hides', (t) async {
+    // 36 a day: grips of 16 leave 4.
+    await pumpBar(t, days: 1, width: 360);
+    expect(find.byType(BarGrip), findsNWidgets(2));
+    expect(find.byType(FitText), findsNothing);
+  });
+
   testWidgets('dragging a grip moves that end', (t) async {
     DateTime? end;
     await pumpBar(t, days: 3, onDates: (a, b) => end = b);

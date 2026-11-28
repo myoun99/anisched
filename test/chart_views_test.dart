@@ -185,6 +185,37 @@ void main() {
       });
     });
 
+    testWidgets('bars overlapping in their own lane are ringed red', (t) async {
+      final store = sampleCatalogue(now);
+      final first = layoutOf(store);
+      // Two bars that overlap, pinned to the same lane.
+      final a = first.spans[0];
+      final b = first.spans.firstWhere(
+        (s) =>
+            s.key != a.key &&
+            !s.start.isAfter(a.end) &&
+            !s.end.isBefore(a.start),
+      );
+      store.pinLane(a.key, 0);
+      store.pinLane(b.key, 0);
+      final lanes = layoutOf(store);
+      expect(lanes.overlapping, containsAll([a.key, b.key]));
+      await pumpIn(
+        t,
+        const Size(1440, 900),
+        WorkView(
+          lanes: lanes,
+          parts: {for (final g in store.partGroups()) g.key: g},
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+        ),
+      );
+      final red = Theme.of(t.element(find.byType(WorkView))).colorScheme.error;
+      for (final k in [a.key, b.key]) {
+        expect(t.widget<ChartBar>(find.byKey(Key('work-bar-$k'))).outline, red);
+      }
+    });
+
     testWidgets('a long-press drag onto another lane pins the bar', (t) async {
       final store = sampleCatalogue(now);
       final lanes = layoutOf(store);
@@ -231,6 +262,20 @@ void main() {
         ),
       );
     }
+
+    test('the running window tells only when the days really move', () {
+      chartView.value = const ChartView();
+      final w = RunningWindow(DateTime(2026, 11, 27), SizeClass.wide);
+      addTearDown(w.dispose);
+      var told = 0;
+      w.addListener(() => told++);
+      // The same 35 days, said another way: no news.
+      chartView.value = const ChartView(days: 35);
+      expect(told, 0);
+      chartView.value = chartView.value.scrolled(1);
+      expect(told, 1);
+      chartView.value = const ChartView();
+    });
 
     testWidgets('scrolling or zooming the days leaves the row labels', (
       t,

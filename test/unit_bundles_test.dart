@@ -122,6 +122,20 @@ void main() {
     expect(b.lead.stageName, '원화');
   });
 
+  test('of two stages with work left, the earlier deadline leads', () {
+    final s = sampleCatalogue(now);
+    // Part C: LO (open, due in 4 days) gets 原画 due in 9.
+    final lo = s.partGroups().firstWhere(
+      (g) => g.workTitle == '별빛 정류장' && g.partLabel == 'C',
+    );
+    final genga = s.stages(lo.workId).firstWhere((x) => x.name == '원화').id;
+    s.addTasksForPart(lo.partId!, genga);
+    s.setPartDue(lo.partId!, genga, now.add(const Duration(days: 9)));
+    final b = bundleUnits(s.partGroups())
+        .singleWhere((b) => b.key == 'bundle:part:${lo.partId}');
+    expect(b.lead.stageName, 'LO');
+  });
+
   test('with nothing left to work on, the first stage leads', () {
     final s = sampleCatalogue(now);
     final lo = addGenga(s);
