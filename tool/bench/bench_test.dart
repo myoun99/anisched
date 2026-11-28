@@ -1,221 +1,255 @@
-// UI performance numbers, re-runnable, not part of `flutter test` (it
-// only runs test/). Run:
+// Timings on a large synthetic document, to compare before and after a
+// change. Not part of `flutter test` (it is slow on purpose); run it with
 //   flutter test tool/bench/bench_test.dart
-// Prints one table: per scenario, wall time per frame (debug build in the
-// test harness — compare before/after, not absolute), widgets rebuilt per
-// frame (debugOnRebuildDirtyWidget), bar builds and chart paints.
-// ignore_for_file: invalid_use_of_visible_for_testing_member
+// and read the table it prints. Numbers are the median of [runs] runs, in
+// milliseconds, on a file database (WAL), as the app uses it.
+
+import 'dart:io';
+
+import 'package:anisched/src/models/catalogue.dart';
+import 'package:anisched/src/models/stats.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/services/database.dart';
-import 'package:anisched/src/services/sample_data.dart';
-import 'package:anisched/src/services/work_timer.dart';
-import 'package:anisched/src/ui/shell.dart';
-import 'package:anisched/src/ui/theme.dart';
-import 'package:anisched/src/ui/views/chart.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:anisched/src/services/document_codec.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+const runs = 5;
+const works = 20;
+const episodes = 5;
+const parts = 4;
+const cutsPerPart = 25; // 20 × 5 × 4 × 25 = 10,000 cuts
+// LO and 원화 on every cut: 20,000 tasks.
 
 final now = DateTime(2026, 11, 27, 14);
 
-/// The example catalogue [copies] times, a week apart: a big document.
-CatalogueStore bigCatalogue(int copies) {
-  final store = CatalogueStore(openAppDatabase(':memory:'), clock: () => now);
-  for (var i = 0; i < copies; i++) {
-    fillSample(store, now.add(Duration(days: 7 * (i - copies ~/ 2))));
-  }
-  return store;
-}
-
-int _rebuilds = 0;
-
-final rows = <String>[];
-
-Future<void> measure(
-  WidgetTester t,
-  String name,
-  int frames,
-  Future<void> Function(int i) frame,
-) async {
-  ChartPaints.reset();
-  _rebuilds = 0;
-  final sw = Stopwatch()..start();
-  for (var i = 0; i < frames; i++) {
-    await frame(i);
-  }
-  sw.stop();
-  rows.add(
-    '| $name | $frames | ${(sw.elapsedMicroseconds / frames / 1000).toStringAsFixed(2)} ms '
-    '| ${(_rebuilds / frames).toStringAsFixed(0)} '
-    '| ${(ChartPaints.barBuilds / frames).toStringAsFixed(1)} '
-    '| ${ChartPaints.background}/${ChartPaints.today}/${ChartPaints.preview} |',
-  );
-}
-
-Future<CatalogueStore> pumpApp(
-  WidgetTester t,
-  AppView view, {
-  int copies = 30,
-  Size size = const Size(1280, 800),
-}) async {
-  t.view.physicalSize = size;
-  t.view.devicePixelRatio = 1;
-  addTearDown(t.view.reset);
-  chartView.value = const ChartView();
-  chartMonthView.value = false;
-  final store = bigCatalogue(copies);
-  final sw = Stopwatch()..start();
-  await t.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.light(),
-      home: AppShell(
-        initialView: view,
-        reader: SyncCatalogueReader(store),
-        store: store,
-        timer: WorkTimerStore(store.db, clock: () => now),
-        clock: () => now,
-      ),
-    ),
-  );
-  await t.pump();
-  await t.pump();
-  sw.stop();
-  rows.add(
-    '| first frames (${view.name}, ${store.partGroups().length} units) | 1 | '
-    '${(sw.elapsedMicroseconds / 1000).toStringAsFixed(1)} ms | | | |',
-  );
-  return store;
-}
-
-Finder byPrefix(String p) => find.byWidgetPredicate(
-  (w) =>
-      w.key is ValueKey<String> &&
-      (w.key! as ValueKey<String>).value.startsWith(p),
-);
-
 void main() {
-  setUp(() {
-    debugOnRebuildDirtyWidget = (e, builtOnce) => _rebuilds++;
-  });
-  tearDown(() => debugOnRebuildDirtyWidget = null);
-  tearDownAll(() {
-    debugPrint(
-      '\n| scenario | frames | ms/frame | rebuilds/frame | bar builds/frame '
-      '| paints bg/today/preview |\n|---|---|---|---|---|---|\n'
-      '${rows.join('\n')}',
-    );
-  });
-
-  testWidgets('timeline', (t) async {
-    await pumpApp(t, AppView.timeline);
-    // Rows down to the first bar in view (the top ones are overdue).
-    final rowsList = find
-        .descendant(
-          of: find.byType(ChartBoard),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    for (var i = 0; i < 40; i++) {
-      if (find
-          .byKey(const Key('bar-end'))
-          .hitTestable()
-          .evaluate()
-          .isNotEmpty) {
-        break;
-      }
-      await t.drag(rowsList, const Offset(0, -200));
-      await t.pump();
+  test('bench', () async {
+    final dir = Directory.systemTemp.createTempSync('anisched-bench');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final path = '${dir.path}/bench.db';
+    final rows = <(String, double)>[];
+    double median(List<double> xs) => (xs..sort())[xs.length ~/ 2];
+    double time(void Function() f) {
+      final sw = Stopwatch()..start();
+      f();
+      return sw.elapsedMicroseconds / 1000;
     }
-    await t.pump();
-    final end = find.byKey(const Key('bar-end')).hitTestable().first;
-    final g = await t.startGesture(t.getCenter(end));
-    await measure(t, 'timeline: drag bar end (per move)', 20, (i) async {
-      await g.moveBy(const Offset(6, 0));
-      await t.pump();
-    });
-    await g.up();
-    await t.pump();
-    final list = find
-        .descendant(
-          of: find.byType(ChartBoard),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    await measure(t, 'timeline: scroll rows', 20, (i) async {
-      await t.drag(list, const Offset(0, -40));
-      await t.pump();
-    });
-    await measure(t, 'timeline: scroll days', 20, (i) async {
-      chartView.value = chartView.value.scrolled(1);
-      await t.pump();
-    });
-    await measure(t, 'timeline: zoom', 6, (i) async {
-      chartView.value = chartView.value.stepped(
-        chartView.value.days ?? 35,
-        zoomIn: i.isEven,
-      );
-      await t.pump();
-    });
-  });
 
-  testWidgets('work', (t) async {
-    await pumpApp(t, AppView.work);
-    await measure(t, 'work: scroll days', 20, (i) async {
-      chartView.value = chartView.value.scrolled(1);
-      await t.pump();
-    });
-    final end = find.byKey(const Key('bar-end')).first;
-    final g = await t.startGesture(t.getCenter(end));
-    await measure(t, 'work: drag bar end (per move)', 20, (i) async {
-      await g.moveBy(const Offset(6, 0));
-      await t.pump();
-    });
-    await g.up();
-    await t.pump();
-  });
+    Future<double> timeAsync(Future<void> Function() f) async {
+      final sw = Stopwatch()..start();
+      await f();
+      return sw.elapsedMicroseconds / 1000;
+    }
 
-  testWidgets('list', (t) async {
-    await pumpApp(t, AppView.list);
-    final list = find.byKey(const Key('sheet-rows'));
-    await measure(t, 'list: scroll', 20, (i) async {
-      await t.drag(list, const Offset(0, -60));
-      await t.pump();
-    });
-    await measure(t, 'list: open/close a line', 6, (i) async {
-      await t.tap(byPrefix('line-').first);
-      await t.pump();
-    });
-  });
+    void bench(String name, void Function() f) {
+      f(); // warm-up
+      rows.add((name, median([for (var i = 0; i < runs; i++) time(f)])));
+    }
 
-  testWidgets('month view', (t) async {
-    chartMonthView.value = true;
-    addTearDown(() => chartMonthView.value = false);
-    await pumpApp(t, AppView.timeline);
-    chartMonthView.value = true;
-    await t.pump();
-    final stack = find.byKey(const Key('month-stack'));
-    expect(stack, findsOneWidget);
-    final first = byPrefix('month-').first;
-    final y0 = t.getTopLeft(first).dy;
-    await measure(t, 'months: scroll', 20, (i) async {
-      await t.drag(stack, const Offset(0, -80));
-      await t.pump();
-    });
-    debugPrint(
-      'months scrolled ${y0 - t.getTopLeft(byPrefix('month-').first).dy}',
+    // ---- build ----
+    var db = openAppDatabase(path);
+    var store = CatalogueStore(db, clock: () => now);
+    final build = time(() => _fill(store));
+    final tasks = db.select('SELECT COUNT(*) AS n FROM tasks').first['n'];
+    final cuts = db.select('SELECT COUNT(*) AS n FROM cuts').first['n'];
+    rows.add(('build ($tasks tasks, $cuts cuts)', build));
+
+    // ---- reads on the main isolate (the store) ----
+    bench('taskRows', () => store.taskRows());
+    bench('partGroups', () => store.partGroups());
+    bench('calendarLayout', () => store.calendarLayout());
+    bench('today', () => store.today());
+    bench('signals', () => store.signals());
+    bench('stagePaces', () => store.stagePaces());
+    bench(
+      'stats (year, month buckets)',
+      () => store.stats(
+        from: DateTime(2026),
+        to: DateTime(2027),
+        bucket: StatsBucket.month,
+      ),
     );
-  });
+    bench(
+      'events + holidays (a month)',
+      () => store
+        ..events(from: DateTime(2026, 11), to: DateTime(2026, 12))
+        ..holidays(from: DateTime(2026, 11), to: DateTime(2026, 12)),
+    );
 
-  testWidgets('timer tick', (t) async {
-    await pumpApp(t, AppView.timeline);
-    // The bar's clock ticks every second: what does a tick rebuild?
-    await measure(t, 'idle second (timer clock)', 5, (i) async {
-      await t.pump(const Duration(seconds: 1));
-    });
-  });
+    // ---- one date write, as a bar dropped after a drag ----
+    final part = db.select('SELECT id FROM parts LIMIT 1').first['id'] as int;
+    final stage =
+        db.select('SELECT id FROM work_stages LIMIT 1').first['id'] as int;
+    store
+      ..clearLanePins()
+      ..clearGroupOrder();
+    rows.add((
+      'date write, first (holds every place)',
+      time(
+        () => store.setPartDue(part, stage, now.add(const Duration(days: 3))),
+      ),
+    ));
+    var day = 4;
+    bench(
+      'date write, places held',
+      () => store.setPartDue(part, stage, now.add(Duration(days: day++))),
+    );
 
-  test('size', () {
-    expect(kDebugMode, isTrue);
-  });
+    // ---- document out and in ----
+    final out = '${dir.path}/out.anisched';
+    rows.add((
+      'save (export, VACUUM INTO)',
+      median([
+        for (var i = 0; i < 3; i++)
+          await timeAsync(() => exportDocument(path, out)),
+      ]),
+    ));
+    final copy = '${dir.path}/in.anisched';
+    rows.add((
+      'open (check + migrate + replace rows)',
+      median([
+        for (var i = 0; i < 3; i++)
+          await timeAsync(() async {
+            File(out).copySync(copy);
+            await prepareImport(copy);
+            importDocumentInto(db, copy);
+          }),
+      ]),
+    ));
+
+    // ---- start: open the file, the reader, the first read ----
+    db.close();
+    final start = <double>[];
+    for (var i = 0; i < 3; i++) {
+      start.add(
+        await timeAsync(() async {
+          db = openAppDatabase(path);
+          final reader = await BackgroundCatalogueReader.open(path, writer: db);
+          await reader.partGroups();
+          await reader.close();
+          db.close();
+        }),
+      );
+    }
+    rows.add(('start: open + reader + first partGroups', median(start)));
+    final boot = <double>[];
+    for (var i = 0; i < 3; i++) {
+      boot.add(
+        await timeAsync(() async {
+          db = openAppDatabase(path);
+          final reader = await BackgroundCatalogueReader.open(path, writer: db);
+          await reader.close();
+          db.close();
+        }),
+      );
+    }
+    rows.add((
+      'start: open + reader ready (before the first frame)',
+      median(boot),
+    ));
+    db = openAppDatabase(path);
+    store = CatalogueStore(db, clock: () => now);
+    final reader = await BackgroundCatalogueReader.open(path, writer: db);
+    rows.add((
+      'reader partGroups (isolate round trip)',
+      median([
+        for (var i = 0; i < runs; i++) await timeAsync(reader.partGroups),
+      ]),
+    ));
+    await reader.close();
+    db.close();
+
+    // ignore: avoid_print
+    print(
+      [
+        '| measure | ms |',
+        '|---|---:|',
+        for (final (name, ms) in rows) '| $name | ${ms.toStringAsFixed(1)} |',
+      ].join('\n'),
+    );
+  }, timeout: const Timeout(Duration(minutes: 10)));
+}
+
+/// 20 works × 5 episodes × 4 parts × 25 cuts, LO and 원화 on each, with
+/// deadlines, plans, statuses, timer stretches and events spread around.
+void fillForProbe(CatalogueStore store) => _fill(store);
+
+void _fill(CatalogueStore store) {
+  final db = store.db;
+  db.execute('BEGIN');
+  var n = 0;
+  for (var w = 0; w < works; w++) {
+    final client = store.addClient('회사 $w', color: 0xFF000000 + w);
+    final work = store.createWork('작품 $w', clientId: client);
+    final stages = [
+      for (final s in store.stages(work))
+        if (s.name == 'LO' || s.name == '원화') s.id,
+    ];
+    for (var e = 0; e < episodes; e++) {
+      final ep = store.addEpisode(work, '#${e + 1}');
+      for (final s in stages) {
+        store.setEpisodeRate(ep, s, const Rate(RateUnit.fixed, 3000));
+      }
+      for (var p = 0; p < parts; p++) {
+        final part = store.addPart(ep, String.fromCharCode(65 + p));
+        store.addCuts(
+          ep,
+          [for (var c = 0; c < cutsPerPart; c++) 'C${p * cutsPerPart + c + 1}'],
+          partId: part,
+          lengthMs: 3000,
+        );
+        for (final s in stages) {
+          final ids = store.addTasksForPart(part, s);
+          final offset = (w * 7 + e * 3 + p) % 60 - 20;
+          db
+            ..execute(
+              'INSERT INTO part_stage_dues (part_id, stage_id, due_at) '
+              'VALUES (?, ?, ?);',
+              [part, s, now.add(Duration(days: offset)).millisecondsSinceEpoch],
+            )
+            ..execute(
+              'INSERT INTO part_stage_plans (part_id, stage_id, start_at, '
+              'end_at) VALUES (?, ?, ?, ?);',
+              [
+                part,
+                s,
+                now.add(Duration(days: offset - 10)).millisecondsSinceEpoch,
+                now.add(Duration(days: offset - 1)).millisecondsSinceEpoch,
+              ],
+            );
+          for (final id in ids) {
+            final status = switch (n++ % 6) {
+              0 || 1 => TaskStatus.submitted,
+              2 => TaskStatus.done,
+              3 => TaskStatus.inProgress,
+              4 => TaskStatus.retake,
+              _ => TaskStatus.received,
+            };
+            if (status != TaskStatus.received) store.setStatus(id, status);
+            if (n % 4 == 0) {
+              // Straight in: the timer refuses overlaps, and this is data.
+              final at = now.subtract(Duration(minutes: 30 * (n ~/ 4) + 60));
+              db.execute(
+                'INSERT INTO work_intervals (started_at, stopped_at, task_id) '
+                'VALUES (?, ?, ?);',
+                [
+                  at.millisecondsSinceEpoch,
+                  at.add(const Duration(minutes: 25)).millisecondsSinceEpoch,
+                  id,
+                ],
+              );
+            }
+          }
+        }
+      }
+      store.addEvent(
+        episodeId: ep,
+        date: now.add(Duration(days: e)),
+        title: '아후레코',
+      );
+    }
+  }
+  store.addRestDays(DateTime(2026, 12, 29), end: DateTime(2027, 1, 3));
+  db.execute('COMMIT');
 }

@@ -98,7 +98,7 @@ UI 에서 덧붙이는 것:
 
 ### 재는 도구
 
-`tool/bench/bench_test.dart`(테스트 스위트 밖 — `flutter test tool/bench/bench_test.dart`). 예시 카탈로그 ×30
+`tool/bench/ui_bench_test.dart`(테스트 스위트 밖 — `flutter test tool/bench/ui_bench_test.dart`). 예시 카탈로그 ×30
 (180 묶음, 일주일씩 밀어서)에서 시나리오마다 프레임당: 벽시계(테스트 하니스의 디버그 빌드 — 절대값이 아니라 전/후 비교용,
 컨테이너 부하로 ±50% 흔들림), **다시 빌드된 위젯 수**(`debugOnRebuildDirtyWidget` — 흔들리지 않는 숫자), 막대 빌드 수,
 층별 페인트(바탕/오늘/미리보기).
