@@ -531,7 +531,6 @@ class _AppShellState extends State<AppShell> {
           constraints.maxHeight,
         );
         final narrow = layout.size == SizeClass.narrow;
-        final wide = layout.size == SizeClass.wide;
         final selectionBar = SelectionBar(
           selection: _selection,
           onApply: widget.store == null ? null : _apply,
@@ -578,15 +577,9 @@ class _AppShellState extends State<AppShell> {
                               remote: remote,
                             ),
                           ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 16,
-                      children: [if (wide) selectionBar, if (!narrow) switcher],
-                    ),
+                    actions: selectionBar,
+                    switcher: narrow ? null : switcher,
                   ),
-                  // Below wide screens the picked-task actions get a row of
-                  // their own, always there, so nothing shifts or overlaps.
-                  if (!wide) _SelectionRow(child: selectionBar),
                   Expanded(
                     child: IndexedStack(
                       index: _view.index,
@@ -608,39 +601,17 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-class _SelectionRow extends StatelessWidget {
-  const _SelectionRow({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return DecoratedBox(
-      key: const Key('selection-row'),
-      decoration: BoxDecoration(
-        color: c.panel,
-        border: Border(bottom: BorderSide(color: c.line)),
-      ),
-      child: SizedBox(
-        height: 46,
-        width: double.infinity,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
 class _TopBar extends StatelessWidget {
-  const _TopBar({this.title, this.trailing});
+  const _TopBar({this.title, required this.actions, this.switcher});
 
   /// The document's name and file menu, after the app name.
   final Widget? title;
-  final Widget? trailing;
+
+  /// The picked-task actions: they take the room left and shrink to icons.
+  final Widget actions;
+
+  /// The view switcher, when it sits up here.
+  final Widget? switcher;
 
   @override
   Widget build(BuildContext context) {
@@ -654,32 +625,36 @@ class _TopBar extends StatelessWidget {
         height: 52,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              const Text(
-                'Anisched',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(width: 12),
-              ?title,
-              const SizedBox(width: 12),
-              if (trailing != null)
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      reverse: true,
-                      child: trailing,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          child: LayoutBuilder(builder: (context, box) => _row(box.maxWidth)),
         ),
       ),
     );
   }
+
+  Widget _row(double width) => Row(
+    children: [
+      const Text(
+        'Anisched',
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(width: 10),
+      if (title != null) Flexible(child: title!),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Align(alignment: Alignment.centerRight, child: actions),
+      ),
+      if (switcher case final s?) ...[
+        const SizedBox(width: 12),
+        // Its own width up to a little over half the bar; past that
+        // (long words, a phone held sideways) it shrinks a little
+        // rather than push the actions off.
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: width * 0.55),
+          child: FittedBox(fit: BoxFit.scaleDown, child: s),
+        ),
+      ],
+    ],
+  );
 }
 
 class _BottomBar extends StatelessWidget {
