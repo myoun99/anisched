@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'fit_text.dart';
 import 'instant.dart';
 import 'theme.dart';
 import 'text/strings.dart';
@@ -10,9 +11,9 @@ import 'text/strings.dart';
 typedef PickOption<T> = ({T value, String title, String? note});
 
 /// A field that picks one existing item or makes a new one, in the way
-/// accounting apps pick a client (freee's 取引先): tapping opens a
-/// searchable list of what is registered, with 「+ 새로 만들기」 at the
-/// bottom that makes the typed name on the spot.
+/// accounting apps pick a client (freee's 取引先): tapping opens the
+/// [showCenteredPicker] list of what is registered, searchable, with
+/// 「+ 새로 만들기」 at the bottom that makes the typed name on the spot.
 class PickField<T> extends StatelessWidget {
   const PickField({
     super.key,
@@ -23,7 +24,11 @@ class PickField<T> extends StatelessWidget {
     this.onCreate,
     this.enabled = true,
     this.width = 220,
+    this.current,
   });
+
+  /// The picked item's value, so the list opens centred on it.
+  final T? current;
 
   final String label;
 
@@ -40,10 +45,12 @@ class PickField<T> extends StatelessWidget {
   final double width;
 
   Future<void> _open(BuildContext context) async {
-    final picked = await showInstantDialog<PickOption<T>>(
+    final picked = await showCenteredPicker<T>(
       context: context,
-      builder: (_) =>
-          _PickDialog<T>(title: label, search: search, onCreate: onCreate),
+      title: label,
+      search: search,
+      current: current,
+      onCreate: onCreate,
     );
     if (picked != null) onPicked(picked);
   }
@@ -90,12 +97,43 @@ class PickField<T> extends StatelessWidget {
   }
 }
 
+/// THE way the app picks from a list that has a value now — like a date
+/// picker: the list in its own order (cut names naturally sorted …) with
+/// the current item in the middle, marked, so the next one is right under
+/// it. Optional search and 「+ 새로 만들기」. Used by every pick: the
+/// register fields, the time bar's cut, title and episode.
+Future<PickOption<T>?> showCenteredPicker<T>({
+  required BuildContext context,
+  required String title,
+  required Future<List<PickOption<T>>> Function(String query) search,
+  T? current,
+  Future<PickOption<T>?> Function(String name)? onCreate,
+  bool searchable = true,
+}) => showInstantDialog<PickOption<T>>(
+  context: context,
+  builder: (_) => _PickDialog<T>(
+    title: title,
+    search: search,
+    current: current,
+    onCreate: onCreate,
+    searchable: searchable,
+  ),
+);
+
 class _PickDialog<T> extends StatefulWidget {
-  const _PickDialog({required this.title, required this.search, this.onCreate});
+  const _PickDialog({
+    required this.title,
+    required this.search,
+    this.current,
+    this.onCreate,
+    this.searchable = true,
+  });
 
   final String title;
   final Future<List<PickOption<T>>> Function(String query) search;
+  final T? current;
   final Future<PickOption<T>?> Function(String name)? onCreate;
+  final bool searchable;
 
   @override
   State<_PickDialog<T>> createState() => _PickDialogState<T>();
@@ -106,6 +144,10 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
   final _focus = FocusNode();
   List<PickOption<T>> _options = const [];
   int _asked = 0;
+  final _scroll = ScrollController();
+  bool _centred = false;
+
+  static const _row = 44.0;
 
   @override
   void initState() {
@@ -117,13 +159,34 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
   void dispose() {
     _query.dispose();
     _focus.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Once, after the list first shows: the current item to the middle.
+  void _centre() {
+    if (_centred || widget.current == null) return;
+    final i = _options.indexWhere((o) => o.value == widget.current);
+    if (i < 0) return;
+    _centred = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final p = _scroll.position;
+      final to = (i * _row - (p.viewportDimension - _row) / 2).clamp(
+        0.0,
+        p.maxScrollExtent,
+      );
+      _scroll.jumpTo(to);
+    });
   }
 
   Future<void> _load() async {
     final n = ++_asked;
     final o = await widget.search(_query.text.trim());
-    if (mounted && n == _asked) setState(() => _options = o);
+    if (mounted && n == _asked) {
+      setState(() => _options = o);
+      _centre();
+    }
   }
 
   Future<void> _create() async {
@@ -147,45 +210,79 @@ class _PickDialogState<T> extends State<_PickDialog<T>> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextField(
-                onTapOutside: unfocusOutside,
-                key: const Key('pick-search'),
-                controller: _query,
-                focusNode: _focus,
-                autofocus: true,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: widget.title,
-                  border: const OutlineInputBorder(),
+            if (!widget.searchable)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Text(
+                  widget.title,
+                  style: TextStyle(fontSize: 12, color: c.muted),
                 ),
-                onChanged: (_) {
-                  setState(() {});
-                  unawaited(_load());
-                },
-                onSubmitted: (_) {
-                  if (_options.length == 1) {
-                    Navigator.of(context).pop(_options.single);
-                  }
-                },
               ),
-            ),
+            if (widget.searchable)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  onTapOutside: unfocusOutside,
+                  key: const Key('pick-search'),
+                  controller: _query,
+                  focusNode: _focus,
+                  // Typing first only when nothing is picked yet; otherwise
+                  // the list (and the next item) comes first.
+                  autofocus: widget.current == null,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    hintText: widget.title,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) {
+                    setState(() {});
+                    unawaited(_load());
+                  },
+                  onSubmitted: (_) {
+                    if (_options.length == 1) {
+                      Navigator.of(context).pop(_options.single);
+                    }
+                  },
+                ),
+              ),
             Flexible(
-              child: ListView(
+              child: ListView.builder(
+                controller: _scroll,
                 shrinkWrap: true,
-                children: [
-                  for (final o in _options)
-                    ListTile(
+                itemExtent: _row,
+                itemCount: _options.length,
+                itemBuilder: (context, i) {
+                  final o = _options[i];
+                  final now =
+                      widget.current != null && o.value == widget.current;
+                  return Material(
+                    color: now ? c.selected : Colors.transparent,
+                    child: ListTile(
+                      key: now
+                          ? const Key('pick-current')
+                          : Key('pick-option-$i'),
                       dense: true,
-                      title: Text(o.title),
+                      title: FitText(
+                        o.title,
+                        style: TextStyle(
+                          fontWeight: now ? FontWeight.w700 : null,
+                        ),
+                      ),
                       trailing: o.note == null
                           ? null
-                          : Text(o.note!, style: TextStyle(color: c.muted)),
+                          : ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 140),
+                              child: FitText(
+                                o.note!,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(color: c.muted),
+                              ),
+                            ),
                       onTap: () => Navigator.of(context).pop(o),
                     ),
-                ],
+                  );
+                },
               ),
             ),
             if (widget.onCreate != null)

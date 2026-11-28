@@ -414,6 +414,7 @@ class _RegisterViewState extends State<RegisterView> {
           children: [
             PickField<int>(
               key: const Key('pick-client'),
+              current: _client?.value,
               label: S.client.t,
               width: fw,
               value: _client?.title,
@@ -439,6 +440,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-work'),
+              current: _work?.value,
               label: S.title.t,
               width: fw,
               value: _work?.title,
@@ -462,6 +464,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<int>(
               key: const Key('pick-episode'),
+              current: _episode?.value,
               label: S.episode.t,
               width: sw,
               enabled: _work != null,
@@ -491,6 +494,7 @@ class _RegisterViewState extends State<RegisterView> {
             ),
             PickField<String>(
               key: const Key('pick-part'),
+              current: _part,
               label: S.part.t,
               width: sw,
               enabled: _episode != null,
