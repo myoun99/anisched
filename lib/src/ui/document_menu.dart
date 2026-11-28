@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'instant.dart';
@@ -79,7 +80,12 @@ class DocumentMenu extends StatelessWidget {
     required this.session,
     required this.picker,
     this.remote,
+    this.browser = kIsWeb,
   });
+
+  /// In a browser the document lives in the page: saving is exporting a
+  /// file, opening is bringing one in (the words say so).
+  final bool browser;
 
   final DocumentSessionBase session;
   final DocumentPicker picker;
@@ -140,17 +146,23 @@ class DocumentMenu extends StatelessWidget {
           key: const Key('file-open'),
           value: () => unawaited(_open(context, null)),
           child: _MenuLine(
-            icon: Icons.folder_open_outlined,
-            label: S.fileOpen.t,
+            icon: browser
+                ? Icons.upload_file_outlined
+                : Icons.folder_open_outlined,
+            label: browser ? S.fileImport.t : S.fileOpen.t,
           ),
         ),
         PopupMenuItem(
           key: const Key('file-save-as'),
           value: () => unawaited(_saveAs(context)),
-          child: _MenuLine(
-            icon: doc == null ? Icons.save_outlined : Icons.save_as_outlined,
-            label: doc == null ? S.fileSave.t : S.fileSaveAs.t,
-          ),
+          child: browser
+              ? _MenuLine(icon: Icons.download_outlined, label: S.fileExport.t)
+              : _MenuLine(
+                  icon: doc == null
+                      ? Icons.save_outlined
+                      : Icons.save_as_outlined,
+                  label: doc == null ? S.fileSave.t : S.fileSaveAs.t,
+                ),
         ),
         if (recents.isNotEmpty) const PopupMenuDivider(),
         for (final r in recents)

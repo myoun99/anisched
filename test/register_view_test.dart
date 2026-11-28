@@ -37,6 +37,7 @@ void main() {
     Folds.cutsInDetails.value = true;
     Folds.newCuts.value = true;
     Folds.savedCuts.value = true;
+    Folds.registerStages.value = false;
   });
 
   // Phones: language_test lays every tab out there.
@@ -60,9 +61,44 @@ void main() {
       matching: find.byType(Checkbox),
     );
     expect(t.widget<Checkbox>(lo).value, isTrue);
+    expect(find.text('공정 2개'), findsOneWidget);
+    // Folded, a box unchecked leaves the row.
     await t.tap(find.byKey(const Key('stage-LO/작감')));
     await t.pump();
+    expect(find.byKey(const Key('stage-LO/작감')), findsNothing);
+    expect(find.text('공정 1개'), findsOneWidget);
+    // Unfolded, every stage shows, checked or not.
+    await t.tap(find.byKey(const Key('fold-stages')));
+    await t.pump();
     expect(t.widget<Checkbox>(lo).value, isFalse);
+    final boxes = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('stage-'),
+    );
+    expect(boxes.evaluate().length, greaterThan(2));
+  });
+
+  testWidgets('the roles sit on one sliding row', (t) async {
+    await pumpRegister(t, const Size(390, 844));
+    final roles = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('role-'),
+    );
+    expect(roles.evaluate().length, greaterThan(3));
+    final tops = {
+      for (final e in roles.evaluate())
+        t.getTopLeft(find.byWidget(e.widget)).dy,
+    };
+    expect(tops, hasLength(1));
+    expect(
+      find.ancestor(
+        of: roles.first,
+        matching: find.byKey(const Key('roles-row')),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('pick a work, make an episode, edit the grid, register', (

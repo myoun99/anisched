@@ -248,7 +248,7 @@ class _TimelineLabel extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       TextSpan(
-                        text: episodeLabel(g.episodeNumber),
+                        text: g.episodeNumber,
                         style: TextStyle(
                           color: narrow ? null : c.muted,
                           fontWeight: narrow ? FontWeight.w700 : null,

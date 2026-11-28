@@ -67,4 +67,40 @@ void main() {
     expect(File('$target.anisched').existsSync(), isTrue);
     expect(find.text('일정'), findsOneWidget);
   });
+
+  for (final browser in [false, true]) {
+    testWidgets('the menu words (browser: $browser)', (t) async {
+      final tmp = Directory.systemTemp.createTempSync('anisched-ui-');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final working = '${tmp.path}/anisched.db';
+      final db = openAppDatabase(working);
+      addTearDown(db.close);
+      final session = (await t.runAsync(
+        () => DocumentSession.open(
+          writer: db,
+          workingPath: working,
+          folder: tmp.path,
+          files: const PathDocumentFiles(),
+          autosaveDelay: const Duration(hours: 1),
+        ),
+      ))!;
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DocumentMenu(
+              session: session,
+              picker: const PathPromptPicker(),
+              browser: browser,
+            ),
+          ),
+        ),
+      );
+      await t.tap(find.byKey(const Key('file-menu')));
+      await t.pumpAndSettle();
+      expect(find.text('파일로 내보내기'), browser ? findsOneWidget : findsNothing);
+      expect(find.text('파일 열기'), browser ? findsOneWidget : findsNothing);
+      expect(find.text('저장'), browser ? findsNothing : findsOneWidget);
+      expect(find.text('열기'), browser ? findsNothing : findsOneWidget);
+    });
+  }
 }

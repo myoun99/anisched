@@ -1089,13 +1089,26 @@ class _ChartBarState extends State<ChartBar> {
                     color: widget.color,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  // The label gets the bar's whole width; the end grips
+                  // lie over it, taking none of its room.
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      if (widget.onDates != null)
-                        _handle(BarEdge.start, handle),
-                      Expanded(child: _face()),
-                      if (widget.onDates != null) _handle(BarEdge.end, handle),
+                      _face(),
+                      if (widget.onDates != null) ...[
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: _handle(BarEdge.start, handle),
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: _handle(BarEdge.end, handle),
+                        ),
+                      ],
                     ],
                   ),
                 ),

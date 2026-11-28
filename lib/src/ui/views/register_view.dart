@@ -474,24 +474,14 @@ class _RegisterViewState extends State<RegisterView> {
                   : [
                       if (_work != null)
                         for (final x in await r.searchEpisodes(_work!.value, q))
-                          (
-                            value: x.id,
-                            title: episodeLabel(x.number),
-                            note: x.title,
-                          ),
+                          (value: x.id, title: x.number, note: x.title),
                     ],
               onPicked: _pickEpisode,
               onCreate: widget.onCreateEpisode == null
                   ? null
                   : (name) async {
                       final id = widget.onCreateEpisode!(_work!.value, name);
-                      return (
-                        value: id,
-                        title: typedEpisodeNumber(name) == null
-                            ? name.trim()
-                            : episodeLabel('${typedEpisodeNumber(name)}'),
-                        note: null,
-                      );
+                      return (value: id, title: episodeShown(name), note: null);
                     },
             ),
             PickField<String>(
@@ -521,51 +511,49 @@ class _RegisterViewState extends State<RegisterView> {
           ],
         ),
         Text(S.roles.t, style: TextStyle(fontSize: 12, color: c.muted)),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final role in widget.roles)
-              ToolbarButton(
-                key: Key('role-${role.name}'),
-                label: role.name,
-                selected:
-                    _stages.length == role.stages.length &&
-                    role.stages.every(_stages.contains),
-                onTap: () => setState(
-                  () => _stages
-                    ..clear()
-                    ..addAll(role.stages),
+        // One row the finger slides along: a role is a shortcut, most
+        // people use one or two.
+        SingleChildScrollView(
+          key: const Key('roles-row'),
+          scrollDirection: Axis.horizontal,
+          // Room for the scrollbar under the chips.
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            spacing: 6,
+            children: [
+              for (final role in widget.roles)
+                ToolbarButton(
+                  key: Key('role-${role.name}'),
+                  label: role.name,
+                  selected:
+                      _stages.length == role.stages.length &&
+                      role.stages.every(_stages.contains),
+                  onTap: () => setState(
+                    () => _stages
+                      ..clear()
+                      ..addAll(role.stages),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
-        Wrap(
-          spacing: 14,
-          runSpacing: 2,
-          children: [
-            for (final s in _allStages)
-              InkWell(
-                key: Key('stage-$s'),
-                onTap: () => setState(
-                  () =>
-                      _stages.contains(s) ? _stages.remove(s) : _stages.add(s),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: _stages.contains(s),
-                      visualDensity: VisualDensity.compact,
-                      onChanged: (v) => setState(
-                        () => v == true ? _stages.add(s) : _stages.remove(s),
-                      ),
-                    ),
-                    Text(stageText(s), style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
+        // Folded, only the checked stages show.
+        ValueListenableBuilder<bool>(
+          valueListenable: Folds.registerStages,
+          builder: (context, open, _) => Wrap(
+            spacing: 14,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FoldToggle(
+                key: const Key('fold-stages'),
+                state: Folds.registerStages,
+                label: S.stagesN.f({'n': _stages.length}),
               ),
-          ],
+              for (final s in _allStages)
+                if (open || _stages.contains(s)) _stageBox(s),
+            ],
+          ),
         ),
         Wrap(
           spacing: 10,
@@ -591,6 +579,25 @@ class _RegisterViewState extends State<RegisterView> {
       ],
     );
   }
+
+  Widget _stageBox(String s) => InkWell(
+    key: Key('stage-$s'),
+    onTap: () => setState(
+      () => _stages.contains(s) ? _stages.remove(s) : _stages.add(s),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          value: _stages.contains(s),
+          visualDensity: VisualDensity.compact,
+          onChanged: (v) =>
+              setState(() => v == true ? _stages.add(s) : _stages.remove(s)),
+        ),
+        Text(stageText(s), style: const TextStyle(fontSize: 13)),
+      ],
+    ),
+  );
 
   Widget _summary(BuildContext context) {
     final c = AppColors.of(context);
