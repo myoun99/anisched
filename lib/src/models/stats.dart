@@ -230,7 +230,9 @@ DateTime workDayOf(DateTime t, int dayStartMinutes) {
 }
 
 /// Folds [facts] and [intervals] into [Stats] for the work days
-/// `[from, to)` (local dates).
+/// `[from, to)` (local dates): the periods, the facts (counts, deadlines,
+/// pay), the timer (time, heatmap, groups worked per day), the planned
+/// groups per day, then the slices in order.
 Stats computeStats({
   required List<StatsFact> facts,
   required List<WorkInterval> intervals,
@@ -244,23 +246,43 @@ Stats computeStats({
 }) {
   from = DateTime(from.year, from.month, from.day);
   to = DateTime(to.year, to.month, to.day);
-  final s = Stats._(from, to, lanes, bucket);
+  final fold = _StatsFold(Stats._(from, to, lanes, bucket), dayStartMinutes);
+  for (var p = _bucketStart(from, bucket, weekStart); p.isBefore(to);) {
+    final next = _nextBucket(p, bucket);
+    fold.s.periods.add(StatsPeriod(p, next));
+    p = next;
+  }
+  facts.forEach(fold.fact);
+  fold.hourly();
+  final workedGroups = fold.timer(intervals, facts, now);
+  fold.days(facts, workedGroups);
+  return fold.ordered();
+}
+
+/// One run of [computeStats]: the stats being filled and what its steps
+/// share.
+class _StatsFold {
+  _StatsFold(this.s, this.dayStartMinutes);
+
+  final Stats s;
+  final int dayStartMinutes;
+  final stages = <String, StatsSlice>{};
+  final works = <int, StatsSlice>{};
+  final clients = <int?, StatsSlice>{};
+  final _hourlyPay = <String, int>{};
+  final _hourlyTime = <String, Duration>{};
+
   // Deadlines and plans repeat across a part's cuts: each instant once.
-  final days = <int, DateTime>{};
+  final _days = <int, DateTime>{};
   DateTime day(DateTime t) =>
-      days[t.millisecondsSinceEpoch] ??= workDayOf(t, dayStartMinutes);
+      _days[t.millisecondsSinceEpoch] ??= workDayOf(t, dayStartMinutes);
+
   bool inRange(DateTime? t) {
     if (t == null) return false;
     final d = day(t);
-    return !d.isBefore(from) && d.isBefore(to);
+    return !d.isBefore(s.from) && d.isBefore(s.to);
   }
 
-  // Periods.
-  for (var p = _bucketStart(from, bucket, weekStart); p.isBefore(to);) {
-    final next = _nextBucket(p, bucket);
-    s.periods.add(StatsPeriod(p, next));
-    p = next;
-  }
   StatsPeriod? periodOf(DateTime t) {
     final d = day(t);
     for (final p in s.periods) {
@@ -269,14 +291,8 @@ Stats computeStats({
     return null;
   }
 
-  final stages = <String, StatsSlice>{};
-  final works = <int, StatsSlice>{};
-  final clients = <int?, StatsSlice>{};
-  final factOf = {for (final f in facts) f.taskId: f};
-  final hourlyPay = <String, int>{};
-  final hourlyTime = <String, Duration>{};
-
-  for (final f in facts) {
+  /// Counts one task: handed over, done (and paid), deadlines kept.
+  void fact(StatsFact f) {
     final slices = [
       s.total,
       stages.putIfAbsent(
@@ -289,165 +305,190 @@ Stats computeStats({
         () => StatsSlice(f.clientId, f.clientName),
       ),
     ];
-    // Handed off: the slices exist (its time is counted below), its
+    // Handed off: the slices exist (its time is counted later), its
     // results are not.
     if (f.handedOffAt != null) {
       if (inRange(f.handedOffAt)) s.handedOff++;
-      continue;
+      return;
     }
     for (final x in slices) {
       x.cuts++;
       if (f.submittedAt != null || f.doneAt != null) x.finished++;
     }
-    if (inRange(f.submittedAt)) {
-      final timed = f.worked > Duration.zero;
-      for (final x in slices) {
-        x.handed++;
-        if (timed) {
-          x.timedHanded++;
-          x.timedHandedWorked += f.worked;
-        }
-        if (f.take > 1) x.retaken++;
-      }
-      periodOf(f.submittedAt!)?.handed++;
-      s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
-      final handedAt = f.submittedAt!;
-      int lateBy(DateTime due) {
-        var days = (day(handedAt).difference(day(due)).inHours / 24).round();
-        if (handedAt.isAfter(due) && days < 1) days = 1;
-        if (!handedAt.isAfter(due) && days > 0) days = 0;
-        return days;
-      }
-
-      final due = f.submittedDueAt ?? f.dueAt;
-      if (due == null) {
-        s.noDue++;
-      } else {
-        s.lateness.update(lateBy(due), (n) => n + 1, ifAbsent: () => 1);
-        final first = f.firstDueAt ?? due;
-        s.latenessFirst.update(lateBy(first), (n) => n + 1, ifAbsent: () => 1);
-        s.extensions.update(f.dueExtensions, (n) => n + 1, ifAbsent: () => 1);
-        if (f.dueExtensions > 0 && f.dueAt != null) {
-          final gained = (day(f.dueAt!).difference(day(first)).inHours / 24)
-              .round();
-          s.extendedDays.update(gained, (n) => n + 1, ifAbsent: () => 1);
-        }
-      }
-    }
-    if (inRange(f.doneAt)) {
-      final period = periodOf(f.doneAt!);
-      period?.done++;
-      for (final x in slices) {
-        x.done++;
-      }
-      final pay = f.pay;
-      if (pay != null) {
-        for (final x in slices) {
-          x.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
-        }
-        period?.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
-        if (f.worked > Duration.zero) {
-          hourlyPay.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
-          hourlyTime.update(
-            f.currency,
-            (v) => v + f.worked,
-            ifAbsent: () => f.worked,
-          );
-        }
-      }
-    }
-  }
-  for (final c in hourlyPay.keys) {
-    final hours = hourlyTime[c]!.inSeconds / 3600;
-    if (hours > 0) s.hourly[c] = hourlyPay[c]! / hours;
+    if (inRange(f.submittedAt)) _handed(f, slices);
+    if (inRange(f.doneAt)) _done(f, slices);
   }
 
-  // Timer time: periods, slices, heatmap, worked groups per day.
-  final rangeStart = from.add(Duration(minutes: dayStartMinutes));
-  final rangeEnd = to.add(Duration(minutes: dayStartMinutes));
-  final workedGroups = <DateTime, Set<String>>{};
-  for (final i in intervals) {
-    var a = i.start.toLocal();
-    var b = (i.stop ?? now).toLocal();
-    if (a.isBefore(rangeStart)) a = rangeStart;
-    if (b.isAfter(rangeEnd)) b = rangeEnd;
-    if (!b.isAfter(a)) continue;
-    final fact = factOf[i.taskId];
-    final length = b.difference(a);
-    s.total.worked += length;
-    if (fact != null) {
-      stages[fact.stageName]!.worked += length;
-      works[fact.workId]!.worked += length;
-      clients[fact.clientId]!.worked += length;
+  void _handed(StatsFact f, List<StatsSlice> slices) {
+    final timed = f.worked > Duration.zero;
+    for (final x in slices) {
+      x.handed++;
+      if (timed) {
+        x.timedHanded++;
+        x.timedHandedWorked += f.worked;
+      }
+      if (f.take > 1) x.retaken++;
     }
-    // Walk the stretch hour by hour (wall clock) for the heatmap, and by
-    // work day for the periods and the concurrency chart.
-    var t = a;
-    while (t.isBefore(b)) {
-      final hourEnd = DateTime(t.year, t.month, t.day, t.hour + 1);
-      final dayEnd = dayRange(t, dayStartMinutes).end;
-      var end = hourEnd.isBefore(dayEnd) ? hourEnd : dayEnd;
-      if (end.isAfter(b)) end = b;
-      final piece = end.difference(t);
-      s.heatmap[t.weekday - 1][t.hour] += piece;
-      periodOf(t)?.worked += piece;
+    final handedAt = f.submittedAt!;
+    periodOf(handedAt)?.handed++;
+    s.takes.update(f.take, (n) => n + 1, ifAbsent: () => 1);
+    int lateBy(DateTime due) {
+      var days = (day(handedAt).difference(day(due)).inHours / 24).round();
+      if (handedAt.isAfter(due) && days < 1) days = 1;
+      if (!handedAt.isAfter(due) && days > 0) days = 0;
+      return days;
+    }
+
+    final due = f.submittedDueAt ?? f.dueAt;
+    if (due == null) {
+      s.noDue++;
+      return;
+    }
+    s.lateness.update(lateBy(due), (n) => n + 1, ifAbsent: () => 1);
+    final first = f.firstDueAt ?? due;
+    s.latenessFirst.update(lateBy(first), (n) => n + 1, ifAbsent: () => 1);
+    s.extensions.update(f.dueExtensions, (n) => n + 1, ifAbsent: () => 1);
+    if (f.dueExtensions > 0 && f.dueAt != null) {
+      final gained = (day(f.dueAt!).difference(day(first)).inHours / 24)
+          .round();
+      s.extendedDays.update(gained, (n) => n + 1, ifAbsent: () => 1);
+    }
+  }
+
+  void _done(StatsFact f, List<StatsSlice> slices) {
+    final period = periodOf(f.doneAt!);
+    period?.done++;
+    for (final x in slices) {
+      x.done++;
+    }
+    final pay = f.pay;
+    if (pay == null) return;
+    for (final x in slices) {
+      x.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
+    }
+    period?.earned.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
+    if (f.worked > Duration.zero) {
+      _hourlyPay.update(f.currency, (v) => v + pay, ifAbsent: () => pay);
+      _hourlyTime.update(
+        f.currency,
+        (v) => v + f.worked,
+        ifAbsent: () => f.worked,
+      );
+    }
+  }
+
+  /// Pay per hour of timed, finished work, per currency.
+  void hourly() {
+    for (final c in _hourlyPay.keys) {
+      final hours = _hourlyTime[c]!.inSeconds / 3600;
+      if (hours > 0) s.hourly[c] = _hourlyPay[c]! / hours;
+    }
+  }
+
+  /// Timer time into the periods, slices and heatmap; answers the groups
+  /// worked on each work day.
+  Map<DateTime, Set<String>> timer(
+    List<WorkInterval> intervals,
+    List<StatsFact> facts,
+    DateTime now,
+  ) {
+    final factOf = {for (final f in facts) f.taskId: f};
+    final rangeStart = s.from.add(Duration(minutes: dayStartMinutes));
+    final rangeEnd = s.to.add(Duration(minutes: dayStartMinutes));
+    final workedGroups = <DateTime, Set<String>>{};
+    for (final i in intervals) {
+      var a = i.start.toLocal();
+      var b = (i.stop ?? now).toLocal();
+      if (a.isBefore(rangeStart)) a = rangeStart;
+      if (b.isAfter(rangeEnd)) b = rangeEnd;
+      if (!b.isAfter(a)) continue;
+      final fact = factOf[i.taskId];
+      final length = b.difference(a);
+      s.total.worked += length;
       if (fact != null) {
-        (workedGroups[day(t)] ??= {}).add(fact.groupKey);
+        stages[fact.stageName]!.worked += length;
+        works[fact.workId]!.worked += length;
+        clients[fact.clientId]!.worked += length;
       }
-      t = end;
+      // Walk the stretch hour by hour (wall clock) for the heatmap, and by
+      // work day for the periods and the concurrency chart.
+      var t = a;
+      while (t.isBefore(b)) {
+        final hourEnd = DateTime(t.year, t.month, t.day, t.hour + 1);
+        final dayEnd = dayRange(t, dayStartMinutes).end;
+        var end = hourEnd.isBefore(dayEnd) ? hourEnd : dayEnd;
+        if (end.isAfter(b)) end = b;
+        final piece = end.difference(t);
+        s.heatmap[t.weekday - 1][t.hour] += piece;
+        periodOf(t)?.worked += piece;
+        if (fact != null) {
+          (workedGroups[day(t)] ??= {}).add(fact.groupKey);
+        }
+        t = end;
+      }
+    }
+    return workedGroups;
+  }
+
+  /// Each work day: groups worked on, and groups planned to be in hand.
+  void days(List<StatsFact> facts, Map<DateTime, Set<String>> workedGroups) {
+    final plans = <String, ({DateTime start, DateTime end})>{};
+    for (final f in facts) {
+      if (f.handedOffAt != null) continue;
+      final a = f.planStartAt;
+      final b = f.planEndAt;
+      if (a == null || b == null) continue;
+      final span = (start: day(a), end: day(b));
+      final had = plans[f.groupKey];
+      plans[f.groupKey] = had == null
+          ? span
+          : (
+              start: span.start.isBefore(had.start) ? span.start : had.start,
+              end: span.end.isAfter(had.end) ? span.end : had.end,
+            );
+    }
+    // Planned groups per day: +1 where a plan starts, −1 after it ends,
+    // summed along the range (not every plan against every day).
+    final dates = [
+      for (
+        var d = s.from;
+        d.isBefore(s.to);
+        d = DateTime(d.year, d.month, d.day + 1)
+      )
+        d,
+    ];
+    int indexOf(DateTime d) => (d.difference(s.from).inHours / 24).round();
+    final change = List.filled(dates.length + 1, 0);
+    for (final p in plans.values) {
+      final a = indexOf(p.start);
+      final b = indexOf(p.end);
+      if (b < 0 || a >= dates.length) continue;
+      change[a < 0 ? 0 : a]++;
+      change[b + 1 > dates.length ? dates.length : b + 1]--;
+    }
+    var planned = 0;
+    for (var i = 0; i < dates.length; i++) {
+      planned += change[i];
+      s.days.add((
+        day: dates[i],
+        worked: workedGroups[dates[i]]?.length ?? 0,
+        planned: planned,
+      ));
     }
   }
 
-  // Concurrency per work day.
-  final plans = <String, ({DateTime start, DateTime end})>{};
-  for (final f in facts) {
-    if (f.handedOffAt != null) continue;
-    final a = f.planStartAt;
-    final b = f.planEndAt;
-    if (a == null || b == null) continue;
-    final span = (start: day(a), end: day(b));
-    final had = plans[f.groupKey];
-    plans[f.groupKey] = had == null
-        ? span
-        : (
-            start: span.start.isBefore(had.start) ? span.start : had.start,
-            end: span.end.isAfter(had.end) ? span.end : had.end,
-          );
+  /// The slices that were used, most handed over first.
+  Stats ordered() {
+    int byHanded(StatsSlice a, StatsSlice b) => b.handed != a.handed
+        ? b.handed.compareTo(a.handed)
+        : b.worked.compareTo(a.worked);
+    bool used(StatsSlice x) =>
+        x.handed > 0 || x.done > 0 || x.worked > Duration.zero;
+    s.stages.addAll(stages.values.where(used).toList()..sort(byHanded));
+    s.works.addAll(works.values.where(used).toList()..sort(byHanded));
+    s.clients.addAll(clients.values.where(used).toList()..sort(byHanded));
+    return s;
   }
-  // Planned groups per day: +1 where a plan starts, −1 after it ends,
-  // summed along the range (not every plan against every day).
-  final dates = [
-    for (var d = from; d.isBefore(to); d = DateTime(d.year, d.month, d.day + 1))
-      d,
-  ];
-  int indexOf(DateTime d) => (d.difference(from).inHours / 24).round();
-  final change = List.filled(dates.length + 1, 0);
-  for (final p in plans.values) {
-    final a = indexOf(p.start);
-    final b = indexOf(p.end);
-    if (b < 0 || a >= dates.length) continue;
-    change[a < 0 ? 0 : a]++;
-    change[b + 1 > dates.length ? dates.length : b + 1]--;
-  }
-  var planned = 0;
-  for (var i = 0; i < dates.length; i++) {
-    planned += change[i];
-    s.days.add((
-      day: dates[i],
-      worked: workedGroups[dates[i]]?.length ?? 0,
-      planned: planned,
-    ));
-  }
-
-  int byHanded(StatsSlice a, StatsSlice b) => b.handed != a.handed
-      ? b.handed.compareTo(a.handed)
-      : b.worked.compareTo(a.worked);
-  bool used(StatsSlice x) =>
-      x.handed > 0 || x.done > 0 || x.worked > Duration.zero;
-  s.stages.addAll(stages.values.where(used).toList()..sort(byHanded));
-  s.works.addAll(works.values.where(used).toList()..sort(byHanded));
-  s.clients.addAll(clients.values.where(used).toList()..sort(byHanded));
-  return s;
 }
 
 DateTime _bucketStart(DateTime d, StatsBucket bucket, int weekStart) =>

@@ -1275,26 +1275,24 @@ ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
     from = DateTime(from.year, from.month, from.day);
     to = DateTime(to.year, to.month, to.day);
     final days = to.difference(from).inHours ~/ 24;
-    final current = _stats(from, to, bucket, clientId, workId);
+    // The facts do not depend on the period: read them once for both.
+    final facts = _statsFacts(clientId, workId);
+    final filtered = clientId != null || workId != null;
+    final current = _stats(facts, from, to, bucket, filtered: filtered);
     current.previous = _stats(
+      facts,
       DateTime(from.year, from.month, from.day - days),
       from,
       bucket,
-      clientId,
-      workId,
+      filtered: filtered,
     );
     current.stagePaces = stagePaces();
     return current;
   }
 
-  Stats _stats(
-    DateTime from,
-    DateTime to,
-    StatsBucket bucket,
-    int? clientId,
-    int? workId,
-  ) {
-    final filtered = clientId != null || workId != null;
+  /// Every task the statistics count (finished and handed-off ones too),
+  /// with its client, for [clientId] / [workId] when given.
+  List<StatsFact> _statsFacts(int? clientId, int? workId) {
     final extra = {
       for (final r in db.select('''
 SELECT t.id, t.submitted_at, t.submitted_due_at, t.done_at, w.client_id,
@@ -1305,7 +1303,7 @@ JOIN works w ON w.id = s.work_id
 LEFT JOIN clients c ON c.id = w.client_id;'''))
         r['id'] as int: r,
     };
-    final facts = [
+    return [
       for (final t in taskRows(
         workId: workId,
         includeDone: true,
@@ -1336,6 +1334,15 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
               worked: t.worked,
             ),
     ];
+  }
+
+  Stats _stats(
+    List<StatsFact> facts,
+    DateTime from,
+    DateTime to,
+    StatsBucket bucket, {
+    required bool filtered,
+  }) {
     final dayStart = settings.dayStartMinutes;
     final start = DateTime(
       from.year,
