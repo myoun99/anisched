@@ -842,6 +842,48 @@ ORDER BY sort_key, id;''')) {
     return (inHand: inHand, waiting: waiting);
   }
 
+  // ---- handed off (빠짐) ----
+
+  /// Takes [taskIds] off the user's hands — someone else does them now.
+  /// They leave the lists, the cuts in hand, the pace and the calendar;
+  /// their timer time stays in the statistics. [note] is optional.
+  void handOff(Iterable<int> taskIds, {String? note}) => _transaction(() {
+    final now = _now();
+    for (final id in taskIds) {
+      db.execute(
+        'UPDATE tasks SET handed_off_at = COALESCE(handed_off_at, ?), '
+        'handed_off_note = ? WHERE id = ?;',
+        [now, _blank(note), id],
+      );
+    }
+  });
+
+  /// [handOff] for every live task of a part × stage. Answers their ids.
+  List<int> handOffPart(int partId, int stageId, {String? note}) =>
+      _transaction(() {
+        final ids = [
+          for (final r in db.select(
+            'SELECT t.id FROM live_tasks t JOIN cuts c ON c.id = t.cut_id '
+            'WHERE c.part_id = ? AND t.stage_id = ?;',
+            [partId, stageId],
+          ))
+            r['id'] as int,
+        ];
+        handOff(ids, note: note);
+        return ids;
+      });
+
+  /// Brings handed-off tasks back.
+  void undoHandOff(Iterable<int> taskIds) => _transaction(() {
+    for (final id in taskIds) {
+      db.execute(
+        'UPDATE tasks SET handed_off_at = NULL, handed_off_note = NULL '
+        'WHERE id = ?;',
+        [id],
+      );
+    }
+  });
+
   static String? _blank(String? s) =>
       s == null || s.trim().isEmpty ? null : s.trim();
 
@@ -1109,7 +1151,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
         r['id'] as int: r,
     };
     final facts = [
-      for (final t in taskRows(includeDone: true))
+      for (final t in taskRows(includeDone: true, includeHandedOff: true))
         if (extra[t.id] case final x?)
           StatsFact(
             taskId: t.id,
@@ -1127,6 +1169,7 @@ LEFT JOIN clients c ON c.id = w.client_id;'''))
             submittedDueAt: at(x['submitted_due_at']),
             firstDueAt: t.firstDueAt,
             dueExtensions: t.dueExtensions,
+            handedOffAt: t.handedOffAt,
             planStartAt: t.planStartAt,
             planEndAt: t.planEndAt,
             pay: t.pay,
@@ -1656,6 +1699,7 @@ JOIN work_stages s ON s.id = t.stage_id
 JOIN works w ON w.id = s.work_id
 LEFT JOIN clients cl ON cl.id = w.client_id
 WHERE t.done_at >= ? AND t.done_at < ?
+  AND t.handed_off_at IS NULL
   AND cl.closing_day IS ?;''',
         [
           p.start.toUtc().millisecondsSinceEpoch,
@@ -1682,7 +1726,14 @@ WHERE t.done_at >= ? AND t.done_at < ?
   /// Unless [includeDone], a done task is left out when every task of its
   /// group is done too — finished units drop off the views, while a done
   /// cut still counts in a part that has open ones ("3/6").
-  List<TaskRow> taskRows({int? workId, bool includeDone = false}) {
+  ///
+  /// Tasks handed off to someone else are left out unless
+  /// [includeHandedOff].
+  List<TaskRow> taskRows({
+    int? workId,
+    bool includeDone = false,
+    bool includeHandedOff = false,
+  }) {
     final now = _now();
     final rounding = settings.secondsRounding;
     final rows = db.select(
@@ -1697,6 +1748,7 @@ SELECT t.id, t.status, t.received_at, t.due_at AS own_due,
        t.wait_state, t.wait_reason, t.wait_until,
        pw.part_id IS NOT NULL AS part_waiting, pw.reason AS part_wait_reason,
        pw.until_at AS part_wait_until,
+       t.handed_off_at, t.handed_off_note,
        CASE WHEN c.shared_with IS NOT NULL OR EXISTS (
          SELECT 1 FROM cuts m WHERE m.shared_with = c.id
            AND m.archived_at IS NULL)
@@ -1741,6 +1793,7 @@ LEFT JOIN (SELECT part_id, stage_id, COUNT(*) AS n,
 LEFT JOIN part_stage_waits pw
   ON pw.part_id = c.part_id AND pw.stage_id = t.stage_id
 WHERE (?2 IS NULL OR w.id = ?2)
+  AND (?4 = 1 OR t.handed_off_at IS NULL)
   -- the live_tasks conditions, inlined: these joins are already here
   AND t.archived_at IS NULL AND w.archived_at IS NULL
   AND e.archived_at IS NULL
@@ -1755,7 +1808,7 @@ WHERE (?2 IS NULL OR w.id = ?2)
             AND c2.episode_id = c.episode_id)))))
 ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
          c.sort_key, t.id;''',
-      [now, workId, if (includeDone) 1 else 0],
+      [now, workId, if (includeDone) 1 else 0, if (includeHandedOff) 1 else 0],
     );
     DateTime? utc(Object? ms) => ms == null
         ? null
@@ -1811,6 +1864,8 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
           partWaiting: r['part_waiting'] == 1,
           partWaitReason: r['part_wait_reason'] as String?,
           partWaitUntil: utc(r['part_wait_until']),
+          handedOffAt: utc(r['handed_off_at']),
+          handedOffNote: r['handed_off_note'] as String?,
         ),
     ];
   }
@@ -1820,16 +1875,21 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
   /// sorted by deadline (none last). Two queries in all, whatever the row
   /// count: the settings read and [taskRows].
   /// Finished units are left out unless [includeDone].
-  List<PartGroup> partGroups({int? workId, bool includeDone = false}) =>
-      groupRows(
-        taskRows(workId: workId, includeDone: includeDone),
-        manualOrder: {
-          for (final r in db.select(
-            'SELECT group_key, position FROM group_order;',
-          ))
-            r['group_key'] as String: r['position'] as int,
-        },
-      );
+  List<PartGroup> partGroups({
+    int? workId,
+    bool includeDone = false,
+    bool includeHandedOff = false,
+  }) => groupRows(
+    taskRows(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+    manualOrder: {
+      for (final r in db.select('SELECT group_key, position FROM group_order;'))
+        r['group_key'] as String: r['position'] as int,
+    },
+  );
 
   /// The calendar: every open unit as a bar over [basis] dates, laid out
   /// on the parallel-lanes setting. Units missing either end are not
@@ -1938,7 +1998,7 @@ ORDER BY w.id, e.sort_key, e.id, p.sort_key, p.id, s.position, s.id,
         '''
 SELECT s.name AS stage_name, COUNT(*) AS cuts
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE 1
+WHERE t.handed_off_at IS NULL
   AND COALESCE(t.submitted_at, t.done_at) >= ?
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name ORDER BY s.name;''',
@@ -1967,7 +2027,7 @@ GROUP BY s.name ORDER BY s.name;''',
 SELECT s.name AS stage_name, COUNT(*) AS cuts,
        MIN(COALESCE(t.submitted_at, t.done_at)) AS first_at
 FROM live_tasks t JOIN work_stages s ON s.id = t.stage_id
-WHERE 1
+WHERE t.handed_off_at IS NULL
   AND COALESCE(t.submitted_at, t.done_at) IS NOT NULL
   AND COALESCE(t.submitted_at, t.done_at) < ?
 GROUP BY s.name;''',

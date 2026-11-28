@@ -31,6 +31,7 @@ abstract interface class CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
+    bool includeHandedOff = false,
   });
 
   /// See [CatalogueStore.today].
@@ -145,7 +146,14 @@ class SyncCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _run(() => store.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _run(
+    () => store.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>
@@ -397,7 +405,14 @@ class BackgroundCatalogueReader implements CatalogueReader {
   Future<List<PartStageRow>> partGroups({
     int? workId,
     bool includeDone = false,
-  }) => _ask((s) => s.partGroups(workId: workId, includeDone: includeDone));
+    bool includeHandedOff = false,
+  }) => _ask(
+    (s) => s.partGroups(
+      workId: workId,
+      includeDone: includeDone,
+      includeHandedOff: includeHandedOff,
+    ),
+  );
 
   @override
   Future<TodayView> today({int horizonDays = 4}) =>

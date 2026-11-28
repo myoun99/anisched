@@ -46,7 +46,17 @@ CREATE TABLE work_intervals (
   const Migration(10, _v10RolesPinsSharedCuts),
   const Migration(11, _v11SubmittedDue),
   const Migration(12, _v12DueRevisionsAndWaits),
+  const Migration(13, _v13HandedOff),
 ];
+
+/// A task taken off the user's hands (someone else does it now, 유저
+/// 2026-11-28): out of the lists and the pace, still in the time
+/// statistics. Not a delete.
+void _v13HandedOff(Database db) {
+  db
+    ..execute('ALTER TABLE tasks ADD COLUMN handed_off_at INTEGER;')
+    ..execute('ALTER TABLE tasks ADD COLUMN handed_off_note TEXT;');
+}
 
 /// Deadlines in revisions (1st, 2nd … — a deadline extended after talking
 /// it over) and the "waiting" flag (유저 2026-11-28).
