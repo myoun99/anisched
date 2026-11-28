@@ -19,6 +19,7 @@ import 'document_menu.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
+import 'instant.dart';
 import 'part_line.dart';
 import 'pick_field.dart';
 import 'time_editor.dart';
@@ -504,6 +505,29 @@ class _AppShellState extends State<AppShell> {
       );
   }
 
+  /// The picked cuts' own deadline: one date, a new round for each cut
+  /// (their own deadline over the part's).
+  Future<void> _dueForPicked() async {
+    final picked = _pickedTasks;
+    if (picked.isEmpty) return;
+    final now = widget.clock();
+    final d = await showInstantDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 3),
+      initialDate: (picked.first.dueAt ?? now).toLocal(),
+      title: S.pickDue.t,
+    );
+    if (d == null || !mounted) return;
+    final due = DateTime(d.year, d.month, d.day, 23, 59);
+    _write((store) {
+      for (final t in picked) {
+        store.extendDue(DueTarget.task(t.id), due);
+      }
+    });
+    _selection.clear();
+  }
+
   /// The picked tasks, for the selection bar's hold button.
   List<TaskRow> get _pickedTasks {
     final ids = _selection.ids;
@@ -694,6 +718,7 @@ class _AppShellState extends State<AppShell> {
               ? null
               : () => unawaited(_toggleHold(_pickedTasks)),
           onHandOff: widget.store == null ? null : _handOff,
+          onDue: widget.store == null ? null : () => unawaited(_dueForPicked()),
           allHandedOff: () {
             final p = _pickedTasks;
             return p.isNotEmpty && p.every((t) => t.handedOff);
