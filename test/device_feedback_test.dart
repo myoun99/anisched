@@ -177,8 +177,8 @@ void main() {
     await t.pump();
     expect(FocusManager.instance.primaryFocus?.context?.widget, isNotNull);
     expect(t.testTextInput.isVisible, isTrue);
-    // A sure empty spot beside the field: the plain 「끝 컷」 caption.
-    await t.tap(find.textContaining('끝 컷', findRichText: true));
+    // A sure empty spot outside the field: the cut card's title.
+    await t.tap(find.text('등록할 컷'));
     await t.pump();
     expect(t.testTextInput.isVisible, isFalse);
   });

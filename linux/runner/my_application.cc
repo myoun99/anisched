@@ -10,20 +10,70 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // The start screen, until the first Flutter frame.
+  GtkWidget* splash;
 };
+
+// The bundle's data directory: data/ next to the executable.
+static gchar* data_path(const gchar* name) {
+  g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe == nullptr) return nullptr;
+  g_autofree gchar* dir = g_path_get_dirname(exe);
+  return g_build_filename(dir, "data", name, nullptr);
+}
+
+// The start screen (Anicel's way): the mark and the name, no ground, in a
+// transparent window half the monitor's short side tall. The picture is
+// the app's own asset (assets/app_art/splash.png, drawn by tool/app_art).
+static GtkWidget* show_splash() {
+  g_autofree gchar* path =
+      data_path("flutter_assets/assets/app_art/splash.png");
+  if (path == nullptr) return nullptr;
+  GdkDisplay* display = gdk_display_get_default();
+  GdkMonitor* monitor = gdk_display_get_primary_monitor(display);
+  if (monitor == nullptr) monitor = gdk_display_get_monitor(display, 0);
+  if (monitor == nullptr) return nullptr;
+  GdkRectangle area;
+  gdk_monitor_get_workarea(monitor, &area);
+  const int height = MIN(area.width, area.height) / 2;
+  g_autoptr(GdkPixbuf) full = gdk_pixbuf_new_from_file(path, nullptr);
+  if (full == nullptr) return nullptr;
+  const int h = MIN(height, gdk_pixbuf_get_height(full));
+  const int w = gdk_pixbuf_get_width(full) * h / gdk_pixbuf_get_height(full);
+  g_autoptr(GdkPixbuf) scaled =
+      gdk_pixbuf_scale_simple(full, w, h, GDK_INTERP_HYPER);
+
+  GtkWidget* window = gtk_window_new(GTK_WINDOW_POPUP);
+  GdkScreen* screen = gtk_widget_get_screen(window);
+  GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
+  if (visual != nullptr) gtk_widget_set_visual(window, visual);
+  gtk_widget_set_app_paintable(window, TRUE);
+  gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
+  gtk_window_set_default_size(GTK_WINDOW(window), w, h);
+  gtk_window_move(GTK_WINDOW(window), area.x + (area.width - w) / 2,
+                  area.y + (area.height - h) / 2);
+  gtk_container_add(GTK_CONTAINER(window),
+                    gtk_image_new_from_pixbuf(scaled));
+  gtk_widget_show_all(window);
+  return window;
+}
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  g_clear_pointer(&self->splash, gtk_widget_destroy);
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  self->splash = show_splash();
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  g_autofree gchar* icon = data_path("app_icon.png");
+  if (icon != nullptr) gtk_window_set_icon_from_file(window, icon, nullptr);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -121,6 +171,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_pointer(&self->splash, gtk_widget_destroy);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

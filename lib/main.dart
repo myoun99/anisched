@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'boot.dart';
+import 'src/platform/splash.dart';
 import 'src/services/catalogue_store.dart';
 import 'src/services/device_settings.dart';
 import 'src/services/document_session.dart';
@@ -20,6 +21,8 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // The name and a spinner first; the app once everything is ready.
   runApp(const AppStart(load: _start));
+  // The desktop start screen goes once this first frame is up.
+  WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(closeSplash()));
 }
 
 Future<Widget> _start() async {

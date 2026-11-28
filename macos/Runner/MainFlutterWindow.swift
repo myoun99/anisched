@@ -4,8 +4,10 @@ import UniformTypeIdentifiers
 
 class MainFlutterWindow: NSWindow {
   private let documents = Documents()
+  private let splash = Splash()
 
   override func awakeFromNib() {
+    splash.show()
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
@@ -21,7 +23,58 @@ class MainFlutterWindow: NSWindow {
       documents.handle(call, result: result)
     }
 
+    // The app says when its first frame is up; the start screen goes.
+    let splashChannel = FlutterMethodChannel(
+      name: "anisched/splash",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    splashChannel.setMethodCallHandler { [splash] call, result in
+      if call.method == "close" { splash.close() }
+      result(nil)
+    }
+
     super.awakeFromNib()
+  }
+}
+
+/// The start screen (Anicel's way): the mark and the name, no ground, in a
+/// transparent borderless window half the screen's short side tall, until
+/// the app's first frame (`anisched/splash` `close`) — or ten seconds, at
+/// the latest. The picture is the app's own asset (assets/app_art/
+/// splash.png, drawn by tool/app_art).
+///
+/// Kept in this file: the Xcode project lists its sources explicitly.
+final class Splash {
+  private var window: NSWindow?
+
+  func show() {
+    let assets = Bundle.main.bundleURL.appendingPathComponent(
+      "Contents/Frameworks/App.framework/Resources/flutter_assets/assets/app_art/splash.png")
+    guard let image = NSImage(contentsOf: assets),
+      let screen = NSScreen.main
+    else { return }
+    let area = screen.visibleFrame
+    let height = min(area.width, area.height) / 2
+    let width = image.size.width * height / max(image.size.height, 1)
+    let frame = NSRect(
+      x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+    let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+    w.isOpaque = false
+    w.backgroundColor = .clear
+    w.hasShadow = false
+    w.level = .floating
+    w.ignoresMouseEvents = true
+    let view = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
+    view.image = image
+    view.imageScaling = .scaleProportionallyUpOrDown
+    w.contentView = view
+    w.orderFrontRegardless()
+    window = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in self?.close() }
+  }
+
+  func close() {
+    window?.orderOut(nil)
+    window = nil
   }
 }
 
