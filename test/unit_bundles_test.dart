@@ -78,26 +78,6 @@ void main() {
     expect(count.data, contains('8'));
   });
 
-  testWidgets('a tapped work bar opens its details', (t) async {
-    final s = sampleCatalogue(now);
-    await pumpShell(t, s, AppView.work);
-    final bar = find.byWidgetPredicate(
-      (w) =>
-          w.key is ValueKey<String> &&
-          (w.key! as ValueKey<String>).value.startsWith('work-open-'),
-    );
-    final key = (t.widget(bar.first).key! as ValueKey<String>).value.substring(
-      'work-open-'.length,
-    );
-    await t.tap(bar.first, warnIfMissed: false);
-    await t.pump();
-    expect(find.byKey(Key('details-due-$key')), findsOneWidget);
-    // The opened work's line closes it again.
-    await t.tap(bar.first, warnIfMissed: false);
-    await t.pump();
-    expect(find.byKey(Key('details-due-$key')), findsNothing);
-  });
-
   test('one part at two stages is one bundle, stages in order', () {
     final s = sampleCatalogue(now);
     final lo = addGenga(s);

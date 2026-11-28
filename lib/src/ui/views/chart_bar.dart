@@ -77,7 +77,12 @@ class ChartBar extends StatefulWidget {
     this.faded = false,
     this.wrapBody,
     this.outline,
+    this.onTap,
   });
+
+  /// A tap anywhere on the drawn bar — face, label, grips — (grips keep
+  /// only their drag); null: taps pass through.
+  final VoidCallback? onTap;
 
   /// A border round the bar (e.g. red for work past the lanes).
   final Color? outline;
@@ -280,7 +285,14 @@ class _ChartBarState extends State<ChartBar> {
                 width: to - from,
                 top: ChartBoard.barTop,
                 height: ChartBoard.barHeight,
-                child: bar,
+                child: widget.onTap == null
+                    ? bar
+                    : GestureDetector(
+                        key: const Key('bar-tap'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onTap,
+                        child: bar,
+                      ),
               ),
             ],
           );

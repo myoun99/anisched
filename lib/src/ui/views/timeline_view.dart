@@ -254,6 +254,10 @@ class _TimelineViewState extends State<TimelineView> {
           textColor: barInk,
           faded: handed || (g.waiting > 0 && g.inHand == 0),
           onDates: onSchedule == null ? null : (s, e) => onSchedule(g, s, e),
+          // A tap on the bar opens the row (as the work tab's bars do).
+          onTap: widget.details == null
+              ? null
+              : () => setState(() => _open = g.key),
         ),
       for (final e in widget.events[g.episodeId] ?? const <EventRow>[])
         ChartDayBox(
