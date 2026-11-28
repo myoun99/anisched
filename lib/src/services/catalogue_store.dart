@@ -1613,7 +1613,7 @@ ORDER BY i.started_at;''',
       _forgetPlaces('nopart:$episode:%');
       db
         ..execute('DELETE FROM episode_rates WHERE episode_id = ?;', [episode])
-        ..execute('DELETE FROM events WHERE episode_id = ?;', [episode])
+        // Its events go by ON DELETE CASCADE.
         ..execute('DELETE FROM episodes WHERE id = ?;', [episode]);
     }
     for (final work in plan.workIds) {
