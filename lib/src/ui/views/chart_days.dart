@@ -529,7 +529,11 @@ class _SpanPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
           maxLines: 1,
         )..layout();
+        // Never drawn past its own cell.
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(x0, top, x1, top + h));
         t.paint(canvas, Offset(spanLabelX(x0, x1, t.width, lo, hi), top));
+        canvas.restore();
         t.dispose();
       }
     }
@@ -571,18 +575,16 @@ class _SpanPainter extends CustomPainter {
 
 /// Where a merged cell's name of [width] starts, the cell running from
 /// [x0] to [x1] and the days in sight from [lo] to [hi]: centred in the
-/// cell; when that centre is out of sight, held against the visible end
-/// of the cell (never past the cell's own edges) so it always shows.
+/// cell, but never cut by the edge of sight — held whole against the
+/// cell's visible end instead (and never past the cell's own edges).
 double spanLabelX(double x0, double x1, double width, double lo, double hi) {
   const pad = 2.0;
-  var x = (x0 + x1 - width) / 2;
-  final centre = (x0 + x1) / 2;
-  if (centre < lo) x = (x0 > lo ? x0 : lo) + pad;
-  if (centre > hi) x = (x1 < hi ? x1 : hi) - pad - width;
-  // Kept inside the cell.
-  if (x + width > x1 - pad) x = x1 - pad - width;
-  if (x < x0 + pad) x = x0 + pad;
-  return x;
+  // The part of the cell in sight; the name stays whole within it.
+  final from = (x0 > lo ? x0 : lo) + pad;
+  final to = (x1 < hi ? x1 : hi) - pad - width;
+  final x = (x0 + x1 - width) / 2;
+  if (to < from) return x0 + pad < from ? from : x0 + pad;
+  return x < from ? from : (x > to ? to : x);
 }
 
 /// The merged cells of a year or month row over [window]: for each year

@@ -77,9 +77,10 @@ void main() {
     expect(spanLabelX(0, 300, 40, 200, 1000), 202);
     // Centre right of sight: held at the visible end.
     expect(spanLabelX(0, 300, 40, -500, 100), 58);
-    // Never past the cell: hardly any of it in sight.
-    expect(spanLabelX(0, 300, 40, 290, 1000), 258);
-    expect(spanLabelX(0, 300, 40, -500, 10), 2);
+    // Centre just in sight: the name is not cut by the edge.
+    expect(spanLabelX(0, 300, 40, 140, 1000), 142);
+    // Too little of the cell in sight for the whole name: from its start.
+    expect(spanLabelX(0, 300, 40, 290, 1000), 292);
   });
 
   test('rows go year, month, days, weekdays, events; hidden ones fold', () {
