@@ -40,7 +40,7 @@ enum LanguageChoice {
 /// in the app container on devices ([loadDeviceSettings] in
 /// `device_settings_io.dart`), the browser's localStorage on the web.
 class DeviceSettings {
-  DeviceSettings._(this._write, this._theme, this._language);
+  DeviceSettings._(this._write, this._theme, this._language, this._monthView);
 
   /// Settings read from [json] (null, unreadable or partial gives the
   /// defaults) that hand their JSON to [write] on every change.
@@ -56,12 +56,14 @@ class DeviceSettings {
       write,
       ThemeChoice.parse(m['themeMode']),
       LanguageChoice.parse(m['language']),
+      m['monthView'] == true,
     );
   }
 
   final void Function(String json) _write;
   ThemeChoice _theme;
   LanguageChoice _language;
+  bool _monthView;
 
   /// Default: [ThemeChoice.system].
   ThemeChoice get themeMode => _theme;
@@ -79,10 +81,19 @@ class DeviceSettings {
     _save();
   }
 
+  /// The calendar shows a month rather than its usual view. Default: off.
+  bool get monthView => _monthView;
+
+  set monthView(bool on) {
+    _monthView = on;
+    _save();
+  }
+
   void _save() => _write(
     jsonEncode({
       'themeMode': _theme.name,
       if (_language.tag != null) 'language': _language.tag,
+      if (_monthView) 'monthView': true,
     }),
   );
 }
