@@ -248,6 +248,7 @@ class ChartPager extends StatelessWidget {
       ToolbarButton(
         key: const Key('chart-today'),
         label: S.today.t,
+        icon: Icons.today,
         selected: false,
         onTap: () => chartView.value = ChartView(days: chartView.value.days),
       ),
@@ -306,26 +307,14 @@ class _ZoomDragState extends State<ZoomDrag> {
             },
             child: Container(
               height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
               decoration: BoxDecoration(
                 color: c.panel,
                 border: Border.all(color: c.line),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 4,
-                children: [
-                  Icon(Icons.zoom_in, size: 18, color: c.muted),
-                  Text(
-                    S.days.f({'n': widget.days}),
-                    style: const TextStyle(
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  Icon(Icons.unfold_more, size: 16, color: c.faint),
-                ],
-              ),
+              // The zoom icon alone: press and drag (Anicel's rule).
+              child: Icon(Icons.zoom_in, size: 20, color: c.muted),
             ),
           ),
         ),
@@ -1429,15 +1418,12 @@ class MonthViewToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<bool>(
     valueListenable: chartMonthView,
-    builder: (context, month, _) => IconButton(
+    builder: (context, month, _) => ToolbarButton(
       key: const Key('chart-month'),
-      tooltip: month ? S.viewRunning.t : S.viewMonths.t,
-      isSelected: month,
-      onPressed: () => chartMonthView.value = !month,
-      icon: Icon(
-        month ? Icons.view_timeline_outlined : Icons.calendar_view_month,
-        size: 20,
-      ),
+      label: month ? S.viewRunning.t : S.viewMonths.t,
+      icon: Icons.calendar_view_month,
+      selected: month,
+      onTap: () => chartMonthView.value = !month,
     ),
   );
 }

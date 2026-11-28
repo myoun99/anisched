@@ -503,26 +503,17 @@ class _AppShellState extends State<AppShell> {
     },
   );
 
-  List<Widget> _toolbar(int count) => [
+  List<Widget> _toolbar() => [
     ToolbarButton(
       key: const Key('sort-by-due'),
       label: S.sortByDue.t,
+      icon: Icons.sort,
       selected: false,
       onTap: widget.store == null
           ? null
           : () => _write((s) => s.clearGroupOrder()),
     ),
     _filterButton(),
-    SizedBox(
-      height: 34,
-      child: Center(
-        widthFactor: 1,
-        child: Text(
-          S.items.f({'n': count}),
-          style: TextStyle(color: AppColors.of(context).muted),
-        ),
-      ),
-    ),
   ];
 
   static DateTime _startOf(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -681,7 +672,7 @@ class _AppShellState extends State<AppShell> {
     final now = widget.clock();
     final writable = widget.store != null;
     final shown = _visible(now);
-    final toolbar = _toolbar(shown.length);
+    final toolbar = _toolbar();
     // One wiring for every view that opens a unit's details.
     final wiring = UnitWiring(
       signals: _signals,

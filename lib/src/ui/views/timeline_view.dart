@@ -122,11 +122,6 @@ class _TimelineViewState extends State<TimelineView> {
           ViewToolbar(
             children: [
               ...?widget.toolbar,
-              if (widget.toolbar == null)
-                Text(
-                  S.items.f({'n': rows.length}),
-                  style: TextStyle(color: c.muted),
-                ),
               ValueListenableBuilder<bool>(
                 valueListenable: chartMonthView,
                 builder: (context, month, _) => month
