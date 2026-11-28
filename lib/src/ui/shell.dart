@@ -59,8 +59,8 @@ enum AppView {
   String get label => word.t;
 }
 
-/// App frame: a top bar, the current view, and the view switcher — in the
-/// top bar on medium and wide screens, along the bottom on narrow ones.
+/// App frame: a top bar, the current view, and the view switcher along
+/// the bottom — the same on every screen.
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -874,12 +874,6 @@ class _AppShellState extends State<AppShell> {
             return open.isNotEmpty && open.every((t) => t.waiting);
           },
         );
-        final switcher = ViewSwitcher(
-          key: Key(narrow ? 'view-switch-bottom' : 'view-switch-top'),
-          current: _view,
-          onSelect: _select,
-          expand: narrow,
-        );
         // Status bar text follows the theme: dark on light, light on dark
         // (iOS and Android both read this).
         final dark = Theme.of(context).brightness == Brightness.dark;
@@ -888,7 +882,7 @@ class _AppShellState extends State<AppShell> {
               .copyWith(statusBarColor: Colors.transparent),
           child: Scaffold(
             body: SafeArea(
-              bottom: !narrow,
+              bottom: false,
               child: Column(
                 children: [
                   ListenableBuilder(
@@ -909,7 +903,6 @@ class _AppShellState extends State<AppShell> {
                               ),
                             ),
                       actions: selectionBar,
-                      switcher: narrow ? null : switcher,
                     ),
                   ),
                   Expanded(
@@ -925,7 +918,13 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            bottomNavigationBar: narrow ? _BottomBar(child: switcher) : null,
+            bottomNavigationBar: _BottomBar(
+              child: ViewSwitcher(
+                key: const Key('view-switch'),
+                current: _view,
+                onSelect: _select,
+              ),
+            ),
           ),
         );
       },
@@ -937,7 +936,6 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     this.title,
     required this.actions,
-    this.switcher,
     this.picking = false,
     this.narrow = false,
   });
@@ -956,9 +954,6 @@ class _TopBar extends StatelessWidget {
   /// The picked-task actions: they take the room left and shrink to icons.
   final Widget actions;
 
-  /// The view switcher, when it sits up here.
-  final Widget? switcher;
-
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -971,13 +966,13 @@ class _TopBar extends StatelessWidget {
         height: 52,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: LayoutBuilder(builder: (context, box) => _row(box.maxWidth)),
+          child: _row(),
         ),
       ),
     );
   }
 
-  Widget _row(double width) => Row(
+  Widget _row() => Row(
     children: [
       const Text(
         'Anisched',
@@ -991,16 +986,6 @@ class _TopBar extends StatelessWidget {
             ? Align(alignment: Alignment.centerRight, child: actions)
             : const SizedBox.shrink(),
       ),
-      if (switcher case final s?) ...[
-        const SizedBox(width: 12),
-        // Its own width up to a little over half the bar; past that
-        // (long words, a phone held sideways) it shrinks a little
-        // rather than push the actions off.
-        ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: width * 0.55),
-          child: FittedBox(fit: BoxFit.scaleDown, child: s),
-        ),
-      ],
     ],
   );
 }
@@ -1029,20 +1014,17 @@ class _BottomBar extends StatelessWidget {
   }
 }
 
-/// Row of view buttons. The current one is marked by its fill colour only.
+/// Row of view buttons sharing the full width. The current one is marked
+/// by its fill colour only.
 class ViewSwitcher extends StatelessWidget {
   const ViewSwitcher({
     super.key,
     required this.current,
     required this.onSelect,
-    this.expand = false,
   });
 
   final AppView current;
   final ValueChanged<AppView> onSelect;
-
-  /// Stretch the buttons to share the full width (bottom bar).
-  final bool expand;
 
   @override
   Widget build(BuildContext context) {
@@ -1056,12 +1038,8 @@ class ViewSwitcher extends StatelessWidget {
         ),
     ];
     return Row(
-      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
       spacing: 4,
-      children: [
-        for (final b in buttons)
-          if (expand) Expanded(child: b) else b,
-      ],
+      children: [for (final b in buttons) Expanded(child: b)],
     );
   }
 }
