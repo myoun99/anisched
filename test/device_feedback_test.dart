@@ -1,3 +1,4 @@
+import 'package:anisched/src/models/catalogue.dart';
 import 'package:anisched/src/services/catalogue_reader.dart';
 import 'package:anisched/src/services/catalogue_store.dart';
 import 'package:anisched/src/ui/shell.dart';
@@ -71,48 +72,91 @@ void main() {
     expect(settled(t, find.byType(DatePickerDialog)), isTrue);
   });
 
-  // The picked-task actions sit in the app-name bar: every button on
-  // screen without a sideways scroll — words on wide screens, icons alone
-  // on a phone. The narrowest phone held upright and sideways (the bar
-  // shares the row with the view switcher there) and a desktop.
-  for (final (size, words) in const [
-    (Size(390, 844), false),
-    (Size(844, 390), false),
-    (Size(1440, 900), true),
-  ]) {
-    testWidgets('the picked-task actions fit the top bar at $size', (t) async {
+  // The picked-task actions sit in the app-name bar, icon and name each,
+  // as many as fit in pickPriority order; the rest wait behind ⋯. The
+  // narrowest phone held upright and sideways (the bar shares the row
+  // with the view switcher there) and a desktop.
+  Future<void> pickOne(WidgetTester t) async {
+    await t.longPress(
+      find
+          .byWidgetPredicate(
+            (w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith('line-'),
+          )
+          .first,
+    );
+    await t.pump();
+  }
+
+  void onBar(WidgetTester t, Size size, String key) {
+    final rows = t.getRect(find.byKey(const Key('sheet-rows')));
+    final r = t.getRect(find.byKey(Key(key)));
+    expect(r.bottom, lessThanOrEqualTo(rows.top), reason: key);
+    expect(r.right, lessThanOrEqualTo(size.width), reason: key);
+    expect(r.left, greaterThanOrEqualTo(0), reason: key);
+  }
+
+  for (final size in const [Size(390, 844), Size(844, 390)]) {
+    testWidgets('a phone shows done, ⋯ and ✕ at $size', (t) async {
       await pumpShell(t, size);
-      // Nothing picked: no actions at all.
       expect(find.byKey(const Key('pick-clear')), findsNothing);
-      await t.longPress(
-        find
-            .byWidgetPredicate(
-              (w) =>
-                  w.key is ValueKey<String> &&
-                  (w.key! as ValueKey<String>).value.startsWith('line-'),
-            )
-            .first,
-      );
-      await t.pump();
-      final rows = t.getRect(find.byKey(const Key('sheet-rows')));
+      await pickOne(t);
       for (final key in const [
         'picked-count',
-        'apply-in_progress',
-        'apply-submitted',
         'apply-done',
-        'pick-hold',
-        'pick-drop',
+        'pick-more',
         'pick-clear',
       ]) {
-        final r = t.getRect(find.byKey(Key(key)));
-        expect(r.bottom, lessThanOrEqualTo(rows.top), reason: key);
-        expect(r.right, lessThanOrEqualTo(size.width), reason: key);
-        expect(r.left, greaterThanOrEqualTo(0), reason: key);
+        onBar(t, size, key);
       }
-      expect(find.text('제출'), words ? findsWidgets : findsNothing);
+      expect(find.text('완료'), findsWidgets);
       expect(t.takeException(), isNull);
     });
   }
+
+  testWidgets('phone upright: ⋯ holds the rest, by name, and acts', (t) async {
+    final store = await pumpShell(t, const Size(390, 844));
+    final g = store.partGroups().firstWhere((g) => g.inHand > 0);
+    await t.longPress(find.byKey(Key('line-${g.key}')).first);
+    await t.pump();
+    expect(find.byKey(const Key('apply-submitted')), findsNothing);
+    expect(find.byKey(const Key('pick-drop')), findsNothing);
+    await t.tap(find.byKey(const Key('pick-more')));
+    await t.pump();
+    for (final name in const ['제출', '작업중', '리테이크', '받음']) {
+      expect(find.text(name), findsOneWidget, reason: name);
+    }
+    await t.tap(find.byKey(const Key('apply-submitted')));
+    await t.pump();
+    await t.pump();
+    final after = store
+        .partGroups(includeDone: true)
+        .firstWhere((x) => x.key == g.key);
+    expect(after.tasks.every((x) => x.status == TaskStatus.submitted), isTrue);
+    expect(find.byKey(const Key('pick-more')), findsNothing);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('a desktop shows every action by name, no ⋯', (t) async {
+    const size = Size(1440, 900);
+    await pumpShell(t, size);
+    await pickOne(t);
+    for (final key in const [
+      'picked-count',
+      'apply-in_progress',
+      'apply-submitted',
+      'apply-done',
+      'pick-hold',
+      'pick-drop',
+      'pick-clear',
+    ]) {
+      onBar(t, size, key);
+    }
+    expect(find.byKey(const Key('pick-more')), findsNothing);
+    expect(find.text('제출'), findsWidgets);
+    expect(t.takeException(), isNull);
+  });
 
   testWidgets('tapping outside a number field ends editing', (t) async {
     await pumpShell(t, const Size(390, 844), view: AppView.register);

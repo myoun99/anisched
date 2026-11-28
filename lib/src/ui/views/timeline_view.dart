@@ -132,7 +132,7 @@ class _TimelineViewState extends State<TimelineView> {
                     ? const SizedBox.shrink()
                     : ValueListenableBuilder<ChartWindow>(
                         valueListenable: _window,
-                        builder: (context, w, _) => ChartPager(days: w.days),
+                        builder: (context, w, _) => ChartPager(days: w.shown),
                       ),
               ),
               const MonthViewToggle(),
@@ -154,7 +154,7 @@ class _TimelineViewState extends State<TimelineView> {
                       valueListenable: _window,
                       // The viewport only needs the day count (a zoom).
                       builder: (context, w, board) => ChartViewport(
-                        days: w.days,
+                        days: w.shown,
                         labelWidth: _labelWidth,
                         child: board!,
                       ),

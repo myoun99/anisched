@@ -4,8 +4,10 @@ part of 'chart.dart';
 
 /// Lets the date area be dragged sideways (empty space only: bars keep
 /// their own drags), scrolled with a wheel or trackpad, and zoomed with a
-/// pinch or Ctrl + wheel. Updates [chartView]; the chart redraws only
-/// the days in view.
+/// pinch or Ctrl + wheel. Updates [chartView] by the pixel — no stepping
+/// a day at a time — and a flick carries on as a list's does (the
+/// platform's own scroll physics); a touch stops it. The chart redraws
+/// only the days in view.
 class ChartViewport extends StatefulWidget {
   const ChartViewport({
     super.key,
@@ -25,9 +27,12 @@ class ChartViewport extends StatefulWidget {
   State<ChartViewport> createState() => _ChartViewportState();
 }
 
-class _ChartViewportState extends State<ChartViewport> {
+class _ChartViewportState extends State<ChartViewport>
+    with SingleTickerProviderStateMixin {
   double _width = 1;
-  double _carry = 0;
+  late final _fling = AnimationController.unbounded(vsync: this)
+    ..addListener(_flingTick);
+  double _flung = 0;
   final _pointers = <int, Offset>{};
   double? _pinchStart;
   int _pinchDays = 0;
@@ -53,15 +58,39 @@ class _ChartViewportState extends State<ChartViewport> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _fling.dispose();
     super.dispose();
   }
 
   void _pan(double dx) {
-    _carry += dx;
-    final whole = (_carry / _dayWidth).truncate();
-    if (whole == 0) return;
-    _carry -= whole * _dayWidth;
-    chartView.value = chartView.value.scrolled(-whole);
+    if (dx == 0) return;
+    chartView.value = chartView.value.scrolled(-dx / _dayWidth);
+  }
+
+  /// Carries a flick on: the platform's scroll physics over an endless
+  /// extent, its offset fed to [_pan] frame by frame.
+  void _flingFrom(double velocity) {
+    final physics = ScrollConfiguration.of(context).getScrollPhysics(context);
+    final sim = physics.createBallisticSimulation(
+      FixedScrollMetrics(
+        minScrollExtent: double.negativeInfinity,
+        maxScrollExtent: double.infinity,
+        pixels: 0,
+        viewportDimension: _width,
+        axisDirection: AxisDirection.right,
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      ),
+      -velocity,
+    );
+    if (sim == null) return;
+    _flung = 0;
+    _fling.animateWith(sim);
+  }
+
+  void _flingTick() {
+    final v = _fling.value;
+    _pan(-(v - _flung));
+    _flung = v;
   }
 
   void _zoomTo(double factor) {
@@ -81,6 +110,7 @@ class _ChartViewportState extends State<ChartViewport> {
         _width = (box.maxWidth - widget.labelWidth).clamp(1, double.infinity);
         return Listener(
           onPointerDown: (e) {
+            _fling.stop();
             _pointers[e.pointer] = e.position;
             if (_pointers.length == 2) {
               _pinchStart = _spread();
@@ -122,11 +152,15 @@ class _ChartViewportState extends State<ChartViewport> {
               _pan(-d);
             }
           },
-          child: GestureDetector(
+          child: quickHorizontalDrag(
             behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: (_) => _carry = 0,
-            onHorizontalDragUpdate: (d) {
+            onUpdate: (d) {
               if (_pointers.length < 2 && !_space) _pan(d.delta.dx);
+            },
+            onEnd: (d) {
+              if (_pointers.isEmpty && !_space) {
+                _flingFrom(d.velocity.pixelsPerSecond.dx);
+              }
             },
             child: MouseRegion(
               cursor: _space ? SystemMouseCursors.grab : MouseCursor.defer,

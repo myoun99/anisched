@@ -137,7 +137,7 @@ class _WorkViewState extends State<WorkView> {
                     ? const SizedBox.shrink()
                     : ValueListenableBuilder<ChartWindow>(
                         valueListenable: _window,
-                        builder: (context, w, _) => ChartPager(days: w.days),
+                        builder: (context, w, _) => ChartPager(days: w.shown),
                       ),
               ),
               const MonthViewToggle(),
@@ -163,7 +163,7 @@ class _WorkViewState extends State<WorkView> {
                     : ValueListenableBuilder<ChartWindow>(
                         valueListenable: _window,
                         builder: (context, w, board) => ChartViewport(
-                          days: w.days,
+                          days: w.shown,
                           labelWidth: _labelWidth,
                           child: board!,
                         ),

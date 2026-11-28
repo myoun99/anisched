@@ -94,6 +94,14 @@ final scenarios = <String, (AppView, Scenario)>{
   ),
   'settings': (AppView.settings, (t, size) async {}),
   'timeline': (AppView.timeline, (t, size) async {}),
+  // Mid-drag: the days slid by part of a day, bars cut at the edges.
+  'timeline-slide': (
+    AppView.timeline,
+    (t, size) async {
+      chartView.value = chartView.value.scrolled(2.45);
+      await t.pump();
+    },
+  ),
 
   // Round 3: the date area zoomed out two steps and scrolled a week on.
   'timeline-zoom': (
@@ -297,6 +305,22 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
       await t.longPress(lines.at(1));
       await t.pump();
+    },
+  ),
+  // The same two picked, the ⋯ menu open where the bar is short of room.
+  'picked-more': (
+    AppView.list,
+    (t, size) async {
+      final lines = byKeyPrefix('line-');
+      await t.longPress(lines.at(0));
+      await t.pump();
+      await t.longPress(lines.at(1));
+      await t.pump();
+      final more = find.byKey(const Key('pick-more'));
+      if (more.evaluate().isNotEmpty) {
+        await t.tap(more);
+        await t.pump();
+      }
     },
   ),
   // ③ The register screen's cut grid with its margins.

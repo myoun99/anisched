@@ -16,25 +16,23 @@ AppView currentView(WidgetTester tester) =>
         .index!];
 
 void main() {
-  // The boundary: a phone held sideways is the narrowest screen that keeps
-  // the switcher on top (size classes themselves: size_class_test).
-  const devices = {'phone landscape': Size(915, 412)};
-
-  devices.forEach((name, size) {
-    testWidgets('$name puts the view switcher in the top bar', (t) async {
+  // One place on every screen: the view switcher along the bottom, the
+  // same bar as a phone's, held either way, on a tablet and a desktop.
+  for (final size in const [
+    Size(412, 915),
+    Size(915, 412),
+    Size(800, 1280),
+    Size(1280, 800),
+    Size(1920, 1080),
+  ]) {
+    testWidgets('the view switcher sits at the bottom at $size', (t) async {
       await pumpAt(t, size);
-      expect(find.byKey(const Key('view-switch-top')), findsOneWidget);
-      expect(find.byKey(const Key('view-switch-bottom')), findsNothing);
+      final bar = t.getRect(find.byKey(const Key('view-switch')));
+      expect(bar.bottom, greaterThan(size.height - 60));
+      expect(bar.width, greaterThan(size.width - 40), reason: 'full width');
       expect(t.takeException(), isNull);
     });
-  });
-
-  testWidgets('phone portrait puts the view switcher at the bottom', (t) async {
-    await pumpAt(t, const Size(412, 915));
-    expect(find.byKey(const Key('view-switch-bottom')), findsOneWidget);
-    expect(find.byKey(const Key('view-switch-top')), findsNothing);
-    expect(t.takeException(), isNull);
-  });
+  }
 
   testWidgets('tapping a view button switches the view', (t) async {
     await pumpAt(t, const Size(1280, 800));
@@ -52,7 +50,7 @@ void main() {
     await t.pump();
     t.view.physicalSize = const Size(412, 915);
     await t.pump();
-    expect(find.byKey(const Key('view-switch-bottom')), findsOneWidget);
+    expect(find.byKey(const Key('view-switch')), findsOneWidget);
     expect(currentView(t), AppView.timeline);
   });
 }
