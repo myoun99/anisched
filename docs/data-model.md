@@ -32,7 +32,7 @@
 - `exact` 비례: 3.5초 그대로 → 금액만 엔 단위로 반올림
 (유저: 실제 업계 방식은 나중에 확인 — 그래서 옵션.)
 
-## 구조 (v16)
+## 구조 (v17)
 
 ```
 공정 프리셋 stage_presets → stage_preset_items (여러 개, 이름·목록 편집, 기본은 정확히 하나)
@@ -387,3 +387,15 @@
 
 
 정해진 것(v10): 공정 프리셋 「기본」 하나 · 겸용 컷 상태는 컷마다 따로 · 역할 = 직급 5개 · 컷 번호 형식은 작품별(기본 C · 3) — v15 에서 문서 설정 하나로 바뀜.
+
+## 회사 색 · 공정 색 · 이벤트 · 남은 컷 (v17, 유저 2026-11-28)
+
+- 회사 색: `clients.color`(ARGB, null = 기본 회색). `addClient(name, color:)` · `setClientColor(id, color)` · `clients()`/`searchClients` 행(`ClientRow`)에 `color`.
+  `TaskRow`/`PartStageRow` 에 `clientName` · `clientColor`(작품의 회사).
+- 공정 색: `stageColorOf(name)` 하나(models/stage_names.dart). 검수 공정은 **검수자 색**(`LO/작감` = `원화/작감` = 작감 색), 아니면 작업 색,
+  캐릭터디자인 · 리테이크는 따로. 값 = Anicel `layer_mark_palette.dart` 크림 열. 액션 · 동검 · 셀검 · 캐릭터디자인 · 리테이크는 **제안값**(Anicel 에 없음).
+  유저가 친 공정 = null(기본색). 나중 공정 편집(기본 공정 숨기기 · 유저 공정 추가·편집) 때 유저 색은 이 함수가 먼저 찾게 하면 됨.
+- 이벤트: `events(id, episode_id NULL 가능, day 'YYYY-MM-DD'(현지 날짜), time_min NULL=하루 종일, title, note)`.
+  `addEvent` · `updateEvent`(전부 다시 씀) · `deleteEvent` · `events(from:, to:)`(리더에도) = 화별로 묶은 목록(null 키 = 화 없는 이벤트),
+  날짜 → 하루 종일 먼저 → 시각 순. 보관된 화·작품의 이벤트는 빠짐. 화 없는 이벤트를 둘지는 유저 확인 전(둘 다 받음).
+- 남은 컷: `PartStageRow.toSubmit` = 아직 제출 안 한 컷(완료 포함) — 타임라인 행 오른쪽 숫자.

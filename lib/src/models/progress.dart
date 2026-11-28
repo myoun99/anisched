@@ -8,6 +8,23 @@ import 'cut_numbers.dart';
 /// One cut of an episode, as the registration grid shows it. A cut in a
 /// shared (겸용) group carries the group's first cut and label; an
 /// archived cut (a missing number taken out) is [archived].
+/// A client (회사) as the pickers and settings show it. [color] is an ARGB
+/// value the user picked (유저 2026-11-28); null shows the default grey.
+typedef ClientRow = ({int id, String name, int? closingDay, int? color});
+
+/// Something on the calendar that is not work (유저 2026-11-28 — 아후레코,
+/// a meeting): a day, an optional time of day in minutes, a title and a
+/// note. [episodeId] ties it to an episode's timeline rows; null is an
+/// event of its own (whether those stay is still the user's call).
+typedef EventRow = ({
+  int id,
+  int? episodeId,
+  DateTime date,
+  int? timeMinutes,
+  String title,
+  String? note,
+});
+
 typedef CutRow = ({
   int id,
   String number,
@@ -26,6 +43,8 @@ class TaskRow {
     required this.take,
     required this.workId,
     required this.workTitle,
+    this.clientName,
+    this.clientColor,
     required this.currency,
     required this.episodeId,
     required this.episodeNumber,
@@ -81,6 +100,10 @@ class TaskRow {
   final int take;
   final int workId;
   final String workTitle;
+
+  /// The work's client, if it has one, and the colour picked for it.
+  final String? clientName;
+  final int? clientColor;
   final String currency;
   final int episodeId;
   final String episodeNumber;
@@ -327,6 +350,8 @@ class PartGroup {
   int get stageId => _first.stageId;
   String get stageName => _first.stageName;
   int get stagePosition => _first.stagePosition;
+  String? get clientName => _first.clientName;
+  int? get clientColor => _first.clientColor;
   int? get partId => _first.partId;
   int? get plannedCutCount => _first.plannedCutCount;
 
@@ -349,6 +374,10 @@ class PartGroup {
 
   /// Tasks submitted or done — the 3 in "3/6".
   int get handed => tasks.where((t) => t.status.isHanded).length;
+
+  /// Cuts not handed in yet (done ones included) — the count at the right
+  /// end of a timeline row.
+  int get toSubmit => tasks.where((t) => t.status.isOpen).length;
 
   /// Open cuts in hand (not waiting) — the 「보유」 count.
   int get inHand => tasks.where((t) => t.inHand).length;

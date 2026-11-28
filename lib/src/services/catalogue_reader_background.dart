@@ -251,8 +251,7 @@ class BackgroundCatalogueReader implements CatalogueReader {
       _ask((s) => s.cuts(episodeId, includeArchived: includeArchived));
 
   @override
-  Future<List<({int id, String name, int? closingDay})>> clients() =>
-      _ask((s) => s.clients());
+  Future<List<ClientRow>> clients() => _ask((s) => s.clients());
 
   @override
   Future<List<({ArchiveKind kind, int id, String label, DateTime archivedAt})>>
@@ -266,9 +265,8 @@ class BackgroundCatalogueReader implements CatalogueReader {
       _ask((s) => s.roles());
 
   @override
-  Future<List<({int id, String name, int? closingDay})>> searchClients(
-    String query,
-  ) => _ask((s) => s.searchClients(query));
+  Future<List<ClientRow>> searchClients(String query) =>
+      _ask((s) => s.searchClients(query));
 
   @override
   Future<List<({int id, String title, String currency, int? clientId})>>
@@ -280,6 +278,12 @@ class BackgroundCatalogueReader implements CatalogueReader {
     int workId,
     String query,
   ) => _ask((s) => s.searchEpisodes(workId, query));
+
+  @override
+  Future<Map<int?, List<EventRow>>> events({
+    required DateTime from,
+    required DateTime to,
+  }) => _ask((s) => s.events(from: from, to: to));
 
   @override
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles() =>

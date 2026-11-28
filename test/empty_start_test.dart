@@ -37,9 +37,7 @@ void main() {
     expect(find.byKey(const Key('pick-work')), findsOneWidget);
   });
 
-  testWidgets('the sample fills the document and the list shows it', (
-    t,
-  ) async {
+  testWidgets('the sample fills the document and the list shows it', (t) async {
     await pumpEmpty(
       t,
       onSample: (s) {
