@@ -927,6 +927,60 @@ class _ChartBoardState extends State<ChartBoard> {
 /// Which end of a bar a drag moves.
 enum BarEdge { start, end }
 
+/// Where a bar too short for grips and a label keeps its grips — two
+/// proposals until the user picks one.
+enum ShortBarGrips {
+  /// Just outside the bar's ends, always.
+  outside,
+
+  /// Only on the opened (selected) bar, outside its ends.
+  whenSelected,
+}
+
+/// The proposal in use (captures switch it).
+ShortBarGrips shortBarGrips = ShortBarGrips.outside;
+
+/// A bar's end grip: a small button of another colour with 〈 or 〉, the
+/// whole of it the place to drag. Only bars whose dates can be dragged
+/// have them ([ChartBar.onDates]).
+class BarGrip extends StatelessWidget {
+  const BarGrip({super.key, required this.edge, required this.barColor});
+
+  final BarEdge edge;
+  final Color barColor;
+
+  /// The grip's width, which is also its drag area.
+  static const width = 16.0;
+
+  /// The least room a label needs between two grips.
+  static const minLabel = 24.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.panel,
+            border: Border.all(color: barColor),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Center(
+            child: Icon(
+              edge == BarEdge.start ? Icons.chevron_left : Icons.chevron_right,
+              size: 12,
+              color: barColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A date bar inside a [ChartBoard] row: [start]..[end] (days, both
 /// included), on the same day cells as the background. Its two ends can
 /// be dragged; while dragging, only the board's preview layer redraws,
@@ -943,7 +997,11 @@ class ChartBar extends StatefulWidget {
     this.onDates,
     this.faded = false,
     this.wrapBody,
+    this.selected = false,
   });
+
+  /// The bar is the one opened or picked (its short-bar grips may show).
+  final bool selected;
 
   final ChartWindow window;
   final DateTime start;
@@ -1005,7 +1063,7 @@ class _ChartBarState extends State<ChartBar> {
     context.getInheritedWidgetOfExactType<_DragScope>()?.drag.value = null;
   }
 
-  Widget _handle(BarEdge edge, double handle) => GestureDetector(
+  Widget _handle(BarEdge edge) => GestureDetector(
     key: Key('bar-${edge.name}'),
     behavior: HitTestBehavior.opaque,
     // Measured from where the finger went down, so nothing is lost while
@@ -1034,7 +1092,7 @@ class _ChartBarState extends State<ChartBar> {
     },
     child: MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
-      child: SizedBox(width: handle),
+      child: BarGrip(edge: edge, barColor: widget.color),
     ),
   );
 
@@ -1072,8 +1130,35 @@ class _ChartBarState extends State<ChartBar> {
         final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
-        // Two grips never wider than a third of the bar each.
-        final handle = (width / 3).clamp(2.0, 14.0);
+        final draggable = widget.onDates != null;
+        // Grips inside the bar when the label still has room between
+        // them; on a short bar they sit just outside its ends.
+        final inside = width >= 2 * BarGrip.width + BarGrip.minLabel;
+        final grips =
+            draggable &&
+            (inside ||
+                shortBarGrips == ShortBarGrips.outside ||
+                widget.selected);
+        final bar = Opacity(
+          opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.color,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            // The label takes every pixel between the grips.
+            child: grips && inside
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _handle(BarEdge.start),
+                      Expanded(child: _face()),
+                      _handle(BarEdge.end),
+                    ],
+                  )
+                : _face(),
+          ),
+        );
         return Stack(
           clipBehavior: Clip.hardEdge,
           children: [
@@ -1082,38 +1167,24 @@ class _ChartBarState extends State<ChartBar> {
               width: width,
               top: ChartBoard.barTop,
               height: ChartBoard.barHeight,
-              child: Opacity(
-                opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: widget.color,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  // The label gets the bar's whole width; the end grips
-                  // lie over it, taking none of its room.
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _face(),
-                      if (widget.onDates != null) ...[
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          child: _handle(BarEdge.start, handle),
-                        ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                          child: _handle(BarEdge.end, handle),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
+              child: bar,
             ),
+            if (grips && !inside) ...[
+              Positioned(
+                left: left - BarGrip.width,
+                width: BarGrip.width,
+                top: ChartBoard.barTop,
+                height: ChartBoard.barHeight,
+                child: _handle(BarEdge.start),
+              ),
+              Positioned(
+                left: left + width,
+                width: BarGrip.width,
+                top: ChartBoard.barTop,
+                height: ChartBoard.barHeight,
+                child: _handle(BarEdge.end),
+              ),
+            ],
           ],
         );
       },
