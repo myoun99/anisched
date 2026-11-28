@@ -230,4 +230,61 @@ void main() {
       expect(chartView.value.days, lessThan(35));
     });
   });
+
+  group('layers', () {
+    testWidgets('dragging a bar end redraws only the preview layer', (t) async {
+      final store = sampleCatalogue(now);
+      final g = store.partGroups().firstWhere(
+        (g) => g.dueAt != null && g.kickoffAt != null,
+      );
+      await pumpIn(
+        t,
+        const Size(1440, 900),
+        TimelineView(
+          parts: store.partGroups(),
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+          onSchedule: (_, _, _) {},
+        ),
+      );
+      final handle = find.descendant(
+        of: find.byKey(Key('tl-bar-${g.key}')),
+        matching: find.byKey(const Key('bar-end')),
+      );
+      final gesture = await t.startGesture(t.getCenter(handle));
+      await gesture.moveBy(const Offset(30, 0));
+      await t.pump();
+      ChartPaints.reset();
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(const Offset(34, 0));
+        await t.pump();
+      }
+      expect(ChartPaints.preview, greaterThanOrEqualTo(4));
+      expect(ChartPaints.background, 0, reason: 'background is its own layer');
+      expect(ChartPaints.today, 0, reason: "today's column is its own layer");
+      await gesture.up();
+      await t.pump();
+    });
+
+    testWidgets('both tabs draw today as one washed column', (t) async {
+      final store = sampleCatalogue(now);
+      for (final view in [
+        TimelineView(
+          parts: store.partGroups(),
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+        ),
+        WorkView(
+          lanes: store.calendarLayout(basis: CalendarBasis.work).layout,
+          parts: {for (final g in store.partGroups()) g.key: g},
+          now: now,
+          layout: ScreenLayout.of(1440, 900),
+        ),
+      ]) {
+        await pumpIn(t, const Size(1440, 900), view);
+        expect(find.byType(ChartBoard), findsOneWidget);
+        expect(t.takeException(), isNull);
+      }
+    });
+  });
 }
