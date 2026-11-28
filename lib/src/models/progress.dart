@@ -31,6 +31,7 @@ class TaskRow {
     required this.episodeNumber,
     required this.stageId,
     required this.stageName,
+    this.stagePosition = 0,
     this.cutId,
     this.cutNumber,
     this.lengthMs,
@@ -85,6 +86,10 @@ class TaskRow {
   final String episodeNumber;
   final int stageId;
   final String stageName;
+
+  /// The stage's place in its work's stage list (sort stages by this, not
+  /// by id: ids follow when a stage was added, not where it stands).
+  final int stagePosition;
   final int? cutId;
   final String? cutNumber;
   final int? lengthMs;
@@ -321,6 +326,7 @@ class PartGroup {
   String get episodeNumber => _first.episodeNumber;
   int get stageId => _first.stageId;
   String get stageName => _first.stageName;
+  int get stagePosition => _first.stagePosition;
   int? get partId => _first.partId;
   int? get plannedCutCount => _first.plannedCutCount;
 
