@@ -47,9 +47,13 @@ typedef PartRow = ({
 /// note. [episodeId] ties it to an episode's timeline rows; null is a
 /// global event. A global event with [rest] is a day off (유저
 /// 2026-11-28) — the pace skips it like a rest weekday.
+///
+/// [card] (유저 2026-11-28 정정): the card (`PartGroup.key`) the event
+/// belongs to, or null for an episode or global event.
 typedef EventRow = ({
   int id,
   int? episodeId,
+  String? card,
   DateTime date,
   int? timeMinutes,
   String title,

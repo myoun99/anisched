@@ -127,6 +127,12 @@ abstract interface class CatalogueReader {
     required DateTime to,
   });
 
+  /// See [CatalogueStore.cardEvents].
+  Future<Map<String, List<EventRow>>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  });
+
   /// See [CatalogueStore.numberStyles].
   Future<({NumberStyle cut, NumberStyle episode})> numberStyles();
 
@@ -304,6 +310,12 @@ class SyncCatalogueReader implements CatalogueReader {
     required DateTime from,
     required DateTime to,
   }) => _run(() => store.events(from: from, to: to));
+
+  @override
+  Future<Map<String, List<EventRow>>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  }) => _run(() => store.cardEvents(from: from, to: to));
 
   @override
   Future<({LaneLayout layout, List<String> unplaced})> calendarLayout({

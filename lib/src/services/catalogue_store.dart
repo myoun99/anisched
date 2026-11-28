@@ -1056,39 +1056,104 @@ LIMIT ?;''',
 
   /// Puts an event on [date] (its local day), at [timeMinutes] past
   /// midnight or all day (null), on [episodeId]'s rows or on none.
+  ///
+  /// With [card] (a `PartGroup.key`), the event belongs to that card only
+  /// (its episode comes from the card; [episodeId] is not needed).
   int addEvent({
     int? episodeId,
+    String? card,
     required DateTime date,
     int? timeMinutes,
     required String title,
     String? note,
     bool rest = false,
   }) {
-    _checkEvent(timeMinutes, episodeId, rest);
+    final place = _eventPlace(episodeId, card);
+    _checkEvent(timeMinutes, place.episode, rest);
     db.execute(
-      'INSERT INTO events (episode_id, day, time_min, title, note, rest) '
-      'VALUES (?, ?, ?, ?, ?, ?);',
-      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0],
+      'INSERT INTO events (episode_id, part_id, stage_id, day, time_min, '
+      'title, note, rest) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
+      [
+        place.episode,
+        place.part,
+        place.stage,
+        _day(date),
+        timeMinutes,
+        title,
+        note,
+        if (rest) 1 else 0,
+      ],
     );
     return db.lastInsertRowId;
   }
 
-  /// Rewrites every field of event [id].
+  /// Rewrites every field of event [id]. Its card stays unless [card]
+  /// names another or [episodeId] moves it to another episode (then it is
+  /// that episode's event).
   void updateEvent(
     int id, {
     int? episodeId,
+    String? card,
     required DateTime date,
     int? timeMinutes,
     required String title,
     String? note,
     bool rest = false,
   }) {
-    _checkEvent(timeMinutes, episodeId, rest);
+    final place = _eventPlace(episodeId, card);
+    _checkEvent(timeMinutes, place.episode, rest);
     db.execute(
-      'UPDATE events SET episode_id = ?, day = ?, time_min = ?, title = ?, '
-      'note = ?, rest = ? WHERE id = ?;',
-      [episodeId, _day(date), timeMinutes, title, note, if (rest) 1 else 0, id],
+      '''
+UPDATE events SET
+  part_id = CASE WHEN ?2 THEN ?3 WHEN episode_id IS ?1 THEN part_id END,
+  stage_id = CASE WHEN ?2 THEN ?4 WHEN episode_id IS ?1 THEN stage_id END,
+  episode_id = ?1, day = ?5, time_min = ?6, title = ?7, note = ?8, rest = ?9
+WHERE id = ?10;''',
+      [
+        place.episode,
+        if (card != null) 1 else 0,
+        place.part,
+        place.stage,
+        _day(date),
+        timeMinutes,
+        title,
+        note,
+        if (rest) 1 else 0,
+        id,
+      ],
     );
+  }
+
+  /// Where an event goes: the card's episode, part and stage, or just
+  /// [episodeId]. Only part × stage and part-less cards take events.
+  ({int? episode, int? part, int? stage}) _eventPlace(
+    int? episodeId,
+    String? card,
+  ) {
+    if (card == null) return (episode: episodeId, part: null, stage: null);
+    final k = card.split(':');
+    final ({int? episode, int? part, int? stage}) place;
+    switch (k) {
+      case ['part', final p, final st]:
+        final part = int.parse(p);
+        final row = db.select('SELECT episode_id FROM parts WHERE id = ?;', [
+          part,
+        ]);
+        if (row.isEmpty) throw ArgumentError.value(card, 'card', 'no part');
+        place = (
+          episode: row.first['episode_id'] as int,
+          part: part,
+          stage: int.parse(st),
+        );
+      case ['nopart', final e, final st]:
+        place = (episode: int.parse(e), part: null, stage: int.parse(st));
+      default:
+        throw ArgumentError.value(card, 'card', 'not a part or episode card');
+    }
+    if (episodeId != null && episodeId != place.episode) {
+      throw ArgumentError('Card $card is not on episode $episodeId.');
+    }
+    return place;
   }
 
   void deleteEvent(int id) =>
@@ -1098,35 +1163,72 @@ LIMIT ?;''',
   /// grouped by episode (null: events on no episode); each list by day,
   /// all-day ones first, then by time. Events of archived episodes are
   /// left out.
+  ///
+  /// Card events are not here but in [cardEvents].
   Map<int?, List<EventRow>> events({
     required DateTime from,
     required DateTime to,
   }) {
     final out = <int?, List<EventRow>>{};
-    for (final r in db.select(
-      '''
-SELECT ev.id, ev.episode_id, ev.day, ev.time_min, ev.title, ev.note, ev.rest
-FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
-LEFT JOIN works w ON w.id = e.work_id
-WHERE ev.day >= ? AND ev.day < ?
-  AND (ev.episode_id IS NULL
-       OR (e.archived_at IS NULL AND w.archived_at IS NULL))
-ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
-      [_day(from), _day(to)],
-    )) {
-      final day = (r['day'] as String).split('-').map(int.parse).toList();
-      final episode = r['episode_id'] as int?;
-      (out[episode] ??= []).add((
-        id: r['id'] as int,
-        episodeId: episode,
-        date: DateTime(day[0], day[1], day[2]),
-        timeMinutes: r['time_min'] as int?,
-        title: r['title'] as String,
-        note: r['note'] as String?,
-        rest: r['rest'] == 1,
-      ));
+    for (final e in _events(from, to, cards: false)) {
+      (out[e.episodeId] ??= []).add(e);
     }
     return out;
+  }
+
+  /// Card events (유저 2026-11-28 정정) on the local days from [from] up
+  /// to [to], by card (`PartGroup.key`), ordered as [events]. A collapsed
+  /// row finds its cards' events by their keys. Events of archived
+  /// episodes, works and parts are left out.
+  Map<String, List<EventRow>> cardEvents({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    final out = <String, List<EventRow>>{};
+    for (final e in _events(from, to, cards: true)) {
+      (out[e.card!] ??= []).add(e);
+    }
+    return out;
+  }
+
+  List<EventRow> _events(DateTime from, DateTime to, {required bool cards}) {
+    final rows = db.select(
+      '''
+SELECT ev.id, ev.episode_id, ev.part_id, ev.stage_id, ev.day, ev.time_min,
+       ev.title, ev.note, ev.rest
+FROM events ev LEFT JOIN episodes e ON e.id = ev.episode_id
+LEFT JOIN works w ON w.id = e.work_id
+LEFT JOIN parts p ON p.id = ev.part_id
+WHERE ev.day >= ?1 AND ev.day < ?2
+  AND (ev.stage_id IS NOT NULL) = ?3
+  AND (ev.episode_id IS NULL
+       OR (e.archived_at IS NULL AND w.archived_at IS NULL))
+  AND (p.id IS NULL OR p.archived_at IS NULL)
+ORDER BY ev.day, ev.time_min, ev.id;''', // NULL (all day) sorts first
+      [_day(from), _day(to), if (cards) 1 else 0],
+    );
+    return [
+      for (final r in rows)
+        (
+          id: r['id'] as int,
+          episodeId: r['episode_id'] as int?,
+          card: switch ((r['stage_id'], r['part_id'])) {
+            (null, _) => null,
+            (final s, null) => 'nopart:${r['episode_id']}:$s',
+            (final s, final p) => 'part:$p:$s',
+          },
+          date: _dayOf(r['day'] as String),
+          timeMinutes: r['time_min'] as int?,
+          title: r['title'] as String,
+          note: r['note'] as String?,
+          rest: r['rest'] == 1,
+        ),
+    ];
+  }
+
+  static DateTime _dayOf(String day) {
+    final d = day.split('-').map(int.parse).toList();
+    return DateTime(d[0], d[1], d[2]);
   }
 
   static String _day(DateTime d) {
@@ -1588,6 +1690,11 @@ ORDER BY i.started_at;''',
         stage,
       )) {
         _forgetPlace('nopart:$episode:$stage');
+        db.execute(
+          'DELETE FROM events WHERE episode_id = ? AND part_id IS NULL '
+          'AND stage_id = ?;',
+          [episode, stage],
+        );
       }
     }
     db
@@ -1712,6 +1819,7 @@ ORDER BY i.started_at;''',
   }
 
   static const _partStageTables = [
+    'events', // the card's events
     'part_stage_dues',
     'part_stage_plans',
     'part_stage_kickoffs',
@@ -2701,6 +2809,7 @@ GROUP BY s.name;''',
       (
         id: r['id'] as int,
         episodeId: null,
+        card: null,
         date: DateTime.parse(r['day'] as String),
         timeMinutes: null,
         title: r['title'] as String,

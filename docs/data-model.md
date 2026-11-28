@@ -463,3 +463,13 @@
   `changes`(스트림). 되돌린 쓰기도 쓰기라 리더 generation 이 오르고 문서가 dirty 가 된다.
 - **단축키**: `DeviceSettings.shortcuts(apple:)` — 동작 id(`ShortcutAction`) → 키 조합 목록. 기본 undo `Ctrl+Z`/`Cmd+Z`,
   redo `Ctrl+Shift+Z`·`Ctrl+Y` / `Cmd+Shift+Z`. 이 기기의 선택만 저장(`setShortcut`, null = 기본으로).
+
+## 카드 이벤트 (v19, 유저 2026-11-28 정정)
+
+- 이벤트는 **카드 하나**(PartGroup = 화 × 파트? × 공정)에 붙는다. `events.part_id` · `events.stage_id` 추가(둘 다 CASCADE).
+  카드 이벤트 = (episode_id, part_id 또는 NULL(파트 없는 묶음), stage_id). stage_id NULL = 기존 화 이벤트 · 전역(episode NULL) — 이행은 기존 행 그대로.
+- 쓰기: `addEvent(card: PartGroup.key, …)` — 키 → 화 · 파트 · 공정 풀이는 store 한 곳(`_eventPlace`). `part:` · `nopart:` 키만(콘티 키는 ArgumentError).
+  `updateEvent` 는 `card:` 를 안 주면 같은 화 안에서 카드를 그대로 둔다.
+- 읽기: `cardEvents(from, to)` → `Map<groupKey, List<EventRow>>`(묶은 행은 안쪽 카드 키로 찾음). `events()` 는 화 · 전역만(카드 이벤트 빠짐).
+  `EventRow.card` = 그 카드 키 또는 null.
+- 완전 삭제: 카드의 task 가 다 지워지면 그 카드 이벤트도(파트×공정 행 표에 `events` 포함). undo 로그 대상(트리거는 모든 테이블).

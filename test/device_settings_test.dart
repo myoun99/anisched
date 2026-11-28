@@ -46,9 +46,7 @@ void main() {
     expect(again.shortcuts(apple: true)[ShortcutAction.undo], [
       'Alt+Backspace',
     ]);
-    expect(again.shortcuts(apple: true)[ShortcutAction.redo], [
-      'Cmd+Shift+Z',
-    ]);
+    expect(again.shortcuts(apple: true)[ShortcutAction.redo], ['Cmd+Shift+Z']);
 
     again.setShortcut(ShortcutAction.undo, null);
     expect(loadDeviceSettings(tmp.path).shortcuts(apple: false), {
