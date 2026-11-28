@@ -156,9 +156,10 @@ void main() {
     await t.pump();
     expect(find.text('마감 날짜'), findsOneWidget);
     await pickDay(t, '26');
-    final row = store.partGroups().expand((x) => x.tasks).firstWhere(
-      (x) => x.id == task.id,
-    );
+    final row = store
+        .partGroups()
+        .expand((x) => x.tasks)
+        .firstWhere((x) => x.id == task.id);
     expect(row.ownDueAt!.toLocal().day, 26);
     expect(row.dueAt!.toLocal().day, 26, reason: 'over the part');
   });

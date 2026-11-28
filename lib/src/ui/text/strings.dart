@@ -262,6 +262,7 @@ enum S {
   registered('{n} added', '{n}件登録', '{n}건 등록', '{n} ajoutés', '已登记 {n} 项'),
   episode('Episode', '話数', '화수', 'Épisode', '集数'),
   roles('Roles', '担当', '담당', 'Rôles', '负责'),
+  stagesN('{n} stages', '工程 {n}', '공정 {n}개', '{n} étapes', '{n} 个工序'),
   firstCut('First cut', '最初の cut', '첫 컷', 'Premier cut', '首个 cut'),
   cutCount('Cuts', 'cut 数', '컷 수', 'Nb de cuts', 'cut 数'),
   kickoff('Start', '着手', '착수', 'Début', '开工'),

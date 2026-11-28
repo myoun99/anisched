@@ -15,6 +15,9 @@ abstract final class Folds {
   /// The register screen's grid of new cuts. Open: it is the screen's job.
   static final newCuts = ValueNotifier<bool>(true);
 
+  /// The register screen's stage boxes: folded, only the checked ones.
+  static final registerStages = ValueNotifier<bool>(false);
+
   /// The register screen's grid of an episode's saved cuts.
   static final savedCuts = ValueNotifier<bool>(false);
 }
