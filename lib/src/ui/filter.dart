@@ -246,7 +246,7 @@ class FilterButton extends StatelessWidget {
         item(const _Work(null), S.allTitles.t, filter.workId == null),
         for (final e in works.entries)
           item(_Work(e.key), e.value, filter.workId == e.key),
-        head(S.stDone.t),
+        head(S.stSubmitted.t),
         item(const _Done(), S.showDone.t, filter.showDone),
         item(const _HandedOff(), S.showDropped.t, filter.showHandedOff),
         item(

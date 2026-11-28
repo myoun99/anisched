@@ -73,10 +73,43 @@ void main() {
       final due = t.getRect(find.byKey(Key('details-due-${g.key}')));
       expect(start.right, lessThan(due.left));
       expect((start.center.dy - due.center.dy).abs(), lessThan(2));
+      // No D-n inside: the line already says it.
       expect(
         find.descendant(of: production, matching: find.textContaining('D-')),
-        findsOneWidget,
+        findsNothing,
       );
+      // The schedule above the estimate, each on its own row, the pills
+      // starting at one x.
+      final work = find.byKey(Key('span-work-${g.key}'));
+      final a = t.getRect(production);
+      final b = t.getRect(work);
+      expect(b.top, greaterThanOrEqualTo(a.bottom));
+      expect(a.left, b.left);
+      final pillA = t.getRect(find.byKey(Key('details-kickoff-${g.key}')));
+      final pillB = t.getRect(find.byKey(Key('details-plan-start-${g.key}')));
+      expect((pillA.left - pillB.left).abs(), lessThan(1));
     });
   }
+
+  testWidgets('the client chip sits at the top row\'s right end', (t) async {
+    final store = await pumpAt(t, AppView.work);
+    final g = store.partGroups().firstWhere(
+      (g) =>
+          g.kind == GroupKind.part &&
+          g.kickoffAt != null &&
+          g.dueAt != null &&
+          g.dueAt!.isAfter(now),
+    );
+    await open(t, AppView.work, g);
+    final chip = t.getRect(find.byKey(Key('details-client-${g.key}')));
+    final top = t.getRect(find.byKey(Key('holding-${g.key}')));
+    final details = t.getRect(find.byKey(Key('details-${g.key}')));
+    // One row with the status line, right of it, at the details' end.
+    expect((chip.center.dy - top.center.dy).abs(), lessThan(4));
+    expect(chip.left, greaterThan(top.left));
+    expect(details.right - chip.right, lessThan(20));
+    // No client among the facts below.
+    final schedule = t.getRect(find.byKey(Key('span-production-${g.key}')));
+    expect(chip.bottom, lessThanOrEqualTo(schedule.top));
+  });
 }

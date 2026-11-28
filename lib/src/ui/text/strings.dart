@@ -80,10 +80,8 @@ enum S {
   stInProgress('In progress', '作業中', '작업중', 'En cours', '进行中'),
   stSubmitted('Submitted', '提出', '제출', 'Remis', '已提交'),
   stRetake('Retake', 'リテイク', '리테이크', 'Retake', '返修'),
-  stDone('Done', '完了', '완료', 'Terminé', '完成'),
 
   // Counts and dates.
-  daysLate('{n}d late', '{n}日超過', '{n}일 지남', '{n} j de retard', '超期{n}天'),
   days('{n}d', '{n}日', '{n}일', '{n} j', '{n}天'),
   items('{n}', '{n}件', '{n}건', '{n}', '{n}项'),
   monthLabel('{m}', '{m}月', '{m}월', '{m}', '{m}月'),
@@ -276,15 +274,6 @@ enum S {
     'Document restauré',
     '文档已恢复',
   ),
-  // What a chart is drawn by (its toolbar's left).
-  basisProduction(
-    'Production schedule',
-    '制作スケジュール',
-    '제작 일정',
-    'Planning de production',
-    '制作日程',
-  ),
-  basisMine('My work plan', '自分の作業予定', '내 작업 일정', 'Mon planning', '我的工作计划'),
   troubleDetails('Details', '詳細', '자세히', 'Détails', '详情'),
   troubleCopy('Copy', 'コピー', '복사', 'Copier', '复制'),
   troubleCopied('Copied', 'コピーしました', '복사함', 'Copié', '已复制'),
@@ -302,8 +291,11 @@ enum S {
   part('Part', 'パート', '파트', 'Partie', '部分'),
   progress('Progress', '進捗', '진행', 'Avancement', '进度'),
   due('Due', '締切', '마감', 'Échéance', '截止'),
-  production('Production', '制作', '제작', 'Production', '制作'),
-  ownWork('My work', '作業', '작업', 'Mon travail', '我的工作'),
+  // The production's dates and the user's own guess at their work: the
+  // details' two date pills, the register's per-stage dates and what a
+  // chart is drawn by (its toolbar's left).
+  plannedDates('Schedule', 'スケジュール', '스케줄', 'Planning', '日程'),
+  myEstimate('My estimate', '作業予定', '작업 예상', 'Mon estimation', '作业预计'),
   slack('Slack', '余裕', '여유', 'Marge', '余量'),
   perDay('Per day', '1日', '하루', 'Par jour', '每天'),
   rate('Rate', '単価', '단가', 'Tarif', '单价'),
@@ -389,12 +381,12 @@ enum S {
   ),
   beforeChange('Before a change', '変更前', '바꾸기 전', 'Avant modification', '更改前'),
   revive('Bring back', '戻す', '되살리기', 'Rétablir', '还原'),
-  monthDone(
-    'Done this month',
-    '今月の完了',
-    '이번 달 완료',
-    'Terminé ce mois-ci',
-    '本月完成',
+  monthHanded(
+    'Submitted this month',
+    '今月の提出',
+    '이번 달 제출',
+    'Remis ce mois-ci',
+    '本月提交',
   ),
   unpriced(
     '{n} without rate',
@@ -470,21 +462,21 @@ enum S {
   range4w('4 weeks', '4週間', '4주', '4 semaines', '4周'),
   range3m('3 months', '3か月', '3달', '3 mois', '3个月'),
   range12m('12 months', '12か月', '12달', '12 mois', '12个月'),
-  kDone('Done', '完了', '완료', 'Terminés', '完成'),
+  kHanded('Submitted', '提出', '제출', 'Remis', '已提交'),
   kWorked('Work time', '作業時間', '작업 시간', 'Temps de travail', '工作时间'),
   kPerCut('Time per cut', 'cut あたり', 'cut 당 시간', 'Temps par cut', '每 cut 用时'),
   kHourly('Hourly', '時給換算', '시급 환산', 'Taux horaire', '折合时薪'),
   kOnTime('On time', '締切遵守', '마감 준수', "À l'heure", '按时率'),
   kFirstDue('vs 1st deadline', '1次締切基準', '1차 마감 기준', '1re échéance', '按第1次截止'),
   kRetake('Retakes', 'リテイク率', '리테이크율', 'Retakes', '返修率'),
-  kEarned('Earned', '金額(完了)', '금액 (완료)', 'Gagné', '金额(完成)'),
+  kEarned('Earned', '金額(提出)', '금액 (제출)', 'Gagné', '金额(提交)'),
   perDayAvg('{v}/day', '1日 {v}', '하루 {v}', '{v}/jour', '每天 {v}'),
   vsPrev('vs prev.', '前期比', '지난 기간', 'vs préc.', '较上期'),
   lateN('{n} late', '遅れ {n}', '지연 {n}', '{n} en retard', '逾期 {n}'),
   hours('{n}h', '{n}時間', '{n}시간', '{n} h', '{n}小时'),
   minutes('{n} min', '{n}分', '{n}분', '{n} min', '{n}分钟'),
   extendedN('{n} extended', '延長 {n}', '연장 {n}', '{n} prolongés', '延期 {n}'),
-  cDoneCuts('Done cuts', '完了 cut', '완료 cut', 'Cuts terminés', '完成 cut'),
+  cHandedCuts('Submitted cuts', '提出 cut', '제출 cut', 'Cuts remis', '提交 cut'),
   cAvgLine(
     'dashed = average',
     '点線 = 平均',
@@ -566,7 +558,6 @@ enum S {
     'Revenir à en cours',
     '退回进行中',
   ),
-  backToDone('Back to done', '完了に戻す', '완료로 되돌리기', 'Revenir à terminé', '退回完成'),
   editTime('Recorded time', '記録時間', '기록한 시간', 'Temps relevé', '记录时间'),
   timeOverlap(
     'Overlaps another stretch',

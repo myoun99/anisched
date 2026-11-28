@@ -21,7 +21,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.working,
     required this.submitted,
     required this.retake,
-    required this.done,
+    required this.good,
     required this.restDay,
   });
 
@@ -38,12 +38,15 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color scrollThumb;
   final Color scrollTrack;
 
-  // Status colours: received → working → submitted → retake → done.
+  // Status colours: received → working → submitted → retake.
   final Color received;
   final Color working;
   final Color submitted;
   final Color retake;
-  final Color done;
+
+  /// What went well (early, faster than usual, all handed in): not a
+  /// status.
+  final Color good;
 
   /// Days off on the charts — rest weekdays, the user's own days off and
   /// holidays alike (the user's rule: one colour): a faint wash over the
@@ -68,7 +71,7 @@ class AppColors extends ThemeExtension<AppColors> {
     working: Color(0xFF3B6FE0),
     submitted: Color(0xFFB7791F),
     retake: Color(0xFFD1453B),
-    done: Color(0xFF2F9461),
+    good: Color(0xFF2F9461),
     restDay: Color(0xFF3B78E0),
   );
 
@@ -87,7 +90,7 @@ class AppColors extends ThemeExtension<AppColors> {
     working: Color(0xFF6E97F5),
     submitted: Color(0xFFE0A642),
     retake: Color(0xFFF0706A),
-    done: Color(0xFF52C08A),
+    good: Color(0xFF52C08A),
     restDay: Color(0xFF6E9EF5),
   );
 
@@ -116,7 +119,7 @@ class AppColors extends ThemeExtension<AppColors> {
       working: l(working, other.working),
       submitted: l(submitted, other.submitted),
       retake: l(retake, other.retake),
-      done: l(done, other.done),
+      good: l(good, other.good),
       restDay: l(restDay, other.restDay),
     );
   }
