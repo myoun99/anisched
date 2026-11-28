@@ -16,6 +16,7 @@ import '../services/catalogue_store.dart';
 import '../services/document_session.dart';
 import '../services/work_timer.dart';
 import 'document_menu.dart';
+import 'empty_start.dart';
 import 'filter.dart';
 import 'format.dart';
 import 'hold.dart';
@@ -67,7 +68,12 @@ class AppShell extends StatefulWidget {
     this.session,
     this.picker = const PlatformPicker(),
     this.remote,
+    this.onSample,
   });
+
+  /// Fills an empty document with example work (the web preview's first
+  /// run); null offers only 등록.
+  final void Function(CatalogueStore store)? onSample;
 
   final AppView initialView;
 
@@ -100,6 +106,9 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
+
+  /// The first read has come back (an empty document is then truly empty).
+  bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
   Map<String, StagePace> _paces = const {};
   LaneLayout? _lanes;
@@ -169,6 +178,7 @@ class _AppShellState extends State<AppShell> {
     ).wait;
     if (!mounted) return;
     setState(() {
+      _loaded = true;
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
@@ -569,6 +579,15 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _viewFor(AppView v, ScreenLayout layout) {
+    const plans = {AppView.list, AppView.timeline, AppView.work};
+    if (_loaded && _works.isEmpty && plans.contains(v)) {
+      final sample = widget.onSample;
+      final store = widget.store;
+      return EmptyStart(
+        onRegister: () => _select(AppView.register),
+        onSample: sample == null || store == null ? null : () => _write(sample),
+      );
+    }
     final now = widget.clock();
     final rest =
         widget.store?.settings.restWeekdays ??

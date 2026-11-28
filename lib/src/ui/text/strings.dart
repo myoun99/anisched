@@ -148,6 +148,28 @@ enum S {
   fileOpen('Open', '開く', '열기', 'Ouvrir', '打开'),
   fileSave('Save', '保存', '저장', 'Enregistrer', '保存'),
   fileSaveAs('Save as', '名前を付けて保存', '다른 이름으로 저장', 'Enregistrer sous', '另存为'),
+  fileExport(
+    'Export to file',
+    'ファイルに書き出す',
+    '파일로 내보내기',
+    'Exporter vers un fichier',
+    '导出为文件',
+  ),
+  fileImport('Open a file', 'ファイルを開く', '파일 열기', 'Ouvrir un fichier', '打开文件'),
+  emptyStart(
+    'No work yet',
+    'まだ作業がありません',
+    '아직 작업이 없어요',
+    'Aucun travail pour l’instant',
+    '还没有工作',
+  ),
+  loadSample(
+    'Add sample data',
+    'サンプルを入れる',
+    '예시 데이터 넣기',
+    'Ajouter un exemple',
+    '加入示例数据',
+  ),
   untitled('Untitled', '無題', '무제', 'Sans titre', '未命名'),
   fileMissing(
     'File missing',
