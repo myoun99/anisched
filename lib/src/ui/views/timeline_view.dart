@@ -36,6 +36,7 @@ class TimelineView extends StatefulWidget {
     this.onDue,
     this.details,
     this.events = const {},
+    this.cardEvents = const {},
     this.onNewEvent,
     this.onEvent,
     this.onRulerPress,
@@ -45,6 +46,9 @@ class TimelineView extends StatefulWidget {
   /// Dated events by episode (null: on no episode), shown on that
   /// episode's rows.
   final Map<int?, List<EventRow>> events;
+
+  /// Events of one card, by its key, shown on that card's bar alone.
+  final Map<String, List<EventRow>> cardEvents;
 
   /// A long press on a row's day: a new event there.
   final void Function(PartGroup group, DateTime day)? onNewEvent;
@@ -305,8 +309,8 @@ class _TimelineViewState extends State<TimelineView> {
     return last;
   }
 
-  /// [g]'s bar and its episode's events. On a bundle's row the bar is
-  /// named by its [stage] and a tap opens the bundle ([onTap]).
+  /// [g]'s bar, its episode's events and its own. On a bundle's row the
+  /// bar is named by its [stage] and a tap opens the bundle ([onTap]).
   List<Widget> _bars(
     BuildContext context,
     PartGroup g,
@@ -347,25 +351,29 @@ class _TimelineViewState extends State<TimelineView> {
           // card; the row's days off the bar do nothing.
           onLongPressDay: onNew == null ? null : (d) => onNew(g, d),
         ),
-      if (events)
-        for (final e in widget.events[g.episodeId] ?? const <EventRow>[])
-          ChartDayBox(
-            key: Key('tl-event-${g.key}-${e.id}'),
-            window: window,
-            day: e.date,
-            minWidth: 72,
-            // Over the bar, the bar's long press (an event) goes on.
-            onLongPressDay: onNew == null
-                ? null
-                : (d) {
-                    if (onBar(d)) onNew(g, d);
-                  },
-            child: EventMark(
-              event: e,
-              onBar: onBar(e.date),
-              onTap: widget.onEvent == null ? null : () => widget.onEvent!(e),
-            ),
+      // The episode's own events (once on a bundle's row), then this
+      // card's alone.
+      for (final e in [
+        if (events) ...?widget.events[g.episodeId],
+        ...?widget.cardEvents[g.key],
+      ])
+        ChartDayBox(
+          key: Key('tl-event-${g.key}-${e.id}'),
+          window: window,
+          day: e.date,
+          minWidth: 72,
+          // Over the bar, the bar's long press (an event) goes on.
+          onLongPressDay: onNew == null
+              ? null
+              : (d) {
+                  if (onBar(d)) onNew(g, d);
+                },
+          child: EventMark(
+            event: e,
+            onBar: onBar(e.date),
+            onTap: widget.onEvent == null ? null : () => widget.onEvent!(e),
           ),
+        ),
     ];
   }
 }

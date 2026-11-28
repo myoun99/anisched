@@ -122,6 +122,9 @@ class _AppShellState extends State<AppShell> {
   /// Dated events by episode, for the timeline.
   Map<int?, List<EventRow>> _events = const {};
 
+  /// Events of one card, by its key (a long press on its bar).
+  Map<String, List<EventRow>> _cardEvents = const {};
+
   /// The first read has come back (an empty document is then truly empty).
   bool _loaded = false;
   Map<String, GroupSignals> _signals = const {};
@@ -181,6 +184,11 @@ class _AppShellState extends State<AppShell> {
     if (reader == null) return;
     final done = _filter.showDone;
     final today = widget.clock();
+    // Events of one card (its bar), by card key: loaded alongside.
+    final cardsLoading = reader.cardEvents(
+      from: today.subtract(const Duration(days: 120)),
+      to: today.add(const Duration(days: 240)),
+    );
     final (
       groups,
       signals,
@@ -214,10 +222,12 @@ class _AppShellState extends State<AppShell> {
         to: today.add(const Duration(days: 240)),
       ),
     ).wait;
+    final cards = await cardsLoading;
     if (!mounted) return;
     setState(() {
       _loaded = true;
       _events = events;
+      _cardEvents = cards;
       final st = widget.store;
       _days = ChartDays(
         restWeekdays:
@@ -252,9 +262,10 @@ class _AppShellState extends State<AppShell> {
   Future<void> _newEvent(PartGroup g, DateTime day) async {
     final a = await showEventEditor(context, day: day);
     if (a is! EventSave) return;
+    // On that card alone (its bar), not the whole episode.
     _write(
       (s) => s.addEvent(
-        episodeId: g.episodeId,
+        card: g.key,
         date: day,
         timeMinutes: a.timeMinutes,
         title: a.title,
@@ -893,6 +904,7 @@ class _AppShellState extends State<AppShell> {
         onSchedule: writable ? _schedule : null,
         details: (g) => wiring.details(g, client: true),
         events: _events,
+        cardEvents: _cardEvents,
         onNewEvent: writable ? _newEvent : null,
         onEvent: writable ? _editEvent : null,
         onRulerPress: writable ? _newRulerEvent : null,

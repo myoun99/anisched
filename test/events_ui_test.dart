@@ -36,6 +36,9 @@ Future<CatalogueStore> pumpTimeline(WidgetTester t) async {
 List<EventRow> allEvents(CatalogueStore s) => [
   for (final l in s.events(from: DateTime(2026, 10), to: DateTime(2027)).values)
     ...l,
+  for (final l
+      in s.cardEvents(from: DateTime(2026, 10), to: DateTime(2027)).values)
+    ...l,
 ];
 
 /// A chart bar's whole date area (its [ChartBar]).
@@ -97,10 +100,13 @@ void main() {
       ((x + dw * 1.5 - t.getRect(chartOf(bar)).left) / dw).floor(),
     );
     expect((added.date.month, added.date.day), (day.month, day.day));
-    // Shown on the rows of that episode.
+    // That card's alone: on its bar, not the episode's other rows.
+    final card = (t.widget(chartOf(bar)).key! as ValueKey<String>).value
+        .substring('tl-bar-'.length);
+    expect(added.card, card);
     Finder mark(String title) =>
         find.ancestor(of: find.text(title), matching: find.byType(EventMark));
-    expect(mark('テスト収録'), findsWidgets);
+    expect(mark('テスト収録'), findsOneWidget);
 
     // The mark opens the same window: rename, then remove.
     await t.tap(mark('テスト収録').first);
