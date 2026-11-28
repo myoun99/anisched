@@ -2,6 +2,11 @@
 // background, today and the date ruler.
 part of 'chart.dart';
 
+/// The one rule of the grey bands: the [index]th stretch (of days, a
+/// month, a year) is banded when odd — the days' columns, the ruler's
+/// month and year cells alike.
+bool chartBand(int index) => index.isOdd;
+
 /// Which day columns carry a number and how the stripes run: every
 /// [step] days, the step the smallest that leaves a number its real width.
 /// Anchored to the calendar, not the window, so scrolling never moves which
@@ -42,7 +47,7 @@ class DayLabels {
       _block(window.dayAt(i - 1)) != _block(window.dayAt(i));
 
   /// Alternate stripes, Excel-like: one per numbered stretch.
-  bool shaded(int i) => _block(window.dayAt(i)).isOdd;
+  bool shaded(int i) => chartBand(_block(window.dayAt(i)));
 
   @override
   bool operator ==(Object other) =>
@@ -402,8 +407,8 @@ class ChartHeader extends StatelessWidget {
                   window: window,
                   slide: slide,
                   ink: style.color ?? c.muted,
-                  line: c.line,
                   panel: c.panel,
+                  band: chartStripe(context),
                   style: style,
                   lang: appLang.value,
                   yearTop: rows.year ? at.year : null,
@@ -461,18 +466,18 @@ class ChartHeader extends StatelessWidget {
 }
 
 /// The ruler's year and month rows as a spreadsheet's merged cells: each
-/// year (month) one cell on plain ground — no bands, no day-off colour, no
-/// day lines inside — its name centred in the whole cell, or, when that
-/// centre is out of sight, held at the cell's visible end so it always
-/// shows; a line only where a cell starts. Its own layer: a slide
-/// repaints it alone.
+/// year (month) one cell — no day-off colour or day lines inside, every
+/// other cell banded like the days' columns ([chartBand]), no line between
+/// cells — its name centred in the whole cell, or, when that centre is out
+/// of sight, held at the cell's visible end so it always shows. Its own
+/// layer: a slide repaints it alone.
 class _SpanPainter extends CustomPainter {
   _SpanPainter({
     required this.window,
     this.slide,
     required this.ink,
-    required this.line,
     required this.panel,
+    required this.band,
     required this.style,
     required this.lang,
     this.yearTop,
@@ -484,10 +489,11 @@ class _SpanPainter extends CustomPainter {
   /// The days' slide (part of a column): where the visible part starts.
   final ValueListenable<double>? slide;
   final Color ink;
-  final Color line;
 
-  /// The rows' plain ground (no bands, no day-off colour, no day lines).
+  /// A cell's ground: [band] on every other one ([chartBand]), else
+  /// [panel] — no day-off colour, no day lines, no line between cells.
   final Color panel;
+  final Color band;
   final TextStyle style;
   final Lang lang;
 
@@ -500,22 +506,21 @@ class _SpanPainter extends CustomPainter {
     final dw = size.width / window.days;
     final lo = (slide?.value ?? 0) * dw;
     final hi = lo + window.shown * dw;
-    final rule = Paint()
-      ..color = line
-      ..strokeWidth = 1;
     final ground = Paint()..color = panel;
+    final banded = Paint()..color = band;
     void row(
       double top,
       DateTime Function(DateTime d) first,
       DateTime Function(DateTime d) next,
+      int Function(DateTime d) index,
       String Function(DateTime d) name,
     ) {
       const h = ChartHeader.spanRow;
       for (final cell in spanCells(window, first, next)) {
         final x0 = cell.from * dw;
         final x1 = cell.to * dw;
-        if (cell.from > 0) {
-          canvas.drawLine(Offset(x0, top), Offset(x0, top + h), rule);
+        if (chartBand(index(cell.day))) {
+          canvas.drawRect(Rect.fromLTRB(x0, top, x1, top + h), banded);
         }
         final t = TextPainter(
           text: TextSpan(
@@ -548,6 +553,7 @@ class _SpanPainter extends CustomPainter {
         y,
         (d) => DateTime(d.year),
         (d) => DateTime(d.year + 1),
+        (d) => d.year,
         (d) => '${d.year}',
       );
     }
@@ -556,6 +562,7 @@ class _SpanPainter extends CustomPainter {
         y,
         (d) => DateTime(d.year, d.month),
         (d) => DateTime(d.year, d.month + 1),
+        (d) => d.year * 12 + d.month,
         (d) => monthName(d.month, lang),
       );
     }
@@ -568,6 +575,7 @@ class _SpanPainter extends CustomPainter {
       old.slide != slide ||
       old.ink != ink ||
       old.panel != panel ||
+      old.band != band ||
       old.lang != lang ||
       old.yearTop != yearTop ||
       old.monthTop != monthTop;
