@@ -419,7 +419,11 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
       await t.tap(add);
       await t.pump();
-      await t.enterText(find.byKey(const Key('add-count')), '3');
+      final first = t.widget<TextField>(find.byKey(const Key('reg-first')));
+      final next = int.parse(first.controller!.text);
+      await t.enterText(find.byKey(const Key('reg-last')), '${next + 2}');
+      await t.pump();
+      await t.tap(find.byKey(const Key('cut-add-range')));
       await t.pump();
     },
   ),
@@ -496,11 +500,9 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.enterText(find.byKey(const Key('reg-last')), '24');
       await t.pump();
       await tap(find.byKey(const Key('cut-add-range')));
+      await t.enterText(find.byKey(const Key('cut-add-name')), 'BANK1');
+      await t.pump();
       await tap(find.byKey(const Key('cut-add-one')));
-      await t.pumpAndSettle();
-      await t.enterText(find.byKey(const Key('name-input')), 'BANK1');
-      await t.tap(find.byKey(const Key('name-ok')));
-      await t.pumpAndSettle();
       await tap(find.byKey(const Key('cell-C004')));
       await tap(find.byKey(const Key('cell-C005')));
       await tap(find.byKey(const Key('cut-share')));
