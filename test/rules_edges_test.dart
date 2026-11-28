@@ -5,6 +5,7 @@ import 'package:anisched/src/models/cut_numbers.dart';
 import 'package:anisched/src/models/document.dart';
 import 'package:anisched/src/models/lanes.dart';
 import 'package:anisched/src/models/progress.dart';
+import 'package:anisched/src/models/stats.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 TaskRow row(
@@ -114,5 +115,43 @@ void main() {
   test('no modification time never proves a file unchanged', () {
     const known = DocumentFingerprint(size: 10, hash: 1);
     expect(known.sameStat((size: 10, modifiedMs: null)), isFalse);
+  });
+
+  group('statistics days', () {
+    StatsFact plan(String key, DateTime start, DateTime end) => StatsFact(
+      taskId: key.hashCode,
+      stageName: 'LO',
+      workId: 1,
+      workTitle: 'W',
+      currency: 'JPY',
+      groupKey: key,
+      planStartAt: start,
+      planEndAt: end,
+    );
+
+    test('planned groups per day: clipped to the range, ends included', () {
+      final s = computeStats(
+        facts: [
+          plan('inside', DateTime(2026, 11, 3), DateTime(2026, 11, 4)),
+          plan('before', DateTime(2026, 10, 20), DateTime(2026, 11, 2)),
+          plan('after', DateTime(2026, 11, 6), DateTime(2026, 12, 20)),
+          plan('gone', DateTime(2026, 10, 1), DateTime(2026, 10, 5)),
+          plan('later', DateTime(2026, 11, 9), DateTime(2026, 11, 12)),
+        ],
+        intervals: const [],
+        from: DateTime(2026, 11, 2),
+        to: DateTime(2026, 11, 9),
+        now: DateTime(2026, 11, 9),
+      );
+      expect(s.days.map((d) => d.planned), [1, 1, 1, 0, 1, 1, 1]);
+    });
+
+    test('before the day start, an instant belongs to the day before', () {
+      expect(
+        workDayOf(DateTime(2026, 11, 4, 4, 59), 300),
+        DateTime(2026, 11, 3),
+      );
+      expect(workDayOf(DateTime(2026, 11, 4, 5), 300), DateTime(2026, 11, 4));
+    });
   });
 }

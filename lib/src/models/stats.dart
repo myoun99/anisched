@@ -220,8 +220,13 @@ class Stats {
 /// The local work-day date [t] belongs to (the day starts at
 /// [dayStartMinutes] past midnight).
 DateTime workDayOf(DateTime t, int dayStartMinutes) {
-  final start = dayRange(t, dayStartMinutes).start;
-  return DateTime(start.year, start.month, start.day);
+  // [dayRange]'s rule, with two dates built instead of five (it runs for
+  // every fact and stretch of a year's statistics).
+  final local = t.toLocal();
+  final midnight = DateTime(local.year, local.month, local.day);
+  return local.isBefore(midnight.add(Duration(minutes: dayStartMinutes)))
+      ? DateTime(local.year, local.month, local.day - 1)
+      : midnight;
 }
 
 /// Folds [facts] and [intervals] into [Stats] for the work days
@@ -240,7 +245,10 @@ Stats computeStats({
   from = DateTime(from.year, from.month, from.day);
   to = DateTime(to.year, to.month, to.day);
   final s = Stats._(from, to, lanes, bucket);
-  DateTime day(DateTime t) => workDayOf(t, dayStartMinutes);
+  // Deadlines and plans repeat across a part's cuts: each instant once.
+  final days = <int, DateTime>{};
+  DateTime day(DateTime t) =>
+      days[t.millisecondsSinceEpoch] ??= workDayOf(t, dayStartMinutes);
   bool inRange(DateTime? t) {
     if (t == null) return false;
     final d = day(t);
@@ -406,14 +414,27 @@ Stats computeStats({
             end: span.end.isAfter(had.end) ? span.end : had.end,
           );
   }
-  for (var d = from; d.isBefore(to); d = DateTime(d.year, d.month, d.day + 1)) {
-    var planned = 0;
-    for (final p in plans.values) {
-      if (!d.isBefore(p.start) && !d.isAfter(p.end)) planned++;
-    }
+  // Planned groups per day: +1 where a plan starts, −1 after it ends,
+  // summed along the range (not every plan against every day).
+  final dates = [
+    for (var d = from; d.isBefore(to); d = DateTime(d.year, d.month, d.day + 1))
+      d,
+  ];
+  int indexOf(DateTime d) => (d.difference(from).inHours / 24).round();
+  final change = List.filled(dates.length + 1, 0);
+  for (final p in plans.values) {
+    final a = indexOf(p.start);
+    final b = indexOf(p.end);
+    if (b < 0 || a >= dates.length) continue;
+    change[a < 0 ? 0 : a]++;
+    change[b + 1 > dates.length ? dates.length : b + 1]--;
+  }
+  var planned = 0;
+  for (var i = 0; i < dates.length; i++) {
+    planned += change[i];
     s.days.add((
-      day: d,
-      worked: workedGroups[d]?.length ?? 0,
+      day: dates[i],
+      worked: workedGroups[dates[i]]?.length ?? 0,
       planned: planned,
     ));
   }
