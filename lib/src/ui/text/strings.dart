@@ -194,7 +194,7 @@ enum S {
   troubleEmpty(
     'The file is empty (0 bytes): still downloading, or a save was cut off',
     'ファイルが空です（0 バイト）：ダウンロード中か、保存が途中で切れました',
-    '파일이 비어 있음(0바이트): 아직 내려받는 중이거나 저장이 끊겼음',
+    '파일이 비어 있음(0바이트) — 저장이 중간에 끊겼거나 아직 내려받는 중',
     'Fichier vide (0 octet) : encore en téléchargement, ou enregistrement interrompu',
     '文件为空（0 字节）：仍在下载，或保存被中断',
   ),

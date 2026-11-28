@@ -67,11 +67,22 @@ void main() {
         DocumentTroubleKind.notDocument,
     RemoteUnreachable(NotADocumentException('a.anisched', 'bad')):
         DocumentTroubleKind.notDocument,
+    for (final k in [
+      NotADocumentKind.damaged,
+      NotADocumentKind.tablesDiffer,
+      NotADocumentKind.migrateFailed,
+    ])
+      NotADocumentException('a.anisched', k.name, kind: k):
+          DocumentTroubleKind.damaged,
+    NotADocumentException('a.anisched', 'x', kind: NotADocumentKind.empty):
+        DocumentTroubleKind.empty,
+    NotADocumentException('a.anisched', 'x', kind: NotADocumentKind.foreignApp):
+        DocumentTroubleKind.notDocument,
     const RemoteMissing(): DocumentTroubleKind.unreachable,
     StateError('boom'): DocumentTroubleKind.other,
   };
   for (final MapEntry(key: error, value: kind) in cases.entries) {
-    testWidgets('${error.runtimeType} reads as ${kind.name}', (t) async {
+    testWidgets('$error reads as ${kind.name}', (t) async {
       await pumpTrouble(t, error);
       expect(DocumentTrouble.of(error).kind, kind);
       expect(find.text(kind.text), findsOneWidget);
@@ -181,8 +192,7 @@ void main() {
     }
     expect(session.document, isNull);
     expect(find.byKey(const Key('doc-trouble')), findsOneWidget);
-    // Until the error names its kind, an empty file reads as not ours.
-    expect(find.text(DocumentTroubleKind.notDocument.text), findsOneWidget);
+    expect(find.text(DocumentTroubleKind.empty.text), findsOneWidget);
     expect(find.byType(SnackBar), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
     expect(find.byKey(const Key('doc-trouble-retry')), findsOneWidget);
