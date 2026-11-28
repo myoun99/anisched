@@ -17,7 +17,8 @@ import 'theme.dart';
 import 'widgets.dart';
 import 'text/strings.dart';
 
-const caretW = 32.0;
+/// The left inset of a line's text and its opened details.
+const lineInset = 14.0;
 const _progressW = 112.0;
 const _signalW = 100.0;
 
@@ -45,7 +46,7 @@ class PartHeader extends StatelessWidget {
         height: 30,
         child: Row(
           children: [
-            const SizedBox(width: caretW),
+            const SizedBox(width: lineInset),
             Expanded(child: Text(S.title.t, style: style)),
             SizedBox(
               width: _progressW,
@@ -129,7 +130,9 @@ class PartLine extends StatelessWidget {
     final fill = switch (picked) {
       Picked.all => c.selected,
       Picked.some => Color.lerp(c.panel, c.selected, 0.5)!,
-      Picked.none => selected ? c.hover : c.panel,
+      // An opened line shares its details' shade: no caret needed to
+      // tell it is open (a tap opens and closes it).
+      Picked.none => expanded ? c.panelAlt : (selected ? c.hover : c.panel),
     };
     Widget lineOf(bool wide) => Material(
       color: fill,
@@ -148,14 +151,7 @@ class PartLine extends StatelessWidget {
               style: _tabular,
               child: Row(
                 children: [
-                  SizedBox(
-                    width: caretW,
-                    child: Icon(
-                      expanded ? Icons.expand_more : Icons.chevron_right,
-                      size: 18,
-                      color: c.muted,
-                    ),
-                  ),
+                  const SizedBox(width: lineInset),
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -482,7 +478,7 @@ class PartDetails extends StatelessWidget {
         border: Border(bottom: BorderSide(color: c.line)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(caretW, 10, 14, 12),
+        padding: const EdgeInsets.fromLTRB(lineInset, 10, 14, 12),
         child: DefaultTextStyle.merge(
           style: _tabular,
           child: Column(

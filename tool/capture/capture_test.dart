@@ -304,19 +304,17 @@ void main() {
 
   // Round 8: bars drawn 4× on the chart (today's column included): grips
   // 〈 〉 at the ends, the label between them; short bars by proposal.
-  for (final style in ShortBarGrips.values) {
+  for (final days in [8, 16]) {
     for (final dark in [false, true]) {
-      final name = 'bar-zoom-${style.name}${dark ? '-dark' : ''}';
+      final name = 'bar-zoom-$days${dark ? '-dark' : ''}';
       if (only != null && !only.contains('bar-zoom')) continue;
       testWidgets(name, (t) async {
-        shortBarGrips = style;
-        addTearDown(() => shortBarGrips = ShortBarGrips.outside);
         const size = Size(420, 300);
         t.view.physicalSize = size * 4;
         t.view.devicePixelRatio = 4;
         addTearDown(t.view.reset);
         final shot = GlobalKey();
-        final window = ChartWindow(DateTime(2026, 11, 20), 8);
+        final window = ChartWindow(DateTime(2026, 11, 20), days);
         // (days, opened)
         const rows = [
           (1, true),
@@ -353,7 +351,6 @@ void main() {
                         color: Theme.of(context).colorScheme.primary,
                         textColor: Colors.white,
                         label: '별빛 정류장 #07 · 원화 · 4 cut',
-                        selected: rows[r].$2,
                         onDates: (a, b) {},
                       ),
                     ],

@@ -928,24 +928,16 @@ class _ChartBoardState extends State<ChartBoard> {
 /// Which end of a bar a drag moves.
 enum BarEdge { start, end }
 
-/// Where a bar too short for grips and a label keeps its grips — two
-/// proposals until the user picks one.
-enum ShortBarGrips {
-  /// Just outside the bar's ends, always.
-  outside,
-
-  /// Only on the opened (selected) bar, outside its ends.
-  whenSelected,
-}
-
-/// The proposal in use (captures switch it).
-ShortBarGrips shortBarGrips = ShortBarGrips.outside;
-
 /// A bar's end grip: a small button of another colour with 〈 or 〉, the
 /// whole of it the place to drag. Only bars whose dates can be dragged
 /// have them ([ChartBar.onDates]).
 class BarGrip extends StatelessWidget {
-  const BarGrip({super.key, required this.edge, required this.ink});
+  const BarGrip({
+    super.key,
+    required this.edge,
+    required this.ink,
+    this.width = maxWidth,
+  });
 
   final BarEdge edge;
 
@@ -953,10 +945,18 @@ class BarGrip extends StatelessWidget {
   final Color ink;
 
   /// The grip's width, which is also its drag area.
-  static const width = 16.0;
+  final double width;
 
-  /// The least room a label needs between two grips.
-  static const minLabel = 24.0;
+  /// The widest a grip gets; on narrow days, half a day ([widthFor]).
+  static const maxWidth = 16.0;
+
+  /// The least room a label needs between two grips; less hides it.
+  static const minLabel = 8.0;
+
+  /// A grip's width for days [dayWidth] wide: at most half a day, so a
+  /// one-day bar is just its two grips however far out the zoom goes.
+  static double widthFor(double dayWidth) =>
+      dayWidth / 2 < maxWidth ? dayWidth / 2 : maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1000,15 +1000,11 @@ class ChartBar extends StatefulWidget {
     this.onDates,
     this.faded = false,
     this.wrapBody,
-    this.selected = false,
     this.outline,
   });
 
   /// A border round the bar (e.g. red for work past the lanes).
   final Color? outline;
-
-  /// The bar is the one opened or picked (its short-bar grips may show).
-  final bool selected;
 
   final ChartWindow window;
   final DateTime start;
@@ -1070,7 +1066,7 @@ class _ChartBarState extends State<ChartBar> {
     context.getInheritedWidgetOfExactType<_DragScope>()?.drag.value = null;
   }
 
-  Widget _handle(BarEdge edge) => GestureDetector(
+  Widget _handle(BarEdge edge, double width) => GestureDetector(
     key: Key('bar-${edge.name}'),
     behavior: HitTestBehavior.opaque,
     // Measured from where the finger went down, so nothing is lost while
@@ -1101,19 +1097,20 @@ class _ChartBarState extends State<ChartBar> {
       cursor: SystemMouseCursors.resizeLeftRight,
       child: BarGrip(
         edge: edge,
+        width: width,
         ink: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
       ),
     ),
   );
 
-  Widget _face() {
-    // The label uses the bar's whole width, no padding; tight bars
+  Widget _face({required bool label}) {
+    // The label uses all the room it is given, no padding; tight bars
     // condense it (FitText). A bar that is a drag source keeps its long
     // press, so no tooltip there.
     final face = SizedBox.expand(
       child: Align(
         alignment: Alignment.centerLeft,
-        child: widget.label == null
+        child: widget.label == null || !label
             ? null
             : FitText(
                 widget.label!,
@@ -1140,15 +1137,11 @@ class _ChartBarState extends State<ChartBar> {
         final e = chartDay(widget.end);
         final left = widget.window.indexOf(s) * dw;
         final width = (e.difference(s).inDays + 1) * dw;
-        final draggable = widget.onDates != null;
-        // Grips inside the bar when the label still has room between
-        // them; on a short bar they sit just outside its ends.
-        final inside = width >= 2 * BarGrip.width + BarGrip.minLabel;
-        final grips =
-            draggable &&
-            (inside ||
-                shortBarGrips == ShortBarGrips.outside ||
-                widget.selected);
+        final grips = widget.onDates != null;
+        final grip = BarGrip.widthFor(dw);
+        // The label gets the room between the grips, or none at all.
+        final room = grips ? width - 2 * grip : width;
+        final showLabel = room >= BarGrip.minLabel;
         final bar = Opacity(
           opacity: _edge != null ? 0.4 : (widget.faded ? 0.35 : 1),
           child: DecoratedBox(
@@ -1161,16 +1154,16 @@ class _ChartBarState extends State<ChartBar> {
                   : Border.all(color: widget.outline!, width: 1.5),
             ),
             // The label takes every pixel between the grips.
-            child: grips && inside
+            child: grips
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _handle(BarEdge.start),
-                      Expanded(child: _face()),
-                      _handle(BarEdge.end),
+                      _handle(BarEdge.start, grip),
+                      Expanded(child: _face(label: showLabel)),
+                      _handle(BarEdge.end, grip),
                     ],
                   )
-                : _face(),
+                : _face(label: showLabel),
           ),
         );
         return Stack(
@@ -1183,22 +1176,6 @@ class _ChartBarState extends State<ChartBar> {
               height: ChartBoard.barHeight,
               child: bar,
             ),
-            if (grips && !inside) ...[
-              Positioned(
-                left: left - BarGrip.width,
-                width: BarGrip.width,
-                top: ChartBoard.barTop,
-                height: ChartBoard.barHeight,
-                child: _handle(BarEdge.start),
-              ),
-              Positioned(
-                left: left + width,
-                width: BarGrip.width,
-                top: ChartBoard.barTop,
-                height: ChartBoard.barHeight,
-                child: _handle(BarEdge.end),
-              ),
-            ],
           ],
         );
       },

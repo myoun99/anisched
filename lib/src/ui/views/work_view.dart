@@ -376,7 +376,6 @@ class _WorkViewState extends State<WorkView> {
     final over = overflow.contains(s.key);
     return ChartBar(
       key: Key('work-bar-${s.key}'),
-      selected: _open == s.key,
       window: window,
       start: s.start,
       end: s.end,

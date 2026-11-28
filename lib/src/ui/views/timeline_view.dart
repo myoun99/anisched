@@ -190,7 +190,6 @@ class _TimelineViewState extends State<TimelineView> {
       if (dated)
         ChartBar(
           key: Key('tl-bar-${g.key}'),
-          selected: _open == g.key,
           window: window,
           start: start,
           end: end,

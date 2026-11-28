@@ -835,21 +835,26 @@ class _AppShellState extends State<AppShell> {
               bottom: !narrow,
               child: Column(
                 children: [
-                  _TopBar(
-                    title: widget.session == null
-                        ? null
-                        : ValueListenableBuilder<RemoteCheck?>(
-                            valueListenable:
-                                widget.remote ??
-                                ValueNotifier<RemoteCheck?>(null),
-                            builder: (context, remote, _) => DocumentMenu(
-                              session: widget.session!,
-                              picker: widget.picker,
-                              remote: remote,
+                  ListenableBuilder(
+                    listenable: _selection,
+                    builder: (context, _) => _TopBar(
+                      picking: !_selection.isEmpty,
+                      narrow: narrow,
+                      title: widget.session == null
+                          ? null
+                          : ValueListenableBuilder<RemoteCheck?>(
+                              valueListenable:
+                                  widget.remote ??
+                                  ValueNotifier<RemoteCheck?>(null),
+                              builder: (context, remote, _) => DocumentMenu(
+                                session: widget.session!,
+                                picker: widget.picker,
+                                remote: remote,
+                              ),
                             ),
-                          ),
-                    actions: selectionBar,
-                    switcher: narrow ? null : switcher,
+                      actions: selectionBar,
+                      switcher: narrow ? null : switcher,
+                    ),
                   ),
                   Expanded(
                     child: IndexedStack(
@@ -873,7 +878,21 @@ class _AppShellState extends State<AppShell> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({this.title, required this.actions, this.switcher});
+  const _TopBar({
+    this.title,
+    required this.actions,
+    this.switcher,
+    this.picking = false,
+    this.narrow = false,
+  });
+
+  /// Something is picked: the actions show (only then; with nothing picked
+  /// every one of them would do nothing).
+  final bool picking;
+
+  /// A phone held upright: while picking, the actions take the document
+  /// name's place.
+  final bool narrow;
 
   /// The document's name and file menu, after the app name.
   final Widget? title;
@@ -909,10 +928,12 @@ class _TopBar extends StatelessWidget {
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
       const SizedBox(width: 10),
-      if (title != null) Flexible(child: title!),
+      if (title != null && !(picking && narrow)) Flexible(child: title!),
       const SizedBox(width: 10),
       Expanded(
-        child: Align(alignment: Alignment.centerRight, child: actions),
+        child: picking
+            ? Align(alignment: Alignment.centerRight, child: actions)
+            : const SizedBox.shrink(),
       ),
       if (switcher case final s?) ...[
         const SizedBox(width: 12),
