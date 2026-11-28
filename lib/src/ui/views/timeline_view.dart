@@ -23,7 +23,7 @@ class TimelineView extends StatefulWidget {
     required this.parts,
     required this.now,
     required this.layout,
-    this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
+    this.days = const ChartDays(),
     this.onSchedule,
     this.selection,
     this.toolbar,
@@ -63,7 +63,9 @@ class TimelineView extends StatefulWidget {
   final List<PartGroup> parts;
   final DateTime now;
   final ScreenLayout layout;
-  final Set<int> restWeekdays;
+
+  /// Rest weekdays, days off and holidays for the background.
+  final ChartDays days;
 
   /// Saves a dragged kickoff and deadline (local days); null keeps the
   /// bars fixed.
@@ -135,7 +137,7 @@ class _TimelineViewState extends State<TimelineView> {
               child: ChartBoard(
                 window: window,
                 today: widget.now,
-                restWeekdays: widget.restWeekdays,
+                days: widget.days,
                 labelWidth: _labelWidth,
                 rowCount: rows.length,
                 rowKey: (i) => ValueKey(rows[i].key),

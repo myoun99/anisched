@@ -32,6 +32,7 @@ import 'selection_bar.dart';
 import 'theme.dart';
 import 'timer_bar.dart';
 import 'widgets.dart';
+import 'views/chart.dart';
 import 'views/register_view.dart';
 import 'views/settings_view.dart';
 import 'views/sheet_view.dart';
@@ -110,6 +111,9 @@ class _AppShellState extends State<AppShell> {
   late AppView _view = widget.initialView;
   List<PartGroup> _groups = const [];
 
+  /// Rest weekdays, days off and holidays, for the charts' backgrounds.
+  ChartDays _days = const ChartDays();
+
   /// Dated events by episode, for the timeline.
   Map<int?, List<EventRow>> _events = const {};
 
@@ -180,6 +184,7 @@ class _AppShellState extends State<AppShell> {
       clients,
       roles,
       events,
+      holidays,
     ) = await (
       reader.partGroups(
         includeDone: done,
@@ -196,11 +201,28 @@ class _AppShellState extends State<AppShell> {
         from: today.subtract(const Duration(days: 120)),
         to: today.add(const Duration(days: 240)),
       ),
+      reader.holidays(
+        from: today.subtract(const Duration(days: 120)),
+        to: today.add(const Duration(days: 240)),
+      ),
     ).wait;
     if (!mounted) return;
     setState(() {
       _loaded = true;
       _events = events;
+      final st = widget.store;
+      _days = ChartDays(
+        restWeekdays:
+            st?.settings.restWeekdays ??
+            const {DateTime.saturday, DateTime.sunday},
+        daysOff: [
+          if (st != null)
+            for (final d in st.daysOff()) d.range,
+        ],
+        holidays: st == null || st.settings.showHolidays
+            ? {for (final h in holidays) h.date: h.name}
+            : const {},
+      );
       _works = {
         for (final w in works) w.id: (title: w.title, clientId: w.clientId),
       };
@@ -657,9 +679,6 @@ class _AppShellState extends State<AppShell> {
       );
     }
     final now = widget.clock();
-    final rest =
-        widget.store?.settings.restWeekdays ??
-        const {DateTime.saturday, DateTime.sunday};
     final writable = widget.store != null;
     final shown = _visible(now);
     final toolbar = _toolbar(shown.length);
@@ -698,7 +717,7 @@ class _AppShellState extends State<AppShell> {
         onDue: writable ? _setDue : null,
         now: now,
         layout: layout,
-        restWeekdays: rest,
+        days: _days,
         selection: _selection,
         onSchedule: writable ? _schedule : null,
         details: (g) => wiring.details(g, client: true),
@@ -712,7 +731,7 @@ class _AppShellState extends State<AppShell> {
         parts: {for (final g in _groups) g.key: g},
         now: now,
         layout: layout,
-        restWeekdays: rest,
+        days: _days,
         onPin: writable
             ? (key, lane) => _write((s) => s.pinLane(key, lane))
             : null,

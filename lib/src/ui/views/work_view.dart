@@ -25,7 +25,7 @@ class WorkView extends StatefulWidget {
     required this.parts,
     required this.now,
     required this.layout,
-    this.restWeekdays = const {DateTime.saturday, DateTime.sunday},
+    this.days = const ChartDays(),
     this.onPin,
     this.onClearPins,
     this.onPlan,
@@ -56,7 +56,9 @@ class WorkView extends StatefulWidget {
   final Map<String, PartGroup> parts;
   final DateTime now;
   final ScreenLayout layout;
-  final Set<int> restWeekdays;
+
+  /// Rest weekdays, days off and holidays for the background.
+  final ChartDays days;
 
   final void Function(String groupKey, int lane)? onPin;
   final VoidCallback? onClearPins;
@@ -154,7 +156,7 @@ class _WorkViewState extends State<WorkView> {
                 child: ChartBoard(
                   window: window,
                   today: widget.now,
-                  restWeekdays: widget.restWeekdays,
+                  days: widget.days,
                   labelWidth: _labelWidth,
                   rowCount: rowCount,
                   corner: _corner(context),

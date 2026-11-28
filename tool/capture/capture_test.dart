@@ -230,6 +230,19 @@ final scenarios = <String, (AppView, Scenario)>{
       await t.pump();
     },
   ),
+  // Round 10: rest weekdays (blue), a day off (orange), a holiday
+  // (purple: 11/23) and today (red) on the chart backgrounds; one-day
+  // bars at half-day grips; nothing picked (no actions).
+  'r10-timeline': (AppView.timeline, (t, size) async {}),
+  'r10-work': (AppView.work, (t, size) async {}),
+  'r10-list': (AppView.list, (t, size) async {}),
+  'r10-settings': (
+    AppView.settings,
+    (t, size) async {
+      await t.ensureVisible(find.byKey(const Key('holiday-JP')));
+      await t.pump();
+    },
+  ),
   // Round 7: the register screen's top (how many rows the roles take).
   'register-top': (AppView.register, (t, size) async {}),
   // Round 4: the statistics tab, loaded.
@@ -334,7 +347,7 @@ void main() {
                   body: ChartBoard(
                     window: window,
                     today: DateTime(2026, 11, 21, 14),
-                    restWeekdays: const {DateTime.saturday, DateTime.sunday},
+                    days: const ChartDays(),
                     labelWidth: 56,
                     rowCount: rows.length,
                     label: (context, r) => Center(
@@ -396,6 +409,14 @@ void main() {
           if (base == 'holds') prepareHolds(store);
           if (base.startsWith('bundle')) prepareBundles(store);
           if (base.startsWith('r9')) prepareClients(store);
+          if (base.startsWith('r10')) {
+            // A day off of the user's own next week; Japan's holidays.
+            store.addDaysOff(
+              DateTime(2026, 12, 1),
+              end: DateTime(2026, 12, 2),
+              note: '여행',
+            );
+          }
           if (base == 'dropped') {
             final g = store.partGroups().where((g) => g.tasks.length > 2);
             store.handOff([g.elementAt(1).tasks.first.id]);
