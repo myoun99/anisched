@@ -437,20 +437,24 @@ class _AppShellState extends State<AppShell> {
   Future<void> _pickTimerCut(TaskRow? now) async {
     final reader = widget.reader;
     if (reader == null) return;
-    final rows =
-        [
-          if (now != null) ...[
-            now,
-            ...await reader.tasksBeside(now.id),
-          ] else
-            for (final g in _groups)
-              for (final t in g.tasks)
-                if (t.status.needsWork) t,
-        ]..sort((a, b) {
-          final k = naturalSortKey(taskLabel(a))
-              .compareTo(naturalSortKey(taskLabel(b)));
-          return k != 0 ? k : a.stageName.compareTo(b.stageName);
-        });
+    // The one cut order (names that are not numbers as they were added,
+    // a cut's stages side by side).
+    final rows = sortedByCutNumber(
+      [
+        if (now != null) ...[
+          now,
+          ...await reader.tasksBeside(now.id),
+        ] else
+          for (final g in _groups)
+            for (final t in g.tasks)
+              if (t.status.needsWork) t,
+      ]..sort((a, b) {
+        final k = (a.cutId ?? 0).compareTo(b.cutId ?? 0);
+        return k != 0 ? k : a.stageName.compareTo(b.stageName);
+      }),
+      taskLabel,
+      widget.store?.settings.cutStyle,
+    );
     if (!mounted) return;
     // A shared group is one cut here too: its first task, its numbers.
     final units = cutUnits(rows);
