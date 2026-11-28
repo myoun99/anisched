@@ -12,6 +12,7 @@ import '../text/strings.dart';
 import '../theme.dart';
 import '../sliding_row.dart';
 import '../widgets.dart';
+import 'stats_tree.dart';
 import '../fit_text.dart';
 import '../client_chip.dart';
 
@@ -42,7 +43,12 @@ class StatsView extends StatefulWidget {
     this.workId,
     this.filter,
     this.clients = const {},
+    this.loadTree,
   });
+
+  /// The detail table's rows for a period (and the filter); null until
+  /// the store gives them — the table is then empty.
+  final Future<List<StatsNode>> Function(DateTime from, DateTime to)? loadTree;
 
   /// The shared filter's client and work (null = all).
   final int? clientId;
@@ -68,7 +74,22 @@ class StatsView extends StatefulWidget {
   State<StatsView> createState() => _StatsViewState();
 }
 
+/// The statistics as their summary (cards) or as the detail table — this
+/// device's choice.
+final statsAsTable = ValueNotifier<bool>(false);
+
 class _StatsViewState extends State<StatsView> {
+  List<StatsNode> _tree = const [];
+
+  Future<void> _loadTree() async {
+    final load = widget.loadTree;
+    if (load == null) return;
+    final to = widget.now;
+    final from = DateTime(to.year, to.month, to.day - _range.days);
+    final rows = await load(from, to);
+    if (mounted) setState(() => _tree = rows);
+  }
+
   StatsBucket _bucket = StatsBucket.week;
   StatsRange _range = StatsRange.months3;
   Stats? _stats;
@@ -116,6 +137,7 @@ class _StatsViewState extends State<StatsView> {
       _range = range ?? _range;
     });
     unawaited(_load());
+    if (statsAsTable.value) unawaited(_loadTree());
   }
 
   @override
@@ -145,6 +167,21 @@ class _StatsViewState extends State<StatsView> {
                     ),
                 ],
               ),
+              ValueListenableBuilder<bool>(
+                valueListenable: statsAsTable,
+                builder: (context, table, _) => ToolbarButton(
+                  key: const Key('stats-table'),
+                  label: table ? S.statsSummary.t : S.statsTable.t,
+                  icon: table
+                      ? Icons.dashboard_outlined
+                      : Icons.table_rows_outlined,
+                  selected: table,
+                  onTap: () {
+                    statsAsTable.value = !table;
+                    if (!table) unawaited(_loadTree());
+                  },
+                ),
+              ),
               PopupMenuButton<StatsRange>(
                 key: const Key('stats-range'),
                 tooltip: '',
@@ -168,20 +205,25 @@ class _StatsViewState extends State<StatsView> {
             ],
           ),
           Expanded(
-            child: s == null
-                ? const SizedBox.shrink()
-                : OwnScroll(
-                    builder: (controller) => Scrollbar(
-                      controller: controller,
-                      child: LayoutBuilder(
-                        builder: (context, box) => SingleChildScrollView(
-                          controller: controller,
-                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-                          child: _body(context, s, box.maxWidth - 28),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: statsAsTable,
+              builder: (context, table, summary) =>
+                  table ? StatsTreeTable(roots: _tree) : summary!,
+              child: s == null
+                  ? const SizedBox.shrink()
+                  : OwnScroll(
+                      builder: (controller) => Scrollbar(
+                        controller: controller,
+                        child: LayoutBuilder(
+                          builder: (context, box) => SingleChildScrollView(
+                            controller: controller,
+                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                            child: _body(context, s, box.maxWidth - 28),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+            ),
           ),
         ],
       ),
