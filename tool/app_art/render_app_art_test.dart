@@ -197,23 +197,85 @@ void paintSplash(Canvas c, double height) {
 
 // ---- writing ----
 
+/// Renders [draw] to a PNG [w]×[h]. [opaque]: RGB only, no alpha channel
+/// (App Store Connect refuses an iOS icon with one, filled or not).
 Future<Uint8List> render(
   WidgetTester t,
   int w,
   int h,
-  void Function(Canvas c) draw,
-) async {
+  void Function(Canvas c) draw, {
+  bool opaque = false,
+}) async {
   final rec = ui.PictureRecorder();
   draw(Canvas(rec));
   final pic = rec.endRecording();
   final bytes = await t.runAsync(() async {
     final img = await pic.toImage(w, h);
-    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    final data = await img.toByteData(
+      format: opaque ? ui.ImageByteFormat.rawRgba : ui.ImageByteFormat.png,
+    );
     img.dispose();
-    return data!.buffer.asUint8List();
+    final raw = data!.buffer.asUint8List();
+    return opaque ? rgbPng(raw, w, h) : raw;
   });
   pic.dispose();
   return bytes!;
+}
+
+/// A PNG of [rgba]'s colours without its alpha (colour type 2).
+Uint8List rgbPng(Uint8List rgba, int w, int h) {
+  final rows = BytesBuilder();
+  for (var y = 0; y < h; y++) {
+    rows.addByte(0); // no filter
+    for (var x = 0; x < w; x++) {
+      final i = (y * w + x) * 4;
+      rows
+        ..addByte(rgba[i])
+        ..addByte(rgba[i + 1])
+        ..addByte(rgba[i + 2]);
+    }
+  }
+  final ihdr = ByteData(13)
+    ..setUint32(0, w)
+    ..setUint32(4, h)
+    ..setUint8(8, 8) // bit depth
+    ..setUint8(9, 2) // truecolour, no alpha
+    ..setUint8(10, 0)
+    ..setUint8(11, 0)
+    ..setUint8(12, 0);
+  final out = BytesBuilder()
+    ..add(const [137, 80, 78, 71, 13, 10, 26, 10])
+    ..add(_chunk('IHDR', ihdr.buffer.asUint8List()))
+    ..add(_chunk('IDAT', ZLibCodec().encode(rows.toBytes())))
+    ..add(_chunk('IEND', const []));
+  return out.toBytes();
+}
+
+Uint8List _chunk(String type, List<int> data) {
+  final body = [...type.codeUnits, ...data];
+  final head = ByteData(4)..setUint32(0, data.length);
+  final crc = ByteData(4)..setUint32(0, _crc32(body));
+  return Uint8List.fromList([
+    ...head.buffer.asUint8List(),
+    ...body,
+    ...crc.buffer.asUint8List(),
+  ]);
+}
+
+final _crcTable = List<int>.generate(256, (n) {
+  var c = n;
+  for (var k = 0; k < 8; k++) {
+    c = (c & 1) != 0 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+  }
+  return c;
+});
+
+int _crc32(List<int> bytes) {
+  var c = 0xFFFFFFFF;
+  for (final b in bytes) {
+    c = _crcTable[(c ^ b) & 0xFF] ^ (c >>> 8);
+  }
+  return c ^ 0xFFFFFFFF;
 }
 
 void write(String path, List<int> bytes) => File(path)
@@ -267,6 +329,8 @@ void main() {
     s,
     s,
     (c) => paintIcon(c, s * 1.0, shape, letterScale: letterScale),
+    // iOS: no alpha channel at all.
+    opaque: shape == IconShape.fullBleed && letterScale == 1,
   );
 
   Future<Uint8List> foreground(WidgetTester t, int s) =>
