@@ -414,7 +414,9 @@ class _WorkViewState extends State<WorkView> {
     final pinned = widget.lanes!.pinned.contains(s.key);
     // The stage's colour; work past the lanes is ringed red.
     final color = g == null ? stageTones.first : stageColor(g.stageName);
-    final over = overflow.contains(s.key);
+    // Past the lanes, or overlapping in its own lane: ringed red.
+    final over =
+        overflow.contains(s.key) || widget.lanes!.overlapping.contains(s.key);
     return ChartBar(
       key: Key('work-bar-${s.key}'),
       window: window,
